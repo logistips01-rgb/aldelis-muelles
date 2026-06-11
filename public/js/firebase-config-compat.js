@@ -8,5 +8,12 @@ const firebaseConfig = {
 };
 
 firebase.initializeApp(firebaseConfig);
+
+// App Check (reCAPTCHA v3): solo se aceptan peticiones desde la web real
+firebase.appCheck().activate(
+  "6LdaUhktAAAAABhUpXLgn48PkVYoBaTqwCh9FZY0",
+  true // refresca el token automaticamente
+);
+
 const db   = firebase.firestore();
 const auth = firebase.auth();
