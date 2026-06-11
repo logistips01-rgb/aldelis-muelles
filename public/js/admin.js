@@ -1,3 +1,10 @@
+// Escapa texto antes de insertarlo como HTML (proteccion anti-XSS)
+function esc(s){
+  return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+
 // Envio de email via Firebase Function
 async function enviarEmailMS(to, subject, body) {
   if (!to) return;
@@ -144,12 +151,12 @@ function renderSeccion(tableId, muelles, franjas, seccion, reservas) {
       const pend = reservas.filter(r => !r.muelle && r.franja === franja && r.estado === "pendiente" && r.seccion === seccion);
       if (hits.length > 0) {
         const r = hits[0]; const color = ESTADO_COLOR[r.estado] || "#9CA3AF";
-        tbody += "<td class='slot-td' data-id='" + r.id + "' style='background:" + color + "' title='" + r.empresa + "'>" +
-          "<div class='slot-empresa'>" + r.empresa.split(" ")[0] + "</div><div class='slot-estado'>" + r.estado + "</div></td>";
+        tbody += "<td class='slot-td' data-id='" + r.id + "' style='background:" + color + "' title='" + esc(r.empresa) + "'>" +
+          "<div class='slot-empresa'>" + esc(r.empresa.split(" ")[0]) + "</div><div class='slot-estado'>" + esc(r.estado) + "</div></td>";
       } else if (pend.length > 0) {
         const r = pend[0];
-        tbody += "<td class='slot-td slot-pendiente' data-id='" + r.id + "' title='" + r.empresa + "'>" +
-          "<div class='slot-empresa'>" + r.empresa.split(" ")[0] + "</div><div class='slot-estado'>pendiente</div></td>";
+        tbody += "<td class='slot-td slot-pendiente' data-id='" + r.id + "' title='" + esc(r.empresa) + "'>" +
+          "<div class='slot-empresa'>" + esc(r.empresa.split(" ")[0]) + "</div><div class='slot-estado'>pendiente</div></td>";
       } else {
         tbody += "<td class='slot-td slot-libre'></td>";
       }
@@ -169,11 +176,11 @@ function renderLista(reservas) {
       ? "<div class='reserva-acciones'><button class='btn-accion btn-completar' data-id='" + r.id + "'>Completar descarga</button></div>"
       : "";
     return "<div class='reserva-item' data-id='" + r.id + "'>" +
-      "<div class='reserva-hora'>" + r.franja + "</div>" +
-      "<div class='reserva-info'><div class='reserva-empresa'>" + r.empresa + " · " + r.matricula + "</div>" +
-      "<div class='reserva-detalle'>" + (SEC_LABEL[r.seccion] || r.temperatura) + " · " + (r.mercancia || "—") + " · " + (r.pales ? r.pales + " pales" : "—") + "</div>" +
-      (r.muelle ? "<div class='reserva-muelle'>Muelle " + r.muelle + "</div>" : "") + acciones + "</div>" +
-      "<span class='estado-pill estado-" + r.estado + "'>" + r.estado + "</span></div>";
+      "<div class='reserva-hora'>" + esc(r.franja) + "</div>" +
+      "<div class='reserva-info'><div class='reserva-empresa'>" + esc(r.empresa) + " · " + esc(r.matricula) + "</div>" +
+      "<div class='reserva-detalle'>" + esc(SEC_LABEL[r.seccion] || r.temperatura) + " · " + esc(r.mercancia || "—") + " · " + (r.pales ? esc(r.pales) + " pales" : "—") + "</div>" +
+      (r.muelle ? "<div class='reserva-muelle'>Muelle " + esc(r.muelle) + "</div>" : "") + acciones + "</div>" +
+      "<span class='estado-pill estado-" + esc(r.estado) + "'>" + esc(r.estado) + "</span></div>";
   }).join("");
 }
 
@@ -216,7 +223,7 @@ async function cargarInforme() {
 
 function renderBarras(items, total) {
   if (!items.length) return "<div class='empty-state' style='padding:16px'>Sin datos</div>";
-  return items.map(item => "<div class='barra-row'><div class='barra-label'>" + item[0] + "</div>" +
+  return items.map(item => "<div class='barra-row'><div class='barra-label'>" + esc(item[0]) + "</div>" +
     "<div class='barra-wrap'><div class='barra-fill' style='width:" + Math.round(item[1]/total*100) + "%'></div></div>" +
     "<div class='barra-val'>" + item[1] + "</div></div>").join("");
 }
@@ -224,10 +231,10 @@ function renderBarras(items, total) {
 function renderTablaCompleta(reservas) {
   let html = "<div class='tabla-scroll'><table class='tabla-inf'><thead><tr><th>Fecha</th><th>Franja</th><th>Seccion</th><th>Empresa</th><th>Matricula</th><th>Mercancia</th><th>Pales</th><th>Muelle</th><th>Estado</th></tr></thead><tbody>";
   reservas.forEach(r => {
-    html += "<tr><td>" + r.fecha + "</td><td>" + r.franja + "</td><td>" + (SEC_LABEL[r.seccion]||r.temperatura) + "</td>" +
-      "<td>" + r.empresa + "</td><td>" + r.matricula + "</td><td>" + (r.mercancia||"—") + "</td>" +
-      "<td>" + (r.pales||"—") + "</td><td>" + (r.muelle||"—") + "</td>" +
-      "<td><span class='estado-pill estado-" + r.estado + "'>" + r.estado + "</span></td></tr>";
+    html += "<tr><td>" + esc(r.fecha) + "</td><td>" + esc(r.franja) + "</td><td>" + esc(SEC_LABEL[r.seccion]||r.temperatura) + "</td>" +
+      "<td>" + esc(r.empresa) + "</td><td>" + esc(r.matricula) + "</td><td>" + esc(r.mercancia||"—") + "</td>" +
+      "<td>" + esc(r.pales||"—") + "</td><td>" + esc(r.muelle||"—") + "</td>" +
+      "<td><span class='estado-pill estado-" + esc(r.estado) + "'>" + esc(r.estado) + "</span></td></tr>";
   });
   return html + "</tbody></table></div>";
 }
@@ -264,7 +271,7 @@ function abrirModal(id) {
   ].filter(Boolean);
 
   document.getElementById("modal-datos").innerHTML = rows.map(row =>
-    "<div class='resumen-row'><span class='resumen-label'>" + row[0] + "</span><span class='resumen-value'>" + row[1] + "</span></div>"
+    "<div class='resumen-row'><span class='resumen-label'>" + esc(row[0]) + "</span><span class='resumen-value'>" + esc(row[1]) + "</span></div>"
   ).join("");
 
   const m = r.seccion === "lavadero" ? MUELLES_LAVADERO : r.seccion === "frio" ? MUELLES_FRIO : MUELLES_SECO;

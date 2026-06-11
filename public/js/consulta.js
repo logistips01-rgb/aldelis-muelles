@@ -1,3 +1,10 @@
+// Escapa texto antes de insertarlo como HTML (proteccion anti-XSS)
+function esc(s){
+  return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+
 async function buscarReserva() {
   const input = document.getElementById("input-buscar").value.trim().toUpperCase();
   const err   = document.getElementById("buscar-error");
@@ -60,7 +67,7 @@ function mostrarResultado(r) {
     "<div style='font-size:13px;color:" + c.color + ";margin-top:3px'>" + c.desc + "</div></div></div></div>" +
     "<div class='card'><div class='resumen'>" +
     rows.map(function(row) {
-      return "<div class='resumen-row'><span class='resumen-label'>" + row[0] + "</span><span class='resumen-value'>" + row[1] + "</span></div>";
+      return "<div class='resumen-row'><span class='resumen-label'>" + esc(row[0]) + "</span><span class='resumen-value'>" + esc(row[1]) + "</span></div>";
     }).join("") +
     "</div>" +
     (r.estado === "rechazada" ? "<button class='btn-primary' style='margin-top:16px' onclick=\"window.location.href='index.html'\">Hacer nueva reserva</button>" : "") +

@@ -1,9 +1,50 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
     match /reservas/{id} {
-      allow read, create: if true;
+      // Lectura: abierta de momento (la consulta publica y el calculo de
+      // franjas la necesitan). Se cierra en la Fase 2 con App Check.
+      allow read: if true;
+
+      // Crear: solo reservas con formato valido y estado inicial controlado.
+      allow create: if validReserva();
+
+      // Modificar / borrar: solo personal autenticado (almacen).
       allow update, delete: if request.auth != null;
+    }
+
+    function validReserva() {
+      let d = request.resource.data;
+      return
+        // Solo se admiten exactamente estos campos
+        d.keys().hasOnly([
+          'codigo','matricula','empresa','conductor','email','temperatura',
+          'seccion','mercancia','pales','peso','observaciones','franja',
+          'fecha','estado','muelle','nota_almacen','motivo','created_at'
+        ])
+        // El que reserva no puede auto-confirmarse ni asignarse muelle
+        && d.estado == 'pendiente'
+        && d.muelle == null
+        && d.nota_almacen == ''
+        && d.motivo == ''
+        // Seccion valida
+        && d.seccion in ['seco','frio','lavadero']
+        // Campos obligatorios con limite de longitud
+        && d.matricula is string && d.matricula.size() > 0 && d.matricula.size() <= 20
+        && d.empresa   is string && d.empresa.size()   > 0 && d.empresa.size()   <= 120
+        && d.codigo    is string && d.codigo.size()    <= 40
+        && d.franja    is string && d.franja.size()    <= 20
+        && d.fecha     is string && d.fecha.size()     <= 10
+        // Campos opcionales con tope de longitud
+        && d.conductor     is string && d.conductor.size()     <= 120
+        && d.email         is string && d.email.size()         <= 160
+        && d.mercancia     is string && d.mercancia.size()     <= 300
+        && d.observaciones is string && d.observaciones.size() <= 500
+        && d.temperatura   is string && d.temperatura.size()   <= 20
+        // Numericos: numero o nulo
+        && (d.pales == null || d.pales is number)
+        && (d.peso  == null || d.peso  is number);
     }
   }
 }
