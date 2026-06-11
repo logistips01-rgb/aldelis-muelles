@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aldelis - Almacen</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/admin.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body class="admin-body">
+
+  <div id="login-screen" class="login-wrap">
+    <div class="card" style="max-width:360px; margin:0 auto;">
+      <div class="portal-header">
+        <div class="logo">Aldelis</div>
+        <div class="logo-sub">Panel de almacen</div>
+      </div>
+      <div class="field"><label>Email</label><input type="email" id="login-email" placeholder="usuario@aldelis.com"></div>
+      <div class="field"><label>Contrasena</label><input type="password" id="login-pass" placeholder="••••••••"></div>
+      <div id="login-error" style="color:#D41F3A;font-size:13px;margin-bottom:10px;display:none"></div>
+      <button class="btn-primary" onclick="iniciarSesion()">Entrar</button>
+    </div>
+  </div>
+
+  <div id="dashboard-screen" style="display:none">
+    <div class="admin-topbar">
+      <div class="admin-logo">Aldelis - Gestion de muelles</div>
+      <div class="topbar-right">
+        <span id="last-refresh" style="font-size:11px;color:#9CA3AF;"></span>
+        <button class="tab-view active" id="btn-vista-rejilla" onclick="switchVista('rejilla')">Rejilla</button>
+        <button class="tab-view" id="btn-vista-lista" onclick="switchVista('lista')">Lista</button>
+        <button class="tab-view" id="btn-vista-informes" onclick="switchVista('informes')">Informes</button>
+        <input type="date" id="fecha-dashboard" onchange="cargarReservas()">
+        <button class="btn-ghost" style="width:auto;padding:6px 14px;" onclick="cerrarSesion()">Cerrar sesion</button>
+      </div>
+    </div>
+
+    <div class="metrics-row">
+      <div class="metric-card"><div class="metric-value" id="m-total">0</div><div class="metric-label">Total reservas</div></div>
+      <div class="metric-card accent"><div class="metric-value" id="m-pendientes">0</div><div class="metric-label">Pendientes</div></div>
+      <div class="metric-card"><div class="metric-value" id="m-confirmadas">0</div><div class="metric-label">Confirmadas</div></div>
+      <div class="metric-card"><div class="metric-value" id="m-curso">0</div><div class="metric-label">En curso</div></div>
+    </div>
+
+    <div id="vista-rejilla" class="reservas-wrap">
+      <div class="grid-section">
+        <div class="section-header">
+          <span class="section-badge badge-seco">Almacen Seco</span>
+          <span class="section-title-sm">Muelles 6, 7 y 8 — 21:30-22:00 y 06:00 a 15:00</span>
+        </div>
+        <div class="grid-card"><div class="grid-scroll"><table class="rejilla-table" id="rejilla-seco"></table></div></div>
+      </div>
+      <div class="grid-section">
+        <div class="section-header">
+          <span class="section-badge badge-frio">Almacen Frio y M20</span>
+          <span class="section-title-sm">Muelles 20, 18 y 19 — 06:00 a 22:00</span>
+        </div>
+        <div class="grid-card"><div class="grid-scroll"><table class="rejilla-table" id="rejilla-frio"></table></div></div>
+      </div>
+      <div class="grid-section">
+        <div class="section-header">
+          <span class="section-badge badge-lavadero">Lavadero</span>
+          <span class="section-title-sm">Muelles 9 y 10 — 08:30 a 17:00 — Envases y palets</span>
+        </div>
+        <div class="grid-card"><div class="grid-scroll"><table class="rejilla-table" id="rejilla-lavadero"></table></div></div>
+      </div>
+      <div class="legend-row">
+        <div class="leg-item"><div class="leg-dot" style="background:#1D9E75"></div> Confirmada</div>
+        <div class="leg-item"><div class="leg-dot" style="background:#D41F3A"></div> En curso</div>
+        <div class="leg-item"><div class="leg-dot" style="background:#F59E0B"></div> Pendiente</div>
+        <div class="leg-item"><div class="leg-dot" style="background:#9CA3AF"></div> Rechazada</div>
+        <div class="leg-item"><div class="leg-dot" style="background:#6B7280"></div> Completada</div>
+        <div class="leg-item"><div class="leg-dot" style="background:#E5E7EB; border:1px solid #D1D5DB"></div> Libre</div>
+      </div>
+    </div>
+
+    <div id="vista-lista" class="reservas-wrap" style="display:none">
+      <div class="section-title">Reservas del dia</div>
+      <div id="reservas-list"></div>
+    </div>
+
+    <div id="vista-informes" class="reservas-wrap" style="display:none">
+      <div class="informe-header">
+        <div class="informe-title">Informes y exportacion</div>
+        <div class="informe-controls">
+          <div class="informe-range">
+            <label>Desde</label><input type="date" id="informe-desde">
+            <label>Hasta</label><input type="date" id="informe-hasta">
+            <button class="btn-informe" onclick="cargarInforme()">Consultar</button>
+            <button class="btn-excel" onclick="exportarExcel()">Exportar Excel</button>
+          </div>
+        </div>
+      </div>
+      <div id="informe-metricas" class="informe-metricas" style="display:none">
+        <div class="metric-card"><div class="metric-value" id="inf-total">0</div><div class="metric-label">Total reservas</div></div>
+        <div class="metric-card"><div class="metric-value" id="inf-completadas">0</div><div class="metric-label">Completadas</div></div>
+        <div class="metric-card"><div class="metric-value" id="inf-rechazadas">0</div><div class="metric-label">Rechazadas</div></div>
+        <div class="metric-card"><div class="metric-value" id="inf-empresas">0</div><div class="metric-label">Empresas distintas</div></div>
+      </div>
+      <div id="informe-tablas" style="display:none">
+        <div class="informe-grid">
+          <div class="informe-card"><div class="informe-card-title">Franjas mas demandadas</div><div id="tabla-franjas"></div></div>
+          <div class="informe-card"><div class="informe-card-title">Empresas mas frecuentes</div><div id="tabla-empresas"></div></div>
+          <div class="informe-card"><div class="informe-card-title">Reservas por seccion</div><div id="tabla-temperatura"></div></div>
+          <div class="informe-card"><div class="informe-card-title">Ocupacion por muelle</div><div id="tabla-muelles"></div></div>
+        </div>
+        <div class="informe-card" style="margin-top:16px">
+          <div class="informe-card-title">Listado completo del periodo</div>
+          <div id="tabla-completa"></div>
+        </div>
+      </div>
+      <div id="informe-empty" style="display:none" class="empty-state">No hay reservas en el periodo seleccionado.</div>
+    </div>
+  </div>
+
+  <div id="modal" class="modal-overlay" style="display:none" onclick="cerrarModal(event)">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div><div class="modal-title" id="modal-titulo">Gestionar reserva</div><div class="modal-sub" id="modal-sub"></div></div>
+        <button class="close-btn" onclick="cerrarModal()">x</button>
+      </div>
+      <div class="modal-body">
+        <div id="modal-datos" class="resumen"></div>
+        <div class="field" style="margin-top:16px">
+          <label>Accion</label>
+          <div class="action-tabs">
+            <div class="action-tab active" id="tab-confirmar" onclick="switchTab('confirmar')">Confirmar</div>
+            <div class="action-tab" id="tab-reasignar" onclick="switchTab('reasignar')">Reasignar</div>
+            <div class="action-tab" id="tab-rechazar" onclick="switchTab('rechazar')">Rechazar</div>
+            <div class="action-tab" id="tab-en-curso" onclick="switchTab('en-curso')" style="display:none">En curso</div>
+            <div class="action-tab" id="tab-completar" onclick="switchTab('completar')" style="display:none">Completar</div>
+          </div>
+        </div>
+        <div id="panel-confirmar">
+          <div class="field"><label>Asignar muelle</label><select id="muelle-confirmar"></select></div>
+          <div class="field"><label>Nota para el transportista <span class="opt">(opcional)</span></label><input type="text" id="nota-confirmar" placeholder="Acceder por puerta norte..."></div>
+          <button class="btn-confirm" onclick="accionReserva('confirmar')">Confirmar reserva</button>
+        </div>
+        <div id="panel-reasignar" style="display:none">
+          <div class="field"><label>Nuevo muelle</label><select id="muelle-reasignar"></select></div>
+          <div class="field"><label>Nueva franja</label><select id="franja-reasignar"></select></div>
+          <div class="field"><label>Motivo <span class="opt">(opcional)</span></label><input type="text" id="motivo-reasignar" placeholder="Muelle ocupado en esa franja..."></div>
+          <button class="btn-reassign" onclick="accionReserva('reasignar')">Guardar reasignacion</button>
+        </div>
+        <div id="panel-rechazar" style="display:none">
+          <div class="field">
+            <label>Motivo del rechazo</label>
+            <select id="motivo-rechazar">
+              <option value="">Selecciona un motivo</option>
+              <option>Sin capacidad en esa franja</option>
+              <option>Documentacion incompleta</option>
+              <option>Tipo de carga no compatible</option>
+              <option>Vehiculo no autorizado</option>
+              <option>Otro</option>
+            </select>
+          </div>
+          <div class="field"><label>Mensaje para el transportista <span class="opt">(opcional)</span></label><input type="text" id="mensaje-rechazar" placeholder="Por favor contacte con almacen..."></div>
+          <button class="btn-reject" onclick="accionReserva('rechazar')">Rechazar reserva</button>
+        </div>
+        <div id="panel-en-curso" style="display:none">
+          <p style="font-size:13px;color:#6B7280;margin-bottom:16px">Marca esta reserva como en curso cuando el camion este en el muelle descargando.</p>
+          <button class="btn-en-curso-modal" onclick="accionReserva('en-curso')">Marcar como en curso</button>
+        </div>
+        <div id="panel-completar" style="display:none">
+          <p style="font-size:13px;color:#6B7280;margin-bottom:16px">Marca esta reserva como completada cuando la descarga haya finalizado.</p>
+          <button class="btn-completar-modal" onclick="accionReserva('completar')">Marcar como completada</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+  <script src="js/firebase-config-compat.js"></script>
+  <script src="js/admin.js"></script>
+</body>
+</html>

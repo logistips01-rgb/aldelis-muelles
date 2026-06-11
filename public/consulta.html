@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aldelis - Consulta de reserva</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div style="width:100%; max-width:480px; margin:0 auto;">
+    <div class="portal-header">
+      <div class="logo">Aldelis</div>
+      <div class="logo-sub">Consulta tu reserva</div>
+    </div>
+    <div id="pantalla-buscar" class="card">
+      <h2>Estado de tu reserva</h2>
+      <p class="card-desc">Introduce tu codigo de seguimiento o matricula.</p>
+      <div class="field">
+        <label>Codigo o matricula</label>
+        <input type="text" id="input-buscar" placeholder="Ej: ALD-20260529-AB3C" style="text-transform:uppercase">
+      </div>
+      <button class="btn-primary" onclick="buscarReserva()">Consultar</button>
+      <div id="buscar-error" style="color:#D41F3A;font-size:13px;margin-top:10px;display:none"></div>
+    </div>
+    <div id="pantalla-resultado" style="display:none">
+      <div id="resultado-content"></div>
+      <button class="btn-back" style="width:100%;margin-top:12px" onclick="volver()">Consultar otra reserva</button>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="js/firebase-config-compat.js"></script>
+  <script src="js/consulta.js"></script>
+</body>
+</html>

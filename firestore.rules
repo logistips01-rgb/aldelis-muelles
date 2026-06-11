@@ -1,0 +1,9 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /reservas/{id} {
+      allow read, create: if true;
+      allow update, delete: if request.auth != null;
+    }
+  }
+}

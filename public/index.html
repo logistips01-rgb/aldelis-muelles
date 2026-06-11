@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aldelis — Reserva de descarga</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+
+  <div id="step-1" class="step active">
+    <div class="portal-header">
+      <div class="logo">Aldelis</div>
+      <div class="logo-sub">Reserva de descarga</div>
+      <a href="admin.html" class="admin-link">Acceso almacen</a>
+    </div>
+    <div class="card">
+      <div class="step-indicator">Paso 1 de 4</div>
+      <h2>Identificate</h2>
+      <p class="card-desc">Introduce tu matricula para continuar.</p>
+      <div class="field">
+        <label>Matricula del vehiculo <span class="req">*</span></label>
+        <input type="text" id="matricula" placeholder="Ej: 1234 ABC" style="text-transform:uppercase">
+      </div>
+      <div class="field">
+        <label>Empresa transportista <span class="req">*</span></label>
+        <input type="text" id="empresa" placeholder="Nombre de la empresa">
+      </div>
+      <div class="field">
+        <label>Nombre del conductor <span class="opt">(opcional)</span></label>
+        <input type="text" id="conductor" placeholder="Nombre y apellido">
+      </div>
+      <div class="field">
+        <label>Email para notificaciones <span class="opt">(opcional)</span></label>
+        <input type="email" id="email" placeholder="transportista@empresa.com">
+      </div>
+      <button class="btn-primary" onclick="goStep(2)">Continuar</button>
+    </div>
+  </div>
+
+  <div id="step-2" class="step">
+    <div class="portal-header">
+      <div class="logo">Aldelis</div>
+      <div class="logo-sub">Reserva de descarga</div>
+    </div>
+    <div class="card">
+      <div class="step-indicator">Paso 2 de 4</div>
+      <h2>Que traes?</h2>
+      <p class="card-desc">Selecciona la seccion a la que vas a descargar.</p>
+      <div class="field">
+        <label>Seccion de descarga <span class="req">*</span></label>
+        <div class="temp-grid" style="grid-template-columns:1fr 1fr 1fr">
+          <div class="temp-btn" onclick="selectSeccion('seco', this)">
+            <div class="temp-icon">📦</div>
+            <div class="temp-name">Almacen Seco</div>
+            <div class="temp-range">Muelles 6, 7, 8</div>
+          </div>
+          <div class="temp-btn" onclick="selectSeccion('frio', this)">
+            <div class="temp-icon">❄</div>
+            <div class="temp-name">Almacen Frio</div>
+            <div class="temp-range">Muelles 18, 19, 20</div>
+          </div>
+          <div class="temp-btn" onclick="selectSeccion('lavadero', this)">
+            <div class="temp-icon">🔄</div>
+            <div class="temp-name">Lavadero</div>
+            <div class="temp-range">Muelles 9, 10</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="hint-temperatura" style="display:none; background:#E6F1FB; border:1px solid #B5D4F4; border-radius:8px; padding:10px 14px; font-size:13px; color:#0C447C; margin-bottom:14px">
+        Almacen Frio — indica el tipo de temperatura de tu carga:
+        <div class="field-row" style="margin-top:10px">
+          <div class="field" style="margin-bottom:0">
+            <label>Temperatura</label>
+            <select id="select-temperatura" onchange="reserva.temperatura = this.value">
+              <option value="refrigerado">Refrigerado (0C a 8C)</option>
+              <option value="congelado">Congelado (-18C o menos)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Descripcion de mercancia</label>
+        <input type="text" id="mercancia" placeholder="Ej: lacteos, envases, palets...">
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Num. pales <span class="opt">(aprox.)</span></label>
+          <input type="number" id="pales" placeholder="Ej: 4" min="0">
+        </div>
+        <div class="field">
+          <label>Peso kg <span class="opt">(aprox.)</span></label>
+          <input type="number" id="peso" placeholder="Ej: 1200" min="0">
+        </div>
+      </div>
+      <div class="field">
+        <label>Observaciones <span class="opt">(opcional)</span></label>
+        <input type="text" id="observaciones" placeholder="Mercancia fragil, requiere equipo especial...">
+      </div>
+      <div class="btn-row">
+        <button class="btn-back" onclick="goStep(1)">&#8592; Atras</button>
+        <button class="btn-primary" onclick="goStep(3)">Continuar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="step-3" class="step">
+    <div class="portal-header">
+      <div class="logo">Aldelis</div>
+      <div class="logo-sub">Reserva de descarga</div>
+    </div>
+    <div class="card">
+      <div class="step-indicator">Paso 3 de 4</div>
+      <h2>Elige tu franja horaria</h2>
+      <p class="card-desc">Selecciona la fecha y el hueco que mejor te convenga.</p>
+      <div class="field">
+        <label>Fecha de descarga <span class="req">*</span></label>
+        <input type="date" id="fecha-reserva" min="">
+      </div>
+      <div id="franjas-container" class="franjas-grid"></div>
+      <div class="btn-row">
+        <button class="btn-back" onclick="goStep(2)">&#8592; Atras</button>
+        <button class="btn-primary" onclick="goStep(4)">Revisar reserva</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="step-4" class="step">
+    <div class="portal-header">
+      <div class="logo">Aldelis</div>
+      <div class="logo-sub">Reserva de descarga</div>
+    </div>
+    <div class="card">
+      <div class="step-indicator">Paso 4 de 4</div>
+      <h2>Revisa tu solicitud</h2>
+      <div class="notice">Tu reserva quedara <strong>pendiente de confirmacion</strong> por el equipo de Aldelis.</div>
+      <div id="resumen-content" class="resumen"></div>
+      <div class="btn-row">
+        <button class="btn-back" onclick="goStep(3)">&#8592; Atras</button>
+        <button class="btn-primary" onclick="enviarReserva()">Enviar solicitud</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="step-done" class="step">
+    <div class="portal-header">
+      <div class="logo">Aldelis</div>
+      <div class="logo-sub">Reserva de descarga</div>
+    </div>
+    <div class="card text-center">
+      <div class="done-icon">⏱</div>
+      <h2>Solicitud enviada</h2>
+      <p class="card-desc">Tu reserva esta pendiente de confirmacion por el equipo de Aldelis.</p>
+      <div class="codigo-box">
+        <div class="codigo-label">Codigo de seguimiento</div>
+        <div id="codigo-generado" class="codigo-value"></div>
+        <button class="btn-copy" onclick="copiarCodigo()" id="btn-copiar">Copiar codigo</button>
+      </div>
+      <p class="card-desc" style="margin-top:12px">Guarda este codigo para consultar el estado de tu reserva.</p>
+      <a href="consulta.html" class="btn-primary" style="display:block;text-align:center;text-decoration:none;margin-top:12px;">Consultar estado de mi reserva</a>
+      <button class="btn-back" style="width:100%;margin-top:8px;" onclick="location.reload()">Nueva reserva</button>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script src="js/firebase-config-compat.js"></script>
+  <script src="js/reserva.js"></script>
+</body>
+</html>
