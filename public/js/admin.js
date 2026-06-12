@@ -61,6 +61,18 @@ let reservaActual = null;
 let autoRefreshInterval = null;
 let informeData = [];
 
+// Resaltado de la franja "en curso" (solo si el dia mostrado es hoy)
+let esHoy = false;
+let ahoraMin = 0;
+function franjaEsAhora(franja) {
+  if (!esHoy) return false;
+  const partes = franja.split(" - ");
+  const toMin = t => { const p = t.trim().split(":"); return (+p[0]) * 60 + (+p[1]); };
+  const ini = toMin(partes[0]);
+  const fin = partes[1] ? toMin(partes[1]) : ini + 30;
+  return ahoraMin >= ini && ahoraMin < fin;
+}
+
 document.addEventListener("click", function(e) {
   const slot = e.target.closest("[data-id]");
   if (slot) {
@@ -123,6 +135,8 @@ async function cargarReservas() {
   document.getElementById("m-curso").textContent       = reservas.filter(r => r.estado === "en_curso").length;
 
   const ahora = new Date();
+  esHoy    = (fecha === ahora.toISOString().split("T")[0]);
+  ahoraMin = ahora.getHours() * 60 + ahora.getMinutes();
   document.getElementById("last-refresh").textContent = "Actualizado a las " +
     ahora.getHours().toString().padStart(2,"0") + ":" + ahora.getMinutes().toString().padStart(2,"0");
 
@@ -141,24 +155,27 @@ function renderSeccion(tableId, muelles, franjas, seccion, reservas) {
   const table = document.getElementById(tableId);
   if (!table) return;
   let thead = "<thead><tr><th class='muelle-th'>Muelle</th>";
-  franjas.forEach(f => { thead += "<th class='franja-th'>" + f.split(" - ")[0] + "</th>"; });
+  franjas.forEach(f => {
+    thead += "<th class='franja-th" + (franjaEsAhora(f) ? " franja-now" : "") + "'>" + f.split(" - ")[0] + "</th>";
+  });
   thead += "</tr></thead><tbody>";
   let tbody = "";
   muelles.forEach(muelle => {
     tbody += "<tr><td class='muelle-td'>" + muelle + "</td>";
     franjas.forEach(franja => {
+      const now = franjaEsAhora(franja) ? " col-now" : "";
       const hits = reservas.filter(r => r.muelle === muelle && r.franja === franja);
       const pend = reservas.filter(r => !r.muelle && r.franja === franja && r.estado === "pendiente" && r.seccion === seccion);
       if (hits.length > 0) {
         const r = hits[0]; const color = ESTADO_COLOR[r.estado] || "#9CA3AF";
-        tbody += "<td class='slot-td' data-id='" + r.id + "' style='background:" + color + "' title='" + esc(r.empresa) + "'>" +
+        tbody += "<td class='slot-td" + now + "' data-id='" + r.id + "' style='background:" + color + "' title='" + esc(r.empresa) + "'>" +
           "<div class='slot-empresa'>" + esc(r.empresa.split(" ")[0]) + "</div><div class='slot-estado'>" + esc(r.estado) + "</div></td>";
       } else if (pend.length > 0) {
         const r = pend[0];
-        tbody += "<td class='slot-td slot-pendiente' data-id='" + r.id + "' title='" + esc(r.empresa) + "'>" +
+        tbody += "<td class='slot-td slot-pendiente" + now + "' data-id='" + r.id + "' title='" + esc(r.empresa) + "'>" +
           "<div class='slot-empresa'>" + esc(r.empresa.split(" ")[0]) + "</div><div class='slot-estado'>pendiente</div></td>";
       } else {
-        tbody += "<td class='slot-td slot-libre'></td>";
+        tbody += "<td class='slot-td slot-libre" + now + "'></td>";
       }
     });
     tbody += "</tr>";

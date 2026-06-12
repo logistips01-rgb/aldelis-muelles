@@ -252,10 +252,16 @@
 .grid-card { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); overflow: hidden; }
 .grid-scroll { overflow-x: auto; }
 
-.rejilla-table { width: 100%; border-collapse: collapse; min-width: 600px; }
-.muelle-th { background: #1A1A1A; color: #fff; font-size: 11px; padding: 8px 12px; text-align: left; width: 70px; }
+.rejilla-table { width: 100%; border-collapse: separate; border-spacing: 0; min-width: 600px; }
+.muelle-th { background: #1A1A1A; color: #fff; font-size: 11px; padding: 8px 12px; text-align: left; width: 70px; position: sticky; left: 0; z-index: 2; }
 .franja-th { background: #1A1A1A; color: #fff; font-size: 11px; padding: 8px 6px; text-align: center; white-space: nowrap; }
-.muelle-td { font-size: 12px; font-weight: 600; color: #374151; padding: 6px 12px; background: #F9F9F9; border-bottom: 1px solid #F0F0F0; border-right: 1px solid #F0F0F0; }
+.muelle-td { font-size: 12px; font-weight: 600; color: #374151; padding: 6px 12px; background: #F9F9F9; border-bottom: 1px solid #F0F0F0; border-right: 1px solid #F0F0F0; position: sticky; left: 0; z-index: 1; }
+
+/* Resaltado de la franja horaria en curso */
+.franja-th.franja-now { background: #D41F3A; }
+.franja-th.franja-now::before { content: "● "; color: #fff; }
+.slot-td.col-now { box-shadow: inset 2px 0 0 #D41F3A, inset -2px 0 0 #D41F3A; }
+.slot-libre.col-now { background: #FDECEE; }
 
 .slot-td { padding: 4px; border: 1px solid #F0F0F0; cursor: pointer; vertical-align: middle; min-width: 80px; height: 48px; transition: opacity .15s; }
 .slot-td:hover { opacity: 0.8; }
