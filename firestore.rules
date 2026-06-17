@@ -21,9 +21,16 @@ service cloud.firestore {
       allow create, update: if validLanzadera();
     }
 
+    // Historico de movimientos (para informes). Solo se anade, no se edita.
+    match /lanzaderas_log/{id} {
+      allow read: if request.auth != null;
+      allow create: if validLanzadera();
+    }
+
     function validLanzadera() {
       let d = request.resource.data;
       return d.numero is number && d.numero >= 1 && d.numero <= 4
+        && d.estado in ['en_nave', 'transito']
         && d.nave in ['caserfri','merca','arento','avitrans','txt','plaza']
         && d.accion in ['presente','cargando','descargando']
         && (d.muelle == null || (d.muelle is string && d.muelle.size() <= 10))

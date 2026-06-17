@@ -96,15 +96,31 @@ function renderConfirmar() {
     "</div>";
 }
 
-function renderHecho(saliendo) {
-  app.innerHTML =
-    "<div class='card text-center'>" +
-    "<div class='done-icon'>" + (saliendo ? "👋" : "✓") + "</div>" +
-    "<h2>" + (saliendo ? "Salida registrada" : "Registrado") + "</h2>" +
-    "<p class='card-desc'>Lanzadera " + sel.numero + (saliendo ? " ha salido de " + NOMBRE_NAVE[sel.nave] : " en " + NOMBRE_NAVE[sel.nave]) + ".</p>" +
-    (saliendo ? "" : "<button class='btn-primary' style='width:100%' onclick='salir()'>Salir de la nave</button>") +
-    "<button class='btn-back' style='width:100%;margin-top:8px' onclick='nuevo()'>Nuevo registro</button>" +
-    "</div>";
+function renderHecho(estado) {
+  if (estado === "en_nave") {
+    app.innerHTML =
+      "<div class='card text-center'>" +
+      "<div class='done-icon'>✓</div><h2>Registrado</h2>" +
+      "<p class='card-desc'>Lanzadera " + sel.numero + " en " + NOMBRE_NAVE[sel.nave] + ".</p>" +
+      "<button class='btn-primary' style='width:100%' onclick='salir()'>Salir de la nave</button>" +
+      "<button class='btn-back' style='width:100%;margin-top:8px' onclick='nuevo()'>Nuevo registro</button>" +
+      "</div>";
+  } else if (estado === "transito") {
+    app.innerHTML =
+      "<div class='card text-center'>" +
+      "<div class='done-icon'>🚚</div><h2>En transito</h2>" +
+      "<p class='card-desc'>Lanzadera " + sel.numero + " ha salido de " + NOMBRE_NAVE[sel.nave] + ".</p>" +
+      "<button class='btn-primary' style='width:100%' onclick='irANaves()'>Registrar llegada a nave</button>" +
+      "<button class='btn-back' style='width:100%;margin-top:8px' onclick='finJornada()'>Fin de jornada</button>" +
+      "</div>";
+  } else {
+    app.innerHTML =
+      "<div class='card text-center'>" +
+      "<div class='done-icon'>👋</div><h2>Fin de jornada</h2>" +
+      "<p class='card-desc'>Lanzadera " + sel.numero + " fuera de servicio.</p>" +
+      "<button class='btn-back' style='width:100%;margin-top:8px' onclick='nuevo()'>Nuevo registro</button>" +
+      "</div>";
+  }
 }
 
 function cabecera() {
@@ -128,26 +144,36 @@ function volver(desde) {
 
 function nuevo() { sel = { numero: paramL ? +paramL : null, nave: null, accion: null, muelle: null }; render(); }
 
-async function escribir(activa) {
-  await db.collection("lanzaderas").doc(String(sel.numero)).set({
+async function escribir(estado, activa) {
+  const datos = {
     numero:      sel.numero,
+    estado:      estado,
     nave:        sel.nave,
     accion:      sel.nave === "plaza" ? sel.accion : "presente",
     muelle:      sel.nave === "plaza" ? sel.muelle : null,
     activa:      activa,
     desde:       firebase.firestore.Timestamp.now(),
     actualizado: firebase.firestore.Timestamp.now()
-  });
+  };
+  await db.collection("lanzaderas").doc(String(sel.numero)).set(datos); // estado en vivo
+  await db.collection("lanzaderas_log").add(datos);                     // historico
 }
 
-async function registrar() {
-  try { await escribir(true); renderHecho(false); }
+async function registrar() { // llegada / actividad en una nave
+  try { await escribir("en_nave", true); renderHecho("en_nave"); }
   catch (e) { console.error(e); alert("No se pudo registrar. Reintenta."); }
 }
 
-async function salir() {
-  try { await escribir(false); renderHecho(true); }
+async function salir() { // sale hacia otra nave -> en transito
+  try { await escribir("transito", true); renderHecho("transito"); }
   catch (e) { console.error(e); alert("No se pudo registrar la salida. Reintenta."); }
 }
+
+async function finJornada() {
+  try { await escribir("transito", false); renderHecho("fuera"); }
+  catch (e) { console.error(e); alert("No se pudo registrar. Reintenta."); }
+}
+
+function irANaves() { sel.nave = null; sel.accion = null; sel.muelle = null; render(); }
 
 render();

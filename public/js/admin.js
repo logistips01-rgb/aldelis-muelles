@@ -167,14 +167,18 @@ const NAVES_PANEL = [
 const ACCION_LABEL = { cargando: "Cargando", descargando: "Descargando", presente: "Presente" };
 const ACCION_COLOR = { cargando: "#185FA5", descargando: "#1D9E75", presente: "#6B7280" };
 
+const NAVE_NOMBRE = {};
+NAVES_PANEL.forEach(n => { NAVE_NOMBRE[n.id] = n.nombre; });
+
 async function cargarLanzaderas() {
   const snap = await db.collection("lanzaderas").where("activa", "==", true).get();
   const activas = [];
   snap.forEach(d => activas.push(d.data()));
+  const enNave   = activas.filter(l => l.estado === "en_nave");
+  const transito = activas.filter(l => l.estado === "transito").sort((a, b) => a.numero - b.numero);
 
-  const grid = document.getElementById("naves-grid");
-  grid.innerHTML = NAVES_PANEL.map(nave => {
-    const aqui = activas.filter(l => l.nave === nave.id).sort((a, b) => a.numero - b.numero);
+  let html = NAVES_PANEL.map(nave => {
+    const aqui = enNave.filter(l => l.nave === nave.id).sort((a, b) => a.numero - b.numero);
     const cuerpo = aqui.length === 0
       ? "<div class='nave-vacia'>Sin lanzaderas</div>"
       : aqui.map(l => {
@@ -189,6 +193,21 @@ async function cargarLanzaderas() {
     return "<div class='nave-card'><div class='nave-titulo'>" + esc(nave.nombre) +
       " <span class='nave-count'>" + aqui.length + "</span></div>" + cuerpo + "</div>";
   }).join("");
+
+  // Tarjeta de lanzaderas en transito
+  const cuerpoT = transito.length === 0
+    ? "<div class='nave-vacia'>Ninguna en transito</div>"
+    : transito.map(l =>
+        "<div class='lanz-item'>" +
+        "<span class='lanz-num'>Lanzadera " + esc(l.numero) + "</span>" +
+        "<span class='lanz-tag' style='background:#F59E0B'>En transito</span>" +
+        "<span class='lanz-desde'>de " + esc(NAVE_NOMBRE[l.nave] || l.nave) + " · " + horaDesde(l.desde) + "</span>" +
+        "</div>"
+      ).join("");
+  html += "<div class='nave-card nave-transito'><div class='nave-titulo'>🚚 En transito" +
+    " <span class='nave-count'>" + transito.length + "</span></div>" + cuerpoT + "</div>";
+
+  document.getElementById("naves-grid").innerHTML = html;
 }
 
 function horaDesde(ts) {
