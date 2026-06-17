@@ -211,7 +211,7 @@ async function registrarTransito() {
 }
 
 async function finJornada() {
-  try { await escribir("transito", false); renderHecho("fuera"); }
+  try { await escribir("fuera", false); renderHecho("fuera"); }
   catch (e) { console.error(e); alert("No se pudo registrar. Reintenta."); }
 }
 

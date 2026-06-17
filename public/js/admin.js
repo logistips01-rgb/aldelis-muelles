@@ -100,6 +100,16 @@ function pintarRejilla(tableId, headerLabel, filas, franjas, celdaFn) {
     tbody += "</tr>";
   });
   table.innerHTML = thead + tbody + "</tbody>";
+  centrarFranjaActual(table);
+}
+
+// Desplaza la rejilla para centrar la columna de la hora actual
+function centrarFranjaActual(table) {
+  const cell = table.querySelector("th.franja-now");
+  if (!cell) return;
+  const scroller = table.closest(".grid-scroll");
+  if (!scroller || !scroller.clientWidth) return;
+  scroller.scrollLeft = cell.offsetLeft - scroller.clientWidth / 2 + cell.offsetWidth / 2;
 }
 
 // Duracion real de la descarga (en minutos) a partir de inicio/fin
@@ -265,12 +275,14 @@ async function cargarLanzaderas() {
   // Segmentos de presencia (en_nave) por lanzadera
   const byL = { 1: [], 2: [], 3: [], 4: [] };
   logs.forEach(l => { if (byL[l.numero]) byL[l.numero].push(l); });
-  const segs = [];   // presencia en nave
-  const trans = [];  // en transito
+  const segs = [];      // presencia en nave
+  const trans = [];     // en transito
+  const finMarks = [];  // fin de jornada (no ocupa, solo marca)
   Object.keys(byL).forEach(k => {
     const arr = byL[k].sort((a, b) => a.desde.toMillis() - b.desde.toMillis());
     for (let i = 0; i < arr.length; i++) {
       const startMin = (arr[i].desde.toMillis() - dayStart) / 60000;
+      if (arr[i].estado === "fuera") { finMarks.push({ numero: +k, atMin: startMin }); continue; }
       const nextMs = (i + 1 < arr.length) ? arr[i + 1].desde.toMillis() : (esHoy ? Date.now() : dayEnd);
       const endMin = (nextMs - dayStart) / 60000;
       if (arr[i].estado === "en_nave") segs.push({ numero: +k, nave: arr[i].nave, startMin, endMin });
@@ -280,20 +292,27 @@ async function cargarLanzaderas() {
 
   const filas = NAVES_PANEL.map(n => ({ id: n.id, label: n.nombre }));
   filas.push({ id: "_transito", label: "🚚 Transito" });
+  filas.push({ id: "_fin", label: "🏁 Fin jornada" });
 
   pintarRejilla("rejilla-lanz", "Nave", filas, FRANJAS_LANZ, (fila, f, now) => {
     const r = franjaRango(f);
+    if (fila.id === "_fin") {
+      const aqui = finMarks.filter(m => m.atMin >= r[0] && m.atMin < r[1]).map(m => m.numero);
+      if (!aqui.length) return "<td class='slot-td slot-libre" + now + "'></td>";
+      return "<td class='slot-td" + now + "' style='background:#D41F3A' title='Fin de jornada: " + aqui.join(", ") + "'>" +
+        "<div class='lanz-celda'>" + aqui.map(n => "L" + n).join(" ") + "</div></td>";
+    }
     if (fila.id === "_transito") {
       const aqui = trans.filter(s => s.startMin < r[1] && s.endMin > r[0]);
       if (!aqui.length) return "<td class='slot-td slot-libre" + now + "'></td>";
       const txt = aqui.map(s => "L" + s.numero + (s.destino ? "→" + (NAVE_NOMBRE[s.destino] || s.destino) : "")).join("  ");
       return "<td class='slot-td" + now + "' style='background:#F59E0B' title='" + esc(txt) + "'>" +
-        "<div class='slot-empresa'>" + esc(txt) + "</div></td>";
+        "<div class='lanz-celda-sm'>" + esc(txt) + "</div></td>";
     }
     const aqui = segs.filter(s => s.nave === fila.id && s.startMin < r[1] && s.endMin > r[0]).map(s => s.numero);
     if (!aqui.length) return "<td class='slot-td slot-libre" + now + "'></td>";
     return "<td class='slot-td" + now + "' style='background:#1D9E75;cursor:pointer' onclick='abrirNotaModal(" + aqui[0] + ")' title='Lanzaderas: " + aqui.join(", ") + " (clic para indicacion)'>" +
-      "<div class='slot-empresa'>" + aqui.map(n => "L" + n).join(" ") + "</div></td>";
+      "<div class='lanz-celda'>" + aqui.map(n => "L" + n).join(" ") + "</div></td>";
   });
 }
 
@@ -676,6 +695,7 @@ function renderSeccion(tableId, muelles, franjas, seccion, reservas) {
     tbody += "</tr>";
   });
   table.innerHTML = thead + tbody + "</tbody>";
+  centrarFranjaActual(table);
 }
 
 function renderLista(reservas) {
