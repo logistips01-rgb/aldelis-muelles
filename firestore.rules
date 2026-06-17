@@ -58,6 +58,7 @@ service cloud.firestore {
         && d.nave in ['caserfri','merca','arento','avitrans','txt','upasa','plaza']
         && d.accion in ['presente','cargando','descargando']
         && (d.muelle == null || (d.muelle is string && d.muelle.size() <= 10))
+        && (d.destino == null || d.destino in ['caserfri','merca','arento','avitrans','txt','upasa','plaza'])
         && d.activa is bool;
     }
 

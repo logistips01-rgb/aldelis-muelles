@@ -14,7 +14,7 @@ const MUELLES_DESCARGA = ["M6", "M7", "M8", "M9", "M10", "M18", "M19", "M20"];
 const NOMBRE_NAVE = {};
 NAVES.forEach(n => { NOMBRE_NAVE[n.id] = n.nombre; });
 
-let sel = { numero: null, nave: null, accion: null, muelle: null };
+let sel = { numero: null, nave: null, accion: null, muelle: null, destino: null };
 
 // Preseleccion de lanzadera por URL (?l=1)
 const paramL = new URLSearchParams(location.search).get("l");
@@ -110,7 +110,7 @@ function renderHecho(estado) {
     app.innerHTML =
       "<div class='card text-center'>" +
       "<div class='done-icon'>🚚</div><h2>En transito</h2>" +
-      "<p class='card-desc'>Lanzadera " + sel.numero + " ha salido de " + NOMBRE_NAVE[sel.nave] + ".</p>" +
+      "<p class='card-desc'>Lanzadera " + sel.numero + " en transito hacia <strong>" + (NOMBRE_NAVE[sel.destino] || "destino") + "</strong>.</p>" +
       "<button class='btn-primary' style='width:100%' onclick='irANaves()'>Registrar llegada a nave</button>" +
       "<button class='btn-back' style='width:100%;margin-top:8px' onclick='finJornada()'>Fin de jornada</button>" +
       "</div>";
@@ -143,7 +143,7 @@ function volver(desde) {
   render();
 }
 
-function nuevo() { sel = { numero: paramL ? +paramL : null, nave: null, accion: null, muelle: null }; render(); }
+function nuevo() { sel = { numero: paramL ? +paramL : null, nave: null, accion: null, muelle: null, destino: null }; render(); }
 
 async function escribir(estado, activa) {
   const datos = {
@@ -152,6 +152,7 @@ async function escribir(estado, activa) {
     nave:        sel.nave,
     accion:      sel.nave === "plaza" ? sel.accion : "presente",
     muelle:      sel.nave === "plaza" ? sel.muelle : null,
+    destino:     estado === "transito" ? (sel.destino || null) : null,
     activa:      activa,
     desde:       firebase.firestore.Timestamp.now(),
     actualizado: firebase.firestore.Timestamp.now()
@@ -165,7 +166,26 @@ async function registrar() { // llegada / actividad en una nave
   catch (e) { console.error(e); alert("No se pudo registrar. Reintenta."); }
 }
 
-async function salir() { // sale hacia otra nave -> en transito
+function salir() { renderDestino(); } // al salir, primero elige destino
+
+function renderDestino() {
+  app.innerHTML =
+    "<div class='card'>" + cabecera() +
+    "<h2>¿Hacia donde vas?</h2><p class='card-desc'>Selecciona tu destino.</p>" +
+    "<div class='temp-grid' style='grid-template-columns:1fr 1fr'>" +
+    NAVES.map(n =>
+      "<div class='temp-btn' onclick=\"elegirDestino('" + n.id + "')\">" +
+      "<div class='temp-icon'>" + (n.externa ? "🏭" : "🏠") + "</div>" +
+      "<div class='temp-name'>" + n.nombre + "</div></div>"
+    ).join("") +
+    "</div>" +
+    "<button class='btn-back' style='width:100%;margin-top:12px' onclick='render()'>&#8592; Atras</button>" +
+    "</div>";
+}
+
+function elegirDestino(id) { sel.destino = id; registrarTransito(); }
+
+async function registrarTransito() {
   try { await escribir("transito", true); renderHecho("transito"); }
   catch (e) { console.error(e); alert("No se pudo registrar la salida. Reintenta."); }
 }
@@ -175,6 +195,6 @@ async function finJornada() {
   catch (e) { console.error(e); alert("No se pudo registrar. Reintenta."); }
 }
 
-function irANaves() { sel.nave = null; sel.accion = null; sel.muelle = null; render(); }
+function irANaves() { sel.nave = sel.destino; sel.accion = null; sel.muelle = null; sel.destino = null; render(); }
 
 render();

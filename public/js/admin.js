@@ -206,6 +206,8 @@ const NAVES_PANEL = [
   { id: "txt",      nombre: "Txt" },
   { id: "upasa",    nombre: "Upasa" }
 ];
+const NAVE_NOMBRE = {};
+NAVES_PANEL.forEach(n => { NAVE_NOMBRE[n.id] = n.nombre; });
 const ACCION_LABEL = { cargando: "Cargando", descargando: "Descargando", presente: "Presente" };
 const ACCION_COLOR = { cargando: "#185FA5", descargando: "#1D9E75", presente: "#6B7280" };
 
@@ -231,7 +233,7 @@ async function cargarLanzaderas() {
       const nextMs = (i + 1 < arr.length) ? arr[i + 1].desde.toMillis() : (esHoy ? Date.now() : dayEnd);
       const endMin = (nextMs - dayStart) / 60000;
       if (arr[i].estado === "en_nave") segs.push({ numero: +k, nave: arr[i].nave, startMin, endMin });
-      else if (arr[i].estado === "transito") trans.push({ numero: +k, startMin, endMin });
+      else if (arr[i].estado === "transito") trans.push({ numero: +k, destino: arr[i].destino || null, startMin, endMin });
     }
   });
 
@@ -241,10 +243,11 @@ async function cargarLanzaderas() {
   pintarRejilla("rejilla-lanz", "Nave", filas, FRANJAS_LANZ, (fila, f, now) => {
     const r = franjaRango(f);
     if (fila.id === "_transito") {
-      const aqui = trans.filter(s => s.startMin < r[1] && s.endMin > r[0]).map(s => s.numero);
+      const aqui = trans.filter(s => s.startMin < r[1] && s.endMin > r[0]);
       if (!aqui.length) return "<td class='slot-td slot-libre" + now + "'></td>";
-      return "<td class='slot-td" + now + "' style='background:#F59E0B' title='En transito: " + aqui.join(", ") + "'>" +
-        "<div class='slot-empresa'>" + aqui.map(n => "L" + n).join(" ") + "</div></td>";
+      const txt = aqui.map(s => "L" + s.numero + (s.destino ? "→" + (NAVE_NOMBRE[s.destino] || s.destino) : "")).join("  ");
+      return "<td class='slot-td" + now + "' style='background:#F59E0B' title='" + esc(txt) + "'>" +
+        "<div class='slot-empresa'>" + esc(txt) + "</div></td>";
     }
     const aqui = segs.filter(s => s.nave === fila.id && s.startMin < r[1] && s.endMin > r[0]).map(s => s.numero);
     if (!aqui.length) return "<td class='slot-td slot-libre" + now + "'></td>";
