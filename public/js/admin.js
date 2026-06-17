@@ -73,6 +73,23 @@ function franjaEsAhora(franja) {
   return ahoraMin >= ini && ahoraMin < fin;
 }
 
+// Duracion real de la descarga (en minutos) a partir de inicio/fin
+function duracionMin(r) {
+  if (!r.inicio_descarga || !r.fin_descarga) return null;
+  const ini = r.inicio_descarga.toDate ? r.inicio_descarga.toDate() : new Date(r.inicio_descarga);
+  const fin = r.fin_descarga.toDate    ? r.fin_descarga.toDate()    : new Date(r.fin_descarga);
+  const min = Math.round((fin - ini) / 60000);
+  return min >= 0 ? min : null;
+}
+
+// Formato: "47 min" si <1h; "1 h 05 min" a partir de 1h
+function formatDuracion(min) {
+  if (min == null || isNaN(min)) return "—";
+  if (min < 60) return min + " min";
+  const h = Math.floor(min / 60), m = min % 60;
+  return m === 0 ? h + " h" : h + " h " + String(m).padStart(2, "0") + " min";
+}
+
 document.addEventListener("click", function(e) {
   const slot = e.target.closest("[data-id]");
   if (slot) {
@@ -202,7 +219,10 @@ function renderLista(reservas) {
 }
 
 async function cambiarEstado(id, nuevoEstado) {
-  try { await db.collection("reservas").doc(id).update({ estado: nuevoEstado }); cargarReservas(); }
+  const datos = { estado: nuevoEstado };
+  if (nuevoEstado === "en_curso")   datos.inicio_descarga = firebase.firestore.Timestamp.now();
+  if (nuevoEstado === "completada") datos.fin_descarga    = firebase.firestore.Timestamp.now();
+  try { await db.collection("reservas").doc(id).update(datos); cargarReservas(); }
   catch(err) { console.error(err); alert("Error al actualizar el estado."); }
 }
 
@@ -246,11 +266,12 @@ function renderBarras(items, total) {
 }
 
 function renderTablaCompleta(reservas) {
-  let html = "<div class='tabla-scroll'><table class='tabla-inf'><thead><tr><th>Fecha</th><th>Franja</th><th>Seccion</th><th>Empresa</th><th>Matricula</th><th>Mercancia</th><th>Pales</th><th>Muelle</th><th>Estado</th></tr></thead><tbody>";
+  let html = "<div class='tabla-scroll'><table class='tabla-inf'><thead><tr><th>Fecha</th><th>Franja</th><th>Seccion</th><th>Empresa</th><th>Matricula</th><th>Mercancia</th><th>Pales</th><th>Muelle</th><th>Duracion</th><th>Estado</th></tr></thead><tbody>";
   reservas.forEach(r => {
     html += "<tr><td>" + esc(r.fecha) + "</td><td>" + esc(r.franja) + "</td><td>" + esc(SEC_LABEL[r.seccion]||r.temperatura) + "</td>" +
       "<td>" + esc(r.empresa) + "</td><td>" + esc(r.matricula) + "</td><td>" + esc(r.mercancia||"—") + "</td>" +
       "<td>" + esc(r.pales||"—") + "</td><td>" + esc(r.muelle||"—") + "</td>" +
+      "<td>" + esc(formatDuracion(duracionMin(r))) + "</td>" +
       "<td><span class='estado-pill estado-" + esc(r.estado) + "'>" + esc(r.estado) + "</span></td></tr>";
   });
   return html + "</tbody></table></div>";
@@ -263,8 +284,8 @@ function exportarExcel() {
     "Empresa": r.empresa, "Matricula": r.matricula, "Conductor": r.conductor||"",
     "Email": r.email||"", "Temperatura": r.temperatura, "Mercancia": r.mercancia||"",
     "Pales": r.pales||"", "Peso kg": r.peso||"", "Observaciones": r.observaciones||"",
-    "Muelle": r.muelle||"", "Estado": r.estado, "Motivo": r.motivo||"",
-    "Nota almacen": r.nota_almacen||"", "Codigo": r.codigo
+    "Muelle": r.muelle||"", "Duracion": formatDuracion(duracionMin(r)), "Estado": r.estado,
+    "Motivo": r.motivo||"", "Nota almacen": r.nota_almacen||"", "Codigo": r.codigo
   }));
   const ws = XLSX.utils.json_to_sheet(filas);
   const wb = XLSX.utils.book_new();
@@ -355,8 +376,8 @@ async function accionReserva(accion) {
       (mensaje ? "\n" + mensaje : "") +
       "\n\nPuedes realizar una nueva reserva en:\nhttps://aldelis-muelles.web.app\n\nAldelis — Gestion de muelles";
   }
-  if (accion === "en-curso")  { datos = { estado: "en_curso" }; }
-  if (accion === "completar") { datos = { estado: "completada" }; }
+  if (accion === "en-curso")  { datos = { estado: "en_curso",  inicio_descarga: firebase.firestore.Timestamp.now() }; }
+  if (accion === "completar") { datos = { estado: "completada", fin_descarga:    firebase.firestore.Timestamp.now() }; }
 
   try {
     await db.collection("reservas").doc(reservaActual.id).update(datos);
