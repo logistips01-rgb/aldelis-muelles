@@ -64,13 +64,42 @@ let informeData = [];
 // Resaltado de la franja "en curso" (solo si el dia mostrado es hoy)
 let esHoy = false;
 let ahoraMin = 0;
+function franjaRango(franja) {
+  const p = franja.split(" - ");
+  const toMin = t => { const x = t.trim().split(":"); return (+x[0]) * 60 + (+x[1]); };
+  let a = toMin(p[0]);
+  let b = p[1] ? toMin(p[1]) : a + 30;
+  if (b === 0) b = 1440; // 00:00 como fin = medianoche
+  return [a, b];
+}
 function franjaEsAhora(franja) {
   if (!esHoy) return false;
-  const partes = franja.split(" - ");
-  const toMin = t => { const p = t.trim().split(":"); return (+p[0]) * 60 + (+p[1]); };
-  const ini = toMin(partes[0]);
-  const fin = partes[1] ? toMin(partes[1]) : ini + 30;
-  return ahoraMin >= ini && ahoraMin < fin;
+  const r = franjaRango(franja);
+  return ahoraMin >= r[0] && ahoraMin < r[1];
+}
+function generarFranjas(iniHora, finHora) { // finHora exclusivo (24 = medianoche)
+  const arr = [];
+  const fmt = x => String(Math.floor(x / 60) % 24).padStart(2, "0") + ":" + String(x % 60).padStart(2, "0");
+  for (let m = iniHora * 60; m < finHora * 60; m += 30) arr.push(fmt(m) + " - " + fmt(m + 30));
+  return arr;
+}
+const FRANJAS_CARGAS = generarFranjas(6, 24);
+const FRANJAS_LANZ   = generarFranjas(4, 24);
+
+// Pinta una rejilla generica (filas x franjas). celdaFn devuelve el <td>.
+function pintarRejilla(tableId, headerLabel, filas, franjas, celdaFn) {
+  const table = document.getElementById(tableId);
+  if (!table) return;
+  let thead = "<thead><tr><th class='muelle-th'>" + headerLabel + "</th>";
+  franjas.forEach(f => { thead += "<th class='franja-th" + (franjaEsAhora(f) ? " franja-now" : "") + "'>" + f.split(" - ")[0] + "</th>"; });
+  thead += "</tr></thead><tbody>";
+  let tbody = "";
+  filas.forEach(fila => {
+    tbody += "<tr><td class='muelle-td'>" + esc(fila.label) + "</td>";
+    franjas.forEach(f => { tbody += celdaFn(fila, f, franjaEsAhora(f) ? " col-now" : ""); });
+    tbody += "</tr>";
+  });
+  table.innerHTML = thead + tbody + "</tbody>";
 }
 
 // Duracion real de la descarga (en minutos) a partir de inicio/fin
@@ -162,6 +191,12 @@ function switchVista(vista) {
 
 const MUELLES_CARGA = ["M1", "M2", "M3", "M4", "M5"];
 
+function cambioFecha() {
+  cargarReservas();
+  if (document.getElementById("vista-cargas").style.display !== "none") cargarCargas();
+  if (document.getElementById("vista-lanzaderas").style.display !== "none") cargarLanzaderas();
+}
+
 const NAVES_PANEL = [
   { id: "plaza",    nombre: "Plaza" },
   { id: "caserfri", nombre: "Caserfri" },
@@ -173,47 +208,38 @@ const NAVES_PANEL = [
 const ACCION_LABEL = { cargando: "Cargando", descargando: "Descargando", presente: "Presente" };
 const ACCION_COLOR = { cargando: "#185FA5", descargando: "#1D9E75", presente: "#6B7280" };
 
-const NAVE_NOMBRE = {};
-NAVES_PANEL.forEach(n => { NAVE_NOMBRE[n.id] = n.nombre; });
-
 async function cargarLanzaderas() {
-  const snap = await db.collection("lanzaderas").where("activa", "==", true).get();
-  const activas = [];
-  snap.forEach(d => activas.push(d.data()));
-  const enNave   = activas.filter(l => l.estado === "en_nave");
-  const transito = activas.filter(l => l.estado === "transito").sort((a, b) => a.numero - b.numero);
+  const fecha = document.getElementById("fecha-dashboard").value;
+  const dayStart = new Date(fecha + "T00:00:00").getTime();
+  const dayEnd = dayStart + 24 * 3600 * 1000;
+  const snap = await db.collection("lanzaderas_log")
+    .where("desde", ">=", firebase.firestore.Timestamp.fromMillis(dayStart))
+    .where("desde", "<",  firebase.firestore.Timestamp.fromMillis(dayEnd)).get();
+  const logs = [];
+  snap.forEach(d => logs.push(d.data()));
 
-  let html = NAVES_PANEL.map(nave => {
-    const aqui = enNave.filter(l => l.nave === nave.id).sort((a, b) => a.numero - b.numero);
-    const cuerpo = aqui.length === 0
-      ? "<div class='nave-vacia'>Sin lanzaderas</div>"
-      : aqui.map(l => {
-          const color = ACCION_COLOR[l.accion] || "#6B7280";
-          const extra = l.muelle ? " · " + esc(l.muelle) : "";
-          return "<div class='lanz-item'>" +
-            "<span class='lanz-num'>Lanzadera " + esc(l.numero) + "</span>" +
-            "<span class='lanz-tag' style='background:" + color + "'>" + esc(ACCION_LABEL[l.accion] || l.accion) + extra + "</span>" +
-            "<span class='lanz-desde'>" + horaDesde(l.desde) + "</span>" +
-            "</div>";
-        }).join("");
-    return "<div class='nave-card'><div class='nave-titulo'>" + esc(nave.nombre) +
-      " <span class='nave-count'>" + aqui.length + "</span></div>" + cuerpo + "</div>";
-  }).join("");
+  // Segmentos de presencia (en_nave) por lanzadera
+  const byL = { 1: [], 2: [], 3: [], 4: [] };
+  logs.forEach(l => { if (byL[l.numero]) byL[l.numero].push(l); });
+  const segs = [];
+  Object.keys(byL).forEach(k => {
+    const arr = byL[k].sort((a, b) => a.desde.toMillis() - b.desde.toMillis());
+    for (let i = 0; i < arr.length; i++) {
+      if (arr[i].estado !== "en_nave") continue;
+      const startMin = (arr[i].desde.toMillis() - dayStart) / 60000;
+      const nextMs = (i + 1 < arr.length) ? arr[i + 1].desde.toMillis() : (esHoy ? Date.now() : dayEnd);
+      segs.push({ numero: +k, nave: arr[i].nave, startMin, endMin: (nextMs - dayStart) / 60000 });
+    }
+  });
 
-  // Tarjeta de lanzaderas en transito
-  const cuerpoT = transito.length === 0
-    ? "<div class='nave-vacia'>Ninguna en transito</div>"
-    : transito.map(l =>
-        "<div class='lanz-item'>" +
-        "<span class='lanz-num'>Lanzadera " + esc(l.numero) + "</span>" +
-        "<span class='lanz-tag' style='background:#F59E0B'>En transito</span>" +
-        "<span class='lanz-desde'>de " + esc(NAVE_NOMBRE[l.nave] || l.nave) + " · " + horaDesde(l.desde) + "</span>" +
-        "</div>"
-      ).join("");
-  html += "<div class='nave-card nave-transito'><div class='nave-titulo'>🚚 En transito" +
-    " <span class='nave-count'>" + transito.length + "</span></div>" + cuerpoT + "</div>";
-
-  document.getElementById("naves-grid").innerHTML = html;
+  const filas = NAVES_PANEL.map(n => ({ id: n.id, label: n.nombre }));
+  pintarRejilla("rejilla-lanz", "Nave", filas, FRANJAS_LANZ, (fila, f, now) => {
+    const r = franjaRango(f);
+    const aqui = segs.filter(s => s.nave === fila.id && s.startMin < r[1] && s.endMin > r[0]).map(s => s.numero);
+    if (!aqui.length) return "<td class='slot-td slot-libre" + now + "'></td>";
+    return "<td class='slot-td" + now + "' style='background:#1D9E75' title='Lanzaderas: " + aqui.join(", ") + "'>" +
+      "<div class='slot-empresa'>" + aqui.map(n => "L" + n).join(" ") + "</div></td>";
+  });
 }
 
 function horaDesde(ts) {
@@ -224,25 +250,37 @@ function horaDesde(ts) {
   return hhmm + " (" + (min < 1 ? "ahora" : "hace " + min + " min") + ")";
 }
 
-// ─── VISTA CARGAS (sistema propio, Muelles 1-5) ──────────────────────
-async function cargarCargas() {
-  const snap = await db.collection("cargas").where("estado", "==", "cargando").get();
-  const activas = [];
-  snap.forEach(d => activas.push({ id: d.id, ...d.data() }));
+// ─── VISTA CARGAS (rejilla Muelles 1-5 x franjas) ────────────────────
+function spanOcupa(iniTs, finTs, fa, fb, dayStart) {
+  if (!iniTs) return false;
+  const s = (iniTs.toMillis() - dayStart) / 60000;
+  const e = finTs ? (finTs.toMillis() - dayStart) / 60000 : (esHoy ? (Date.now() - dayStart) / 60000 : 1440);
+  return s < fb && e > fa;
+}
 
-  document.getElementById("cargas-grid").innerHTML = MUELLES_CARGA.map(m => {
-    const c = activas.find(x => x.muelle === m);
-    const cuerpo = c
-      ? "<div class='carga-info'>" +
-          "<div class='carga-mat'>" + esc(c.matricula_tractora) + (c.matricula_semi ? " / " + esc(c.matricula_semi) : "") + "</div>" +
-          "<div class='carga-sub'>" + esc(c.chofer || "—") + (c.dni ? " · " + esc(c.dni) : "") + "</div>" +
-          "<div class='carga-sub'>Destino: " + esc(c.destino || "—") + "</div>" +
-          "<div class='carga-sub'>" + horaDesde(c.inicio) + "</div>" +
-          "<button class='btn-accion btn-completar' style='margin-top:8px' onclick=\"completarCarga('" + c.id + "')\">Completar</button>" +
-        "</div>"
-      : "<div class='nave-vacia'>Libre</div>";
-    return "<div class='nave-card'><div class='nave-titulo'>Muelle " + m.replace("M", "") + "</div>" + cuerpo + "</div>";
-  }).join("");
+async function cargarCargas() {
+  const fecha = document.getElementById("fecha-dashboard").value;
+  const dayStart = new Date(fecha + "T00:00:00").getTime();
+  const dayEnd = dayStart + 24 * 3600 * 1000;
+  const snap = await db.collection("cargas")
+    .where("inicio", ">=", firebase.firestore.Timestamp.fromMillis(dayStart))
+    .where("inicio", "<",  firebase.firestore.Timestamp.fromMillis(dayEnd)).get();
+  const cargas = [];
+  snap.forEach(d => cargas.push({ id: d.id, ...d.data() }));
+
+  const filas = MUELLES_CARGA.map(m => ({ id: m, label: m }));
+  pintarRejilla("rejilla-cargas", "Muelle", filas, FRANJAS_CARGAS, (fila, f, now) => {
+    const r = franjaRango(f);
+    const c = cargas.find(x => x.muelle === fila.id && spanOcupa(x.inicio, x.fin, r[0], r[1], dayStart));
+    if (!c) return "<td class='slot-td slot-libre" + now + "'></td>";
+    const color = c.estado === "completada" ? "#6B7280" : "#185FA5";
+    const click = c.estado === "cargando" ? " onclick=\"completarCarga('" + c.id + "')\"" : "";
+    const cur = c.estado === "cargando" ? "cursor:pointer;" : "";
+    return "<td class='slot-td" + now + "' style='background:" + color + ";" + cur + "'" + click +
+      " title='" + esc(c.matricula_tractora + (c.destino ? " -> " + c.destino : "")) + "'>" +
+      "<div class='slot-empresa'>" + esc(c.matricula_tractora) + "</div>" +
+      "<div class='slot-estado'>" + esc(c.estado) + "</div></td>";
+  });
 }
 
 async function completarCarga(id) {
