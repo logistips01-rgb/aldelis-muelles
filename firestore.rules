@@ -27,6 +27,19 @@ service cloud.firestore {
       allow create: if validLanzadera();
     }
 
+    // Indicaciones para las lanzaderas (una doc por lanzadera). El conductor
+    // las lee al salir; el almacen las escribe; el conductor las limpia.
+    match /lanzaderas_nota/{id} {
+      allow read: if true;
+      allow create, update: if validNota();
+    }
+
+    function validNota() {
+      let d = request.resource.data;
+      return d.numero is number && d.numero >= 1 && d.numero <= 4
+        && d.nota is string && d.nota.size() <= 200;
+    }
+
     // Cargas (registro al momento en muelles de carga M1-M5).
     // Lectura solo almacen (incluye DNI). Crear: transportista o almacen.
     match /cargas/{id} {

@@ -14,6 +14,12 @@ const MUELLES_DESCARGA = ["M6", "M7", "M8", "M9", "M10", "M18", "M19", "M20"];
 const NOMBRE_NAVE = {};
 NAVES.forEach(n => { NOMBRE_NAVE[n.id] = n.nombre; });
 
+function escTexto(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+
 let sel = { numero: null, nave: null, accion: null, muelle: null, destino: null };
 
 // Preseleccion de lanzadera por URL (?l=1)
@@ -166,11 +172,19 @@ async function registrar() { // llegada / actividad en una nave
   catch (e) { console.error(e); alert("No se pudo registrar. Reintenta."); }
 }
 
-function salir() { renderDestino(); } // al salir, primero elige destino
+async function salir() { // al salir, muestra la indicacion (si hay) y elige destino
+  let nota = "";
+  try { const d = await db.collection("lanzaderas_nota").doc(String(sel.numero)).get(); if (d.exists) nota = d.data().nota || ""; }
+  catch (e) {}
+  renderDestino(nota);
+}
 
-function renderDestino() {
+function renderDestino(nota) {
+  const aviso = nota
+    ? "<div style='background:#FEF3C7;border:1px solid #FACC15;border-radius:8px;padding:10px 14px;font-size:14px;color:#92400E;margin-bottom:12px'>📌 Indicacion: " + escTexto(nota) + "</div>"
+    : "";
   app.innerHTML =
-    "<div class='card'>" + cabecera() +
+    "<div class='card'>" + cabecera() + aviso +
     "<h2>¿Hacia donde vas?</h2><p class='card-desc'>Selecciona tu destino.</p>" +
     "<div class='temp-grid' style='grid-template-columns:1fr 1fr'>" +
     NAVES.map(n =>
@@ -186,8 +200,12 @@ function renderDestino() {
 function elegirDestino(id) { sel.destino = id; registrarTransito(); }
 
 async function registrarTransito() {
-  try { await escribir("transito", true); renderHecho("transito"); }
-  catch (e) { console.error(e); alert("No se pudo registrar la salida. Reintenta."); }
+  try {
+    await escribir("transito", true);
+    // limpia la indicacion una vez vista y aplicada
+    try { await db.collection("lanzaderas_nota").doc(String(sel.numero)).set({ numero: sel.numero, nota: "", actualizado: firebase.firestore.Timestamp.now() }); } catch (e) {}
+    renderHecho("transito");
+  } catch (e) { console.error(e); alert("No se pudo registrar la salida. Reintenta."); }
 }
 
 async function finJornada() {

@@ -156,6 +156,7 @@ auth.onAuthStateChanged(user => {
     document.getElementById("cg-desde").value         = hoy;
     document.getElementById("cg-hasta").value         = hoy;
     cargarReservas();
+    aplicarRol(user);
     autoRefreshInterval = setInterval(() => {
       cargarReservas();
       if (document.getElementById("vista-lanzaderas").style.display !== "none") cargarLanzaderas();
@@ -180,6 +181,20 @@ function iniciarSesion() {
 function cerrarSesion() {
   if (autoRefreshInterval) clearInterval(autoRefreshInterval);
   auth.signOut();
+}
+
+// Usuarios que solo ven la vista de Lanzaderas (gerente de lanzaderas)
+const SOLO_LANZADERAS = ["transfriorza@transfriorza.es"];
+function aplicarRol(user) {
+  const soloLanz = SOLO_LANZADERAS.includes((user.email || "").toLowerCase());
+  if (!soloLanz) return;
+  ["rejilla", "lista", "informes", "cargas"].forEach(v => {
+    const b = document.getElementById("btn-vista-" + v);
+    if (b) b.style.display = "none";
+  });
+  const mr = document.querySelector(".metrics-row");
+  if (mr) mr.style.display = "none";
+  switchVista("lanzaderas");
 }
 
 function switchVista(vista) {
@@ -277,7 +292,7 @@ async function cargarLanzaderas() {
     }
     const aqui = segs.filter(s => s.nave === fila.id && s.startMin < r[1] && s.endMin > r[0]).map(s => s.numero);
     if (!aqui.length) return "<td class='slot-td slot-libre" + now + "'></td>";
-    return "<td class='slot-td" + now + "' style='background:#1D9E75' title='Lanzaderas: " + aqui.join(", ") + "'>" +
+    return "<td class='slot-td" + now + "' style='background:#1D9E75;cursor:pointer' onclick='abrirNotaModal(" + aqui[0] + ")' title='Lanzaderas: " + aqui.join(", ") + " (clic para indicacion)'>" +
       "<div class='slot-empresa'>" + aqui.map(n => "L" + n).join(" ") + "</div></td>";
   });
 }
@@ -373,6 +388,34 @@ async function registrarCargaAlmacen() {
     cerrarCargaModal();
     cargarCargas();
   } catch (e) { console.error(e); alert("Error al registrar la carga."); }
+}
+
+// ─── INDICACIONES A LANZADERAS ───────────────────────────────────────
+function abrirNotaModal(numero) {
+  const sel = document.getElementById("nota-lanz");
+  sel.innerHTML = [1, 2, 3, 4].map(n => "<option value='" + n + "'>Lanzadera " + n + "</option>").join("");
+  sel.value = String(numero || 1);
+  document.getElementById("nota-modal").style.display = "flex";
+  cargarNotaActual();
+}
+function cerrarNotaModal(e) {
+  if (!e || e.target.id === "nota-modal") document.getElementById("nota-modal").style.display = "none";
+}
+async function cargarNotaActual() {
+  const n = document.getElementById("nota-lanz").value;
+  try {
+    const doc = await db.collection("lanzaderas_nota").doc(n).get();
+    document.getElementById("nota-texto").value = doc.exists ? (doc.data().nota || "") : "";
+  } catch (e) { document.getElementById("nota-texto").value = ""; }
+}
+async function guardarNota() {
+  const n = +document.getElementById("nota-lanz").value;
+  const nota = document.getElementById("nota-texto").value.trim();
+  try {
+    await db.collection("lanzaderas_nota").doc(String(n)).set({ numero: n, nota: nota, actualizado: firebase.firestore.Timestamp.now() });
+    cerrarNotaModal();
+    alert("Indicacion guardada para Lanzadera " + n);
+  } catch (e) { console.error(e); alert("Error al guardar la indicacion."); }
 }
 
 // ─── INFORME DE LANZADERAS ───────────────────────────────────────────

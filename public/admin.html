@@ -128,7 +128,10 @@
     </div>
 
     <div id="vista-lanzaderas" class="reservas-wrap" style="display:none">
-      <div class="section-title">Ubicacion de lanzaderas por hora</div>
+      <div class="informe-header">
+        <div class="section-title" style="margin-bottom:0">Ubicacion de lanzaderas por hora</div>
+        <button class="btn-informe" onclick="abrirNotaModal()">Indicacion a lanzadera</button>
+      </div>
       <div class="grid-card"><div class="grid-scroll"><table class="rejilla-table" id="rejilla-lanz"></table></div></div>
 
       <div class="section-title" style="margin-top:24px">Informe de lanzaderas</div>
@@ -173,6 +176,20 @@
         <div class="field"><label>Destino</label><input type="text" id="cm-destino"></div>
         <div class="field"><label>Muelle de carga <span class="req">*</span></label><select id="cm-muelle"></select></div>
         <button class="btn-confirm" onclick="registrarCargaAlmacen()">Registrar carga</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="nota-modal" class="modal-overlay" style="display:none" onclick="cerrarNotaModal(event)">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title">Indicacion para lanzadera</div>
+        <button class="close-btn" onclick="cerrarNotaModal()">x</button>
+      </div>
+      <div class="modal-body">
+        <div class="field"><label>Lanzadera</label><select id="nota-lanz" onchange="cargarNotaActual()"></select></div>
+        <div class="field"><label>Indicacion <span class="opt">(se mostrara al conductor al salir)</span></label><input type="text" id="nota-texto" placeholder="Ej: ir a Upasa a cargar"></div>
+        <button class="btn-confirm" onclick="guardarNota()">Guardar indicacion</button>
       </div>
     </div>
   </div>
