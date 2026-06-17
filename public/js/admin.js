@@ -122,10 +122,13 @@ auth.onAuthStateChanged(user => {
     document.getElementById("fecha-dashboard").value = hoy;
     document.getElementById("informe-desde").value   = hoy;
     document.getElementById("informe-hasta").value   = hoy;
+    document.getElementById("lz-desde").value         = hoy;
+    document.getElementById("lz-hasta").value         = hoy;
     cargarReservas();
     autoRefreshInterval = setInterval(() => {
       cargarReservas();
       if (document.getElementById("vista-lanzaderas").style.display !== "none") cargarLanzaderas();
+      if (document.getElementById("vista-cargas").style.display !== "none")     cargarCargas();
     }, 60000);
   } else {
     document.getElementById("login-screen").style.display     = "flex";
@@ -149,12 +152,15 @@ function cerrarSesion() {
 }
 
 function switchVista(vista) {
-  ["rejilla", "lista", "informes", "lanzaderas"].forEach(v => {
+  ["rejilla", "lista", "informes", "lanzaderas", "cargas"].forEach(v => {
     document.getElementById("vista-" + v).style.display = vista === v ? "block" : "none";
     document.getElementById("btn-vista-" + v).classList.toggle("active", vista === v);
   });
   if (vista === "lanzaderas") cargarLanzaderas();
+  if (vista === "cargas")     cargarCargas();
 }
+
+const MUELLES_CARGA = ["M1", "M2", "M3", "M4", "M5"];
 
 const NAVES_PANEL = [
   { id: "plaza",    nombre: "Plaza" },
@@ -216,6 +222,86 @@ function horaDesde(ts) {
   const min = Math.round((Date.now() - d.getTime()) / 60000);
   const hhmm = d.getHours().toString().padStart(2, "0") + ":" + d.getMinutes().toString().padStart(2, "0");
   return hhmm + " (" + (min < 1 ? "ahora" : "hace " + min + " min") + ")";
+}
+
+// ─── VISTA CARGAS (Muelles 1-5 en Plaza) ─────────────────────────────
+async function cargarCargas() {
+  const snap = await db.collection("lanzaderas").where("activa", "==", true).get();
+  const cargando = [];
+  snap.forEach(d => { const l = d.data(); if (l.nave === "plaza" && l.accion === "cargando") cargando.push(l); });
+
+  document.getElementById("cargas-grid").innerHTML = MUELLES_CARGA.map(m => {
+    const l = cargando.find(x => x.muelle === m);
+    const cuerpo = l
+      ? "<div class='lanz-item'><span class='lanz-num'>Lanzadera " + esc(l.numero) + "</span>" +
+        "<span class='lanz-tag' style='background:#185FA5'>Cargando</span>" +
+        "<span class='lanz-desde'>" + horaDesde(l.desde) + "</span></div>"
+      : "<div class='nave-vacia'>Libre</div>";
+    return "<div class='nave-card'><div class='nave-titulo'>Muelle " + m.replace("M", "") + "</div>" + cuerpo + "</div>";
+  }).join("");
+}
+
+// ─── INFORME DE LANZADERAS ───────────────────────────────────────────
+function filaResumen(label, valor) {
+  return "<div class='resumen-row'><span class='resumen-label'>" + esc(label) +
+    "</span><span class='resumen-value'>" + esc(valor) + "</span></div>";
+}
+
+async function cargarInformeLanz() {
+  const desde = document.getElementById("lz-desde").value;
+  const hasta = document.getElementById("lz-hasta").value;
+  if (!desde || !hasta) { alert("Selecciona un rango de fechas."); return; }
+
+  const startTs = firebase.firestore.Timestamp.fromDate(new Date(desde + "T00:00:00"));
+  const endTs   = firebase.firestore.Timestamp.fromDate(new Date(hasta + "T23:59:59"));
+  const snap = await db.collection("lanzaderas_log")
+    .where("desde", ">=", startTs).where("desde", "<=", endTs).get();
+  const logs = [];
+  snap.forEach(d => logs.push(d.data()));
+
+  const cont = document.getElementById("lz-resultado");
+  if (!logs.length) { cont.innerHTML = "<div class='empty-state'>Sin movimientos en el periodo.</div>"; return; }
+
+  const porLanz = { 1: [], 2: [], 3: [], 4: [] };
+  logs.forEach(l => { if (porLanz[l.numero]) porLanz[l.numero].push(l); });
+
+  const naveT = {};                  // nave -> { sum, n }
+  let transSum = 0, transN = 0, viajes = 0;
+  Object.keys(porLanz).forEach(k => {
+    const arr = porLanz[k].sort((a, b) => a.desde.toMillis() - b.desde.toMillis());
+    for (let i = 0; i < arr.length; i++) {
+      const ev = arr[i];
+      if (ev.estado === "en_nave") viajes++;
+      const next = arr[i + 1];
+      if (!next) continue;
+      const dur = Math.round((next.desde.toMillis() - ev.desde.toMillis()) / 60000);
+      if (dur < 0) continue;
+      if (ev.estado === "en_nave") {
+        if (!naveT[ev.nave]) naveT[ev.nave] = { sum: 0, n: 0 };
+        naveT[ev.nave].sum += dur; naveT[ev.nave].n++;
+      } else if (ev.estado === "transito") { transSum += dur; transN++; }
+    }
+  });
+
+  const navesHtml = NAVES_PANEL.filter(n => naveT[n.id])
+    .map(n => filaResumen(n.nombre, formatDuracion(Math.round(naveT[n.id].sum / naveT[n.id].n))))
+    .join("") || "<div class='nave-vacia'>Sin datos</div>";
+
+  const lanzHtml = [1, 2, 3, 4].filter(n => porLanz[n].length)
+    .map(n => filaResumen("Lanzadera " + n, porLanz[n].filter(x => x.estado === "en_nave").length + " viajes"))
+    .join("") || "<div class='nave-vacia'>Sin datos</div>";
+
+  cont.innerHTML =
+    "<div class='informe-card'><div class='informe-card-title'>Resumen del periodo</div>" +
+    "<div class='rendimiento-row'>" +
+      "<div><div class='metric-value'>" + (transN ? formatDuracion(Math.round(transSum / transN)) : "—") + "</div><div class='metric-label'>Tiempo medio en transito</div></div>" +
+      "<div><div class='metric-value'>" + viajes + "</div><div class='metric-label'>Viajes (llegadas a nave)</div></div>" +
+      "<div><div class='metric-value'>" + logs.length + "</div><div class='metric-label'>Movimientos totales</div></div>" +
+    "</div></div>" +
+    "<div class='informe-grid' style='margin-top:12px'>" +
+      "<div class='informe-card'><div class='informe-card-title'>Tiempo medio por nave</div>" + navesHtml + "</div>" +
+      "<div class='informe-card'><div class='informe-card-title'>Actividad por lanzadera</div>" + lanzHtml + "</div>" +
+    "</div>";
 }
 
 async function cargarReservas() {
