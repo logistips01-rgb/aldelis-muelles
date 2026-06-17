@@ -123,7 +123,10 @@ auth.onAuthStateChanged(user => {
     document.getElementById("informe-desde").value   = hoy;
     document.getElementById("informe-hasta").value   = hoy;
     cargarReservas();
-    autoRefreshInterval = setInterval(cargarReservas, 60000);
+    autoRefreshInterval = setInterval(() => {
+      cargarReservas();
+      if (document.getElementById("vista-lanzaderas").style.display !== "none") cargarLanzaderas();
+    }, 60000);
   } else {
     document.getElementById("login-screen").style.display     = "flex";
     document.getElementById("dashboard-screen").style.display = "none";
@@ -146,10 +149,54 @@ function cerrarSesion() {
 }
 
 function switchVista(vista) {
-  ["rejilla", "lista", "informes"].forEach(v => {
+  ["rejilla", "lista", "informes", "lanzaderas"].forEach(v => {
     document.getElementById("vista-" + v).style.display = vista === v ? "block" : "none";
     document.getElementById("btn-vista-" + v).classList.toggle("active", vista === v);
   });
+  if (vista === "lanzaderas") cargarLanzaderas();
+}
+
+const NAVES_PANEL = [
+  { id: "plaza",    nombre: "Plaza" },
+  { id: "caserfri", nombre: "Caserfri" },
+  { id: "merca",    nombre: "Merca" },
+  { id: "arento",   nombre: "Arento" },
+  { id: "avitrans", nombre: "Avitrans" },
+  { id: "txt",      nombre: "Txt" }
+];
+const ACCION_LABEL = { cargando: "Cargando", descargando: "Descargando", presente: "Presente" };
+const ACCION_COLOR = { cargando: "#185FA5", descargando: "#1D9E75", presente: "#6B7280" };
+
+async function cargarLanzaderas() {
+  const snap = await db.collection("lanzaderas").where("activa", "==", true).get();
+  const activas = [];
+  snap.forEach(d => activas.push(d.data()));
+
+  const grid = document.getElementById("naves-grid");
+  grid.innerHTML = NAVES_PANEL.map(nave => {
+    const aqui = activas.filter(l => l.nave === nave.id).sort((a, b) => a.numero - b.numero);
+    const cuerpo = aqui.length === 0
+      ? "<div class='nave-vacia'>Sin lanzaderas</div>"
+      : aqui.map(l => {
+          const color = ACCION_COLOR[l.accion] || "#6B7280";
+          const extra = l.muelle ? " · " + esc(l.muelle) : "";
+          return "<div class='lanz-item'>" +
+            "<span class='lanz-num'>Lanzadera " + esc(l.numero) + "</span>" +
+            "<span class='lanz-tag' style='background:" + color + "'>" + esc(ACCION_LABEL[l.accion] || l.accion) + extra + "</span>" +
+            "<span class='lanz-desde'>" + horaDesde(l.desde) + "</span>" +
+            "</div>";
+        }).join("");
+    return "<div class='nave-card'><div class='nave-titulo'>" + esc(nave.nombre) +
+      " <span class='nave-count'>" + aqui.length + "</span></div>" + cuerpo + "</div>";
+  }).join("");
+}
+
+function horaDesde(ts) {
+  if (!ts) return "";
+  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  const min = Math.round((Date.now() - d.getTime()) / 60000);
+  const hhmm = d.getHours().toString().padStart(2, "0") + ":" + d.getMinutes().toString().padStart(2, "0");
+  return hhmm + " (" + (min < 1 ? "ahora" : "hace " + min + " min") + ")";
 }
 
 async function cargarReservas() {

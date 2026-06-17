@@ -335,3 +335,16 @@
 .tabla-inf tr:hover td { background: #F9F9F9; }
 
 .badge-lavadero { background: #F3E8FF; color: #6B21A8; }
+
+/* PANEL DE LANZADERAS */
+.naves-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.nave-card { background: #fff; border-radius: 10px; padding: 14px 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+.nave-titulo { font-size: 14px; font-weight: 600; color: #1A1A1A; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+.nave-count { font-size: 11px; font-weight: 600; color: #6B7280; background: #F0F0F0; border-radius: 20px; padding: 1px 8px; }
+.nave-vacia { font-size: 12px; color: #9CA3AF; padding: 6px 0; }
+.lanz-item { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 7px 0; border-top: 1px solid #F5F5F5; }
+.lanz-item:first-of-type { border-top: none; }
+.lanz-num { font-size: 13px; font-weight: 600; color: #1A1A1A; }
+.lanz-tag { font-size: 11px; font-weight: 500; color: #fff; padding: 2px 8px; border-radius: 20px; }
+.lanz-desde { font-size: 11px; color: #9CA3AF; margin-left: auto; }
+@media (max-width: 720px) { .naves-grid { grid-template-columns: 1fr; } }

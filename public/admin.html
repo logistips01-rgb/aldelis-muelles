@@ -31,6 +31,7 @@
         <button class="tab-view active" id="btn-vista-rejilla" onclick="switchVista('rejilla')">Rejilla</button>
         <button class="tab-view" id="btn-vista-lista" onclick="switchVista('lista')">Lista</button>
         <button class="tab-view" id="btn-vista-informes" onclick="switchVista('informes')">Informes</button>
+        <button class="tab-view" id="btn-vista-lanzaderas" onclick="switchVista('lanzaderas')">Lanzaderas</button>
         <input type="date" id="fecha-dashboard" onchange="cargarReservas()">
         <button class="btn-ghost" style="width:auto;padding:6px 14px;" onclick="cerrarSesion()">Cerrar sesion</button>
       </div>
@@ -123,6 +124,11 @@
         </div>
       </div>
       <div id="informe-empty" style="display:none" class="empty-state">No hay reservas en el periodo seleccionado.</div>
+    </div>
+
+    <div id="vista-lanzaderas" class="reservas-wrap" style="display:none">
+      <div class="section-title">Lanzaderas en tiempo real</div>
+      <div id="naves-grid" class="naves-grid"></div>
     </div>
   </div>
 
