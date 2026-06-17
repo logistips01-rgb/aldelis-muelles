@@ -319,6 +319,10 @@
 .informe-card-title { font-size: 13px; font-weight: 600; color: #1A1A1A; margin-bottom: 12px; }
 .rendimiento-row { display: flex; gap: 32px; flex-wrap: wrap; }
 .rendimiento-row .metric-value { font-size: 24px; }
+.heatmap { display: flex; flex-wrap: wrap; gap: 6px; }
+.heat-cell { width: 56px; padding: 8px 4px; border-radius: 6px; text-align: center; color: #fff; }
+.heat-hora { font-size: 11px; font-weight: 600; }
+.heat-num { font-size: 13px; font-weight: 700; margin-top: 2px; }
 .barra-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .barra-label { font-size: 11px; color: #374151; width: 130px; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .barra-wrap { flex: 1; background: #F0F0F0; border-radius: 3px; height: 10px; }

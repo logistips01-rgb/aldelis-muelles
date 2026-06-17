@@ -278,7 +278,22 @@ async function cargarInforme() {
   document.getElementById("tabla-empresas").innerHTML   = renderBarras(count("empresa").slice(0,8), informeData.length);
   document.getElementById("tabla-temperatura").innerHTML = renderBarras(count("seccion", SEC_LABEL), informeData.length);
   document.getElementById("tabla-muelles").innerHTML    = renderBarras(count("muelle").filter(x=>x[0]&&x[0]!=="null"), informeData.length);
+  document.getElementById("tabla-heatmap").innerHTML    = renderHeatmap(count("franja").sort((a,b)=>a[0].localeCompare(b[0])));
   document.getElementById("tabla-completa").innerHTML   = renderTablaCompleta(informeData);
+}
+
+// Mapa de calor: cada franja coloreada segun su demanda (verde -> rojo)
+function renderHeatmap(entries) {
+  if (!entries.length) return "<div class='empty-state' style='padding:16px'>Sin datos</div>";
+  const max = Math.max.apply(null, entries.map(e => e[1]));
+  return "<div class='heatmap'>" + entries.map(function(e) {
+    const franja = e[0], n = e[1];
+    const ratio = max > 0 ? n / max : 0;
+    const hue = Math.round(120 * (1 - ratio)); // 120 verde -> 0 rojo
+    return "<div class='heat-cell' style='background:hsl(" + hue + ",65%,45%)' title='" + esc(franja) + ": " + n + " reservas'>" +
+      "<div class='heat-hora'>" + esc(franja.split(" - ")[0]) + "</div>" +
+      "<div class='heat-num'>" + n + "</div></div>";
+  }).join("") + "</div>";
 }
 
 function renderBarras(items, total) {
