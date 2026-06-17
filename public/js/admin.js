@@ -158,7 +158,7 @@ auth.onAuthStateChanged(user => {
       cargarReservas();
       if (document.getElementById("vista-lanzaderas").style.display !== "none") cargarLanzaderas();
       if (document.getElementById("vista-cargas").style.display !== "none")     cargarCargas();
-    }, 60000);
+    }, 15000);
   } else {
     document.getElementById("login-screen").style.display     = "flex";
     document.getElementById("dashboard-screen").style.display = "none";
@@ -210,6 +210,30 @@ const NAVE_NOMBRE = {};
 NAVES_PANEL.forEach(n => { NAVE_NOMBRE[n.id] = n.nombre; });
 const ACCION_LABEL = { cargando: "Cargando", descargando: "Descargando", presente: "Presente" };
 const ACCION_COLOR = { cargando: "#185FA5", descargando: "#1D9E75", presente: "#6B7280" };
+
+// Tramos de lanzadera en Plaza (para superponer en parrillas de descarga/carga)
+async function lanzaderaSegmentos(dayStart, dayEnd, accionFiltro) {
+  const snap = await db.collection("lanzaderas_log")
+    .where("desde", ">=", firebase.firestore.Timestamp.fromMillis(dayStart))
+    .where("desde", "<",  firebase.firestore.Timestamp.fromMillis(dayEnd)).get();
+  const logs = [];
+  snap.forEach(d => logs.push(d.data()));
+  const byL = { 1: [], 2: [], 3: [], 4: [] };
+  logs.forEach(l => { if (byL[l.numero]) byL[l.numero].push(l); });
+  const segs = [];
+  Object.keys(byL).forEach(k => {
+    const arr = byL[k].sort((a, b) => a.desde.toMillis() - b.desde.toMillis());
+    for (let i = 0; i < arr.length; i++) {
+      const ev = arr[i];
+      if (ev.estado === "en_nave" && ev.nave === "plaza" && ev.accion === accionFiltro) {
+        const startMin = (ev.desde.toMillis() - dayStart) / 60000;
+        const nextMs = (i + 1 < arr.length) ? arr[i + 1].desde.toMillis() : (esHoy ? Date.now() : dayEnd);
+        segs.push({ numero: +k, muelle: ev.muelle, startMin, endMin: (nextMs - dayStart) / 60000 });
+      }
+    }
+  });
+  return segs;
+}
 
 async function cargarLanzaderas() {
   const fecha = document.getElementById("fecha-dashboard").value;
@@ -281,12 +305,21 @@ async function cargarCargas() {
     .where("inicio", "<",  firebase.firestore.Timestamp.fromMillis(dayEnd)).get();
   const cargas = [];
   snap.forEach(d => cargas.push({ id: d.id, ...d.data() }));
+  let lanzCarga = [];
+  try { lanzCarga = await lanzaderaSegmentos(dayStart, dayEnd, "cargando"); } catch (e) { lanzCarga = []; }
 
   const filas = MUELLES_CARGA.map(m => ({ id: m, label: m }));
   pintarRejilla("rejilla-cargas", "Muelle", filas, FRANJAS_CARGAS, (fila, f, now) => {
     const r = franjaRango(f);
     const c = cargas.find(x => x.muelle === fila.id && spanOcupa(x.inicio, x.fin, r[0], r[1], dayStart));
-    if (!c) return "<td class='slot-td slot-libre" + now + "'></td>";
+    if (!c) {
+      const lz = lanzCarga.find(s => s.muelle === fila.id && s.startMin < r[1] && s.endMin > r[0]);
+      if (lz) {
+        return "<td class='slot-td" + now + "' style='background:#7C3AED' title='Lanzadera " + lz.numero + " (carga)'>" +
+          "<div class='slot-empresa'>L" + lz.numero + "</div><div class='slot-estado'>lanzad.</div></td>";
+      }
+      return "<td class='slot-td slot-libre" + now + "'></td>";
+    }
     const color = c.estado === "completada" ? "#6B7280" : "#185FA5";
     const click = c.estado === "cargando" ? " onclick=\"completarCarga('" + c.id + "')\"" : "";
     const cur = c.estado === "cargando" ? "cursor:pointer;" : "";
@@ -422,6 +455,9 @@ async function cargarReservas() {
     ahora.getHours().toString().padStart(2,"0") + ":" + ahora.getMinutes().toString().padStart(2,"0");
 
   window._reservas = reservas;
+  const ds = new Date(fecha + "T00:00:00").getTime();
+  try { window._lanzDescarga = await lanzaderaSegmentos(ds, ds + 86400000, "descargando"); }
+  catch (e) { window._lanzDescarga = []; }
   renderRejilla(reservas);
   renderLista(reservas);
 }
@@ -456,7 +492,14 @@ function renderSeccion(tableId, muelles, franjas, seccion, reservas) {
         tbody += "<td class='slot-td slot-pendiente" + now + "' data-id='" + r.id + "' title='" + esc(r.empresa) + "'>" +
           "<div class='slot-empresa'>" + esc(r.empresa.split(" ")[0]) + "</div><div class='slot-estado'>pendiente</div></td>";
       } else {
-        tbody += "<td class='slot-td slot-libre" + now + "'></td>";
+        const fr = franjaRango(franja);
+        const lz = (window._lanzDescarga || []).find(s => s.muelle === muelle && s.startMin < fr[1] && s.endMin > fr[0]);
+        if (lz) {
+          tbody += "<td class='slot-td" + now + "' style='background:#7C3AED' title='Lanzadera " + lz.numero + " (descarga)'>" +
+            "<div class='slot-empresa'>L" + lz.numero + "</div><div class='slot-estado'>lanzad.</div></td>";
+        } else {
+          tbody += "<td class='slot-td slot-libre" + now + "'></td>";
+        }
       }
     });
     tbody += "</tr>";

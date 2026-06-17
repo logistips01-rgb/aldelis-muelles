@@ -195,6 +195,10 @@ async function finJornada() {
   catch (e) { console.error(e); alert("No se pudo registrar. Reintenta."); }
 }
 
-function irANaves() { sel.nave = sel.destino; sel.accion = null; sel.muelle = null; sel.destino = null; render(); }
+function irANaves() {
+  sel.nave = sel.destino; sel.accion = null; sel.muelle = null; sel.destino = null;
+  if (sel.nave && sel.nave !== "plaza") registrar(); // llegada directa a nave externa (cierra el transito)
+  else render();                                      // Plaza: elegir carga/descarga + muelle
+}
 
 render();
