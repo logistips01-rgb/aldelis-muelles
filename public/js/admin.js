@@ -153,6 +153,8 @@ auth.onAuthStateChanged(user => {
     document.getElementById("informe-hasta").value   = hoy;
     document.getElementById("lz-desde").value         = hoy;
     document.getElementById("lz-hasta").value         = hoy;
+    document.getElementById("cg-desde").value         = hoy;
+    document.getElementById("cg-hasta").value         = hoy;
     cargarReservas();
     autoRefreshInterval = setInterval(() => {
       cargarReservas();
@@ -434,6 +436,103 @@ async function cargarInformeLanz() {
       "<div class='informe-card'><div class='informe-card-title'>Tiempo medio por nave</div>" + navesHtml + "</div>" +
       "<div class='informe-card'><div class='informe-card-title'>Actividad por lanzadera</div>" + lanzHtml + "</div>" +
     "</div>";
+}
+
+// ─── Helpers de fecha/hora para exportar ─────────────────────────────
+function tsFecha(ts) {
+  if (!ts) return "";
+  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+}
+function tsHora(ts) {
+  if (!ts) return "";
+  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+}
+
+// ─── INFORME DE CARGAS ───────────────────────────────────────────────
+async function cargarInformeCargas() {
+  const desde = document.getElementById("cg-desde").value;
+  const hasta = document.getElementById("cg-hasta").value;
+  if (!desde || !hasta) { alert("Selecciona un rango de fechas."); return; }
+
+  const startTs = firebase.firestore.Timestamp.fromDate(new Date(desde + "T00:00:00"));
+  const endTs   = firebase.firestore.Timestamp.fromDate(new Date(hasta + "T23:59:59"));
+  const snap = await db.collection("cargas")
+    .where("inicio", ">=", startTs).where("inicio", "<=", endTs).get();
+  const cargas = [];
+  snap.forEach(d => cargas.push({ id: d.id, ...d.data() }));
+  window._cargasInforme = cargas;
+
+  const cont = document.getElementById("cg-resultado");
+  if (!cargas.length) { cont.innerHTML = "<div class='empty-state'>Sin cargas en el periodo.</div>"; return; }
+
+  const completadas = cargas.filter(c => c.fin);
+  const durs = completadas.map(c => Math.round((c.fin.toMillis() - c.inicio.toMillis()) / 60000)).filter(x => x >= 0);
+  const medio = durs.length ? Math.round(durs.reduce((a, b) => a + b, 0) / durs.length) : null;
+
+  const porHora = {};
+  cargas.forEach(c => { const h = (c.inicio.toDate ? c.inicio.toDate() : new Date(c.inicio)).getHours(); porHora[h] = (porHora[h] || 0) + 1; });
+  const horas = [];
+  for (let h = 6; h <= 23; h++) horas.push([String(h).padStart(2, "0") + ":00", porHora[h] || 0]);
+
+  cont.innerHTML =
+    "<div class='informe-card'><div class='informe-card-title'>Resumen del periodo</div><div class='rendimiento-row'>" +
+      "<div><div class='metric-value'>" + cargas.length + "</div><div class='metric-label'>Total cargas</div></div>" +
+      "<div><div class='metric-value'>" + (medio != null ? formatDuracion(medio) : "—") + "</div><div class='metric-label'>Tiempo medio de carga</div></div>" +
+      "<div><div class='metric-value'>" + completadas.length + "</div><div class='metric-label'>Completadas</div></div>" +
+    "</div></div>" +
+    "<div class='informe-card' style='margin-top:12px'><div class='informe-card-title'>Horas calientes (cargas por hora)</div>" + renderHeatmap(horas) + "</div>";
+}
+
+function exportarCargas() {
+  const cargas = window._cargasInforme || [];
+  if (!cargas.length) { alert("Primero consulta un periodo para exportar."); return; }
+  const filas = cargas.map(c => ({
+    "Fecha": tsFecha(c.inicio),
+    "Hora inicio": tsHora(c.inicio),
+    "Hora fin": c.fin ? tsHora(c.fin) : "",
+    "Duracion": c.fin ? formatDuracion(Math.round((c.fin.toMillis() - c.inicio.toMillis()) / 60000)) : "",
+    "Matricula tractora": c.matricula_tractora || "",
+    "Matricula semi": c.matricula_semi || "",
+    "Chofer": c.chofer || "",
+    "DNI": c.dni || "",
+    "Destino": c.destino || "",
+    "Muelle": c.muelle || "",
+    "Estado": c.estado || ""
+  }));
+  const ws = XLSX.utils.json_to_sheet(filas);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Cargas");
+  XLSX.writeFile(wb, "Aldelis_Cargas_" + document.getElementById("cg-desde").value + "_" + document.getElementById("cg-hasta").value + ".xlsx");
+}
+
+async function exportarLanzaderas() {
+  const desde = document.getElementById("lz-desde").value;
+  const hasta = document.getElementById("lz-hasta").value;
+  if (!desde || !hasta) { alert("Selecciona un rango de fechas."); return; }
+  const startTs = firebase.firestore.Timestamp.fromDate(new Date(desde + "T00:00:00"));
+  const endTs   = firebase.firestore.Timestamp.fromDate(new Date(hasta + "T23:59:59"));
+  const snap = await db.collection("lanzaderas_log")
+    .where("desde", ">=", startTs).where("desde", "<=", endTs).get();
+  const logs = [];
+  snap.forEach(d => logs.push(d.data()));
+  if (!logs.length) { alert("Sin movimientos en el periodo."); return; }
+  logs.sort((a, b) => a.desde.toMillis() - b.desde.toMillis());
+  const filas = logs.map(l => ({
+    "Fecha": tsFecha(l.desde),
+    "Hora": tsHora(l.desde),
+    "Lanzadera": l.numero,
+    "Estado": l.estado === "en_nave" ? "En nave" : "Transito",
+    "Nave": NAVE_NOMBRE[l.nave] || l.nave || "",
+    "Accion": l.accion || "",
+    "Muelle": l.muelle || "",
+    "Destino": l.destino ? (NAVE_NOMBRE[l.destino] || l.destino) : ""
+  }));
+  const ws = XLSX.utils.json_to_sheet(filas);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Lanzaderas");
+  XLSX.writeFile(wb, "Aldelis_Lanzaderas_" + desde + "_" + hasta + ".xlsx");
 }
 
 async function cargarReservas() {
