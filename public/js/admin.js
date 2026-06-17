@@ -539,7 +539,22 @@ async function cargarInformeCargas() {
       "<div><div class='metric-value'>" + (medio != null ? formatDuracion(medio) : "—") + "</div><div class='metric-label'>Tiempo medio de carga</div></div>" +
       "<div><div class='metric-value'>" + completadas.length + "</div><div class='metric-label'>Completadas</div></div>" +
     "</div></div>" +
-    "<div class='informe-card' style='margin-top:12px'><div class='informe-card-title'>Horas calientes (cargas por hora)</div>" + renderHeatmap(horas) + "</div>";
+    "<div class='informe-card' style='margin-top:12px'><div class='informe-card-title'>Horas calientes (cargas por hora)</div>" + renderHeatmap(horas) + "</div>" +
+    "<div class='informe-card' style='margin-top:12px'><div class='informe-card-title'>Listado de cargas del periodo</div>" + renderTablaCargas(cargas) + "</div>";
+}
+
+function renderTablaCargas(cargas) {
+  let html = "<div class='tabla-scroll'><table class='tabla-inf'><thead><tr>" +
+    "<th>Fecha</th><th>Inicio</th><th>Fin</th><th>Duracion</th><th>Tractora</th><th>Semi</th><th>Chofer</th><th>Destino</th><th>Muelle</th><th>Estado</th></tr></thead><tbody>";
+  cargas.slice().sort((a, b) => a.inicio.toMillis() - b.inicio.toMillis()).forEach(c => {
+    const dur = c.fin ? formatDuracion(Math.round((c.fin.toMillis() - c.inicio.toMillis()) / 60000)) : "—";
+    html += "<tr><td>" + esc(tsFecha(c.inicio)) + "</td><td>" + esc(tsHora(c.inicio)) + "</td>" +
+      "<td>" + esc(c.fin ? tsHora(c.fin) : "—") + "</td><td>" + esc(dur) + "</td>" +
+      "<td>" + esc(c.matricula_tractora || "") + "</td><td>" + esc(c.matricula_semi || "—") + "</td>" +
+      "<td>" + esc(c.chofer || "—") + "</td><td>" + esc(c.destino || "—") + "</td>" +
+      "<td>" + esc(c.muelle || "—") + "</td><td>" + esc(c.estado || "") + "</td></tr>";
+  });
+  return html + "</tbody></table></div>";
 }
 
 function exportarCargas() {
