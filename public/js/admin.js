@@ -224,21 +224,68 @@ function horaDesde(ts) {
   return hhmm + " (" + (min < 1 ? "ahora" : "hace " + min + " min") + ")";
 }
 
-// ─── VISTA CARGAS (Muelles 1-5 en Plaza) ─────────────────────────────
+// ─── VISTA CARGAS (sistema propio, Muelles 1-5) ──────────────────────
 async function cargarCargas() {
-  const snap = await db.collection("lanzaderas").where("activa", "==", true).get();
-  const cargando = [];
-  snap.forEach(d => { const l = d.data(); if (l.nave === "plaza" && l.accion === "cargando") cargando.push(l); });
+  const snap = await db.collection("cargas").where("estado", "==", "cargando").get();
+  const activas = [];
+  snap.forEach(d => activas.push({ id: d.id, ...d.data() }));
 
   document.getElementById("cargas-grid").innerHTML = MUELLES_CARGA.map(m => {
-    const l = cargando.find(x => x.muelle === m);
-    const cuerpo = l
-      ? "<div class='lanz-item'><span class='lanz-num'>Lanzadera " + esc(l.numero) + "</span>" +
-        "<span class='lanz-tag' style='background:#185FA5'>Cargando</span>" +
-        "<span class='lanz-desde'>" + horaDesde(l.desde) + "</span></div>"
+    const c = activas.find(x => x.muelle === m);
+    const cuerpo = c
+      ? "<div class='carga-info'>" +
+          "<div class='carga-mat'>" + esc(c.matricula_tractora) + (c.matricula_semi ? " / " + esc(c.matricula_semi) : "") + "</div>" +
+          "<div class='carga-sub'>" + esc(c.chofer || "—") + (c.dni ? " · " + esc(c.dni) : "") + "</div>" +
+          "<div class='carga-sub'>Destino: " + esc(c.destino || "—") + "</div>" +
+          "<div class='carga-sub'>" + horaDesde(c.inicio) + "</div>" +
+          "<button class='btn-accion btn-completar' style='margin-top:8px' onclick=\"completarCarga('" + c.id + "')\">Completar</button>" +
+        "</div>"
       : "<div class='nave-vacia'>Libre</div>";
     return "<div class='nave-card'><div class='nave-titulo'>Muelle " + m.replace("M", "") + "</div>" + cuerpo + "</div>";
   }).join("");
+}
+
+async function completarCarga(id) {
+  if (!confirm("¿Marcar esta carga como completada?")) return;
+  try {
+    await db.collection("cargas").doc(id).update({ estado: "completada", fin: firebase.firestore.Timestamp.now() });
+    cargarCargas();
+  } catch (e) { console.error(e); alert("Error al completar la carga."); }
+}
+
+function abrirCargaModal() {
+  document.getElementById("cm-muelle").innerHTML =
+    "<option value=''>Selecciona muelle</option>" +
+    MUELLES_CARGA.map(m => "<option value='" + m + "'>Muelle " + m.replace("M", "") + "</option>").join("");
+  ["cm-tractora", "cm-semi", "cm-chofer", "cm-dni", "cm-destino"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("carga-modal").style.display = "flex";
+}
+
+function cerrarCargaModal(e) {
+  if (!e || e.target.id === "carga-modal") document.getElementById("carga-modal").style.display = "none";
+}
+
+async function registrarCargaAlmacen() {
+  const tractora = document.getElementById("cm-tractora").value.trim().toUpperCase();
+  const muelle   = document.getElementById("cm-muelle").value;
+  if (!tractora) { alert("Falta la matricula tractora."); return; }
+  if (!muelle)   { alert("Selecciona el muelle."); return; }
+  try {
+    await db.collection("cargas").add({
+      matricula_tractora: tractora,
+      matricula_semi:     document.getElementById("cm-semi").value.trim().toUpperCase(),
+      chofer:             document.getElementById("cm-chofer").value.trim(),
+      dni:                document.getElementById("cm-dni").value.trim().toUpperCase(),
+      destino:            document.getElementById("cm-destino").value.trim(),
+      muelle:             muelle,
+      estado:             "cargando",
+      inicio:             firebase.firestore.Timestamp.now(),
+      fin:                null,
+      created_at:         firebase.firestore.Timestamp.now()
+    });
+    cerrarCargaModal();
+    cargarCargas();
+  } catch (e) { console.error(e); alert("Error al registrar la carga."); }
 }
 
 // ─── INFORME DE LANZADERAS ───────────────────────────────────────────

@@ -141,8 +141,29 @@
     </div>
 
     <div id="vista-cargas" class="reservas-wrap" style="display:none">
-      <div class="section-title">Cargas en Plaza — Muelles 1 a 5</div>
+      <div class="informe-header">
+        <div class="section-title" style="margin-bottom:0">Cargas en curso — Muelles 1 a 5</div>
+        <button class="btn-informe" onclick="abrirCargaModal()">+ Registrar carga</button>
+      </div>
       <div id="cargas-grid" class="naves-grid"></div>
+    </div>
+  </div>
+
+  <div id="carga-modal" class="modal-overlay" style="display:none" onclick="cerrarCargaModal(event)">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title">Registrar carga</div>
+        <button class="close-btn" onclick="cerrarCargaModal()">x</button>
+      </div>
+      <div class="modal-body">
+        <div class="field"><label>Matricula tractora <span class="req">*</span></label><input type="text" id="cm-tractora" style="text-transform:uppercase"></div>
+        <div class="field"><label>Matricula semirremolque</label><input type="text" id="cm-semi" style="text-transform:uppercase"></div>
+        <div class="field"><label>Chofer</label><input type="text" id="cm-chofer"></div>
+        <div class="field"><label>DNI</label><input type="text" id="cm-dni" style="text-transform:uppercase"></div>
+        <div class="field"><label>Destino</label><input type="text" id="cm-destino"></div>
+        <div class="field"><label>Muelle de carga <span class="req">*</span></label><select id="cm-muelle"></select></div>
+        <button class="btn-confirm" onclick="registrarCargaAlmacen()">Registrar carga</button>
+      </div>
     </div>
   </div>
 

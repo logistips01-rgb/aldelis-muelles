@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aldelis — Registro de carga</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div style="width:100%; max-width:480px; margin:0 auto;">
+    <div class="portal-header">
+      <div class="logo">Aldelis</div>
+      <div class="logo-sub">Registro de carga</div>
+    </div>
+
+    <div id="c-form" class="card">
+      <h2>Registrar carga</h2>
+      <p class="card-desc">Introduce los datos para registrar tu carga.</p>
+      <div class="field">
+        <label>Matricula tractora <span class="req">*</span></label>
+        <input type="text" id="c-tractora" placeholder="Ej: 1234 ABC" style="text-transform:uppercase">
+      </div>
+      <div class="field">
+        <label>Matricula semirremolque</label>
+        <input type="text" id="c-semi" placeholder="Ej: R-5678" style="text-transform:uppercase">
+      </div>
+      <div class="field">
+        <label>Chofer</label>
+        <input type="text" id="c-chofer" placeholder="Nombre y apellidos">
+      </div>
+      <div class="field">
+        <label>DNI</label>
+        <input type="text" id="c-dni" placeholder="Ej: 12345678A" style="text-transform:uppercase">
+      </div>
+      <div class="field">
+        <label>Destino</label>
+        <input type="text" id="c-destino" placeholder="Destino de la carga">
+      </div>
+      <div class="field">
+        <label>Muelle de carga <span class="req">*</span></label>
+        <select id="c-muelle"></select>
+      </div>
+      <button class="btn-primary" id="c-btn" onclick="registrarCarga()">Registrar carga</button>
+    </div>
+
+    <div id="c-hecho" class="card text-center" style="display:none">
+      <div class="done-icon">✓</div>
+      <h2>Carga registrada</h2>
+      <p class="card-desc">Tu carga ha quedado registrada en el muelle <strong id="c-hecho-muelle"></strong>.</p>
+      <button class="btn-back" style="width:100%;margin-top:8px" onclick="nuevaCarga()">Registrar otra carga</button>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-check-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script src="js/firebase-config-compat.js"></script>
+  <script src="js/carga.js"></script>
+</body>
+</html>

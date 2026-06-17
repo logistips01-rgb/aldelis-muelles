@@ -348,3 +348,8 @@
 .lanz-tag { font-size: 11px; font-weight: 500; color: #fff; padding: 2px 8px; border-radius: 20px; }
 .lanz-desde { font-size: 11px; color: #9CA3AF; margin-left: auto; }
 @media (max-width: 720px) { .naves-grid { grid-template-columns: 1fr; } }
+
+/* Tarjeta de carga */
+.carga-info { font-size: 13px; }
+.carga-mat { font-weight: 600; color: #1A1A1A; }
+.carga-sub { font-size: 12px; color: #6B7280; margin-top: 2px; }
