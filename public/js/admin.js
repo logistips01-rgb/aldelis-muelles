@@ -90,6 +90,19 @@ function formatDuracion(min) {
   return m === 0 ? h + " h" : h + " h " + String(m).padStart(2, "0") + " min";
 }
 
+// Ritmo de una descarga: minutos por palet (necesita duracion y palets)
+function ritmoPalet(r) {
+  const d = duracionMin(r);
+  if (d == null || !r.pales || r.pales <= 0) return null;
+  return d / r.pales;
+}
+
+// Formato del ritmo: "8,3 min/palet"
+function formatRitmo(v) {
+  if (v == null || isNaN(v)) return "—";
+  return (Math.round(v * 10) / 10).toString().replace(".", ",") + " min/palet";
+}
+
 document.addEventListener("click", function(e) {
   const slot = e.target.closest("[data-id]");
   if (slot) {
@@ -250,6 +263,16 @@ async function cargarInforme() {
   document.getElementById("inf-rechazadas").textContent   = informeData.filter(r => r.estado === "rechazada").length;
   document.getElementById("inf-empresas").textContent     = [...new Set(informeData.map(r => r.empresa))].length;
 
+  // Rendimiento de descarga (tiempo medio y ritmo min/palet)
+  const conDur = informeData.filter(r => duracionMin(r) != null);
+  const medio  = conDur.length ? Math.round(conDur.reduce((s, r) => s + duracionMin(r), 0) / conDur.length) : null;
+  const conPal = conDur.filter(r => r.pales > 0);
+  const totMin = conPal.reduce((s, r) => s + duracionMin(r), 0);
+  const totPal = conPal.reduce((s, r) => s + r.pales, 0);
+  document.getElementById("rend-medio").textContent    = formatDuracion(medio);
+  document.getElementById("rend-ritmo").textContent    = formatRitmo(totPal > 0 ? totMin / totPal : null);
+  document.getElementById("rend-muestras").textContent = conDur.length;
+
   const count = (key, label) => { const c = {}; informeData.forEach(r => { const k = label ? (label[r[key]] || r[key]) : r[key]; c[k] = (c[k]||0)+1; }); return Object.entries(c).sort((a,b)=>b[1]-a[1]); };
   document.getElementById("tabla-franjas").innerHTML    = renderBarras(count("franja").slice(0,8), informeData.length);
   document.getElementById("tabla-empresas").innerHTML   = renderBarras(count("empresa").slice(0,8), informeData.length);
@@ -266,12 +289,13 @@ function renderBarras(items, total) {
 }
 
 function renderTablaCompleta(reservas) {
-  let html = "<div class='tabla-scroll'><table class='tabla-inf'><thead><tr><th>Fecha</th><th>Franja</th><th>Seccion</th><th>Empresa</th><th>Matricula</th><th>Mercancia</th><th>Pales</th><th>Muelle</th><th>Duracion</th><th>Estado</th></tr></thead><tbody>";
+  let html = "<div class='tabla-scroll'><table class='tabla-inf'><thead><tr><th>Fecha</th><th>Franja</th><th>Seccion</th><th>Empresa</th><th>Matricula</th><th>Mercancia</th><th>Pales</th><th>Muelle</th><th>Duracion</th><th>Min/palet</th><th>Estado</th></tr></thead><tbody>";
   reservas.forEach(r => {
     html += "<tr><td>" + esc(r.fecha) + "</td><td>" + esc(r.franja) + "</td><td>" + esc(SEC_LABEL[r.seccion]||r.temperatura) + "</td>" +
       "<td>" + esc(r.empresa) + "</td><td>" + esc(r.matricula) + "</td><td>" + esc(r.mercancia||"—") + "</td>" +
       "<td>" + esc(r.pales||"—") + "</td><td>" + esc(r.muelle||"—") + "</td>" +
       "<td>" + esc(formatDuracion(duracionMin(r))) + "</td>" +
+      "<td>" + esc(formatRitmo(ritmoPalet(r))) + "</td>" +
       "<td><span class='estado-pill estado-" + esc(r.estado) + "'>" + esc(r.estado) + "</span></td></tr>";
   });
   return html + "</tbody></table></div>";
@@ -284,7 +308,8 @@ function exportarExcel() {
     "Empresa": r.empresa, "Matricula": r.matricula, "Conductor": r.conductor||"",
     "Email": r.email||"", "Temperatura": r.temperatura, "Mercancia": r.mercancia||"",
     "Pales": r.pales||"", "Peso kg": r.peso||"", "Observaciones": r.observaciones||"",
-    "Muelle": r.muelle||"", "Duracion": formatDuracion(duracionMin(r)), "Estado": r.estado,
+    "Muelle": r.muelle||"", "Duracion": formatDuracion(duracionMin(r)),
+    "Min/palet": formatRitmo(ritmoPalet(r)), "Estado": r.estado,
     "Motivo": r.motivo||"", "Nota almacen": r.nota_almacen||"", "Codigo": r.codigo
   }));
   const ws = XLSX.utils.json_to_sheet(filas);

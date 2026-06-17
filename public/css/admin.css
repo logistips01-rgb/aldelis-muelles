@@ -317,6 +317,8 @@
 .informe-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .informe-card { background: #fff; border-radius: 10px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
 .informe-card-title { font-size: 13px; font-weight: 600; color: #1A1A1A; margin-bottom: 12px; }
+.rendimiento-row { display: flex; gap: 32px; flex-wrap: wrap; }
+.rendimiento-row .metric-value { font-size: 24px; }
 .barra-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .barra-label { font-size: 11px; color: #374151; width: 130px; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .barra-wrap { flex: 1; background: #F0F0F0; border-radius: 3px; height: 10px; }
