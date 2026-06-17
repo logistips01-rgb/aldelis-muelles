@@ -130,7 +130,10 @@
     <div id="vista-lanzaderas" class="reservas-wrap" style="display:none">
       <div class="informe-header">
         <div class="section-title" style="margin-bottom:0">Ubicacion de lanzaderas por hora</div>
-        <button class="btn-informe" onclick="abrirNotaModal()">Indicacion a lanzadera</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn-informe" onclick="abrirNotaModal()">Indicacion a lanzadera</button>
+          <button class="btn-informe" style="background:#D41F3A" onclick="enviarUrgencia()">🚨 Urgencia a todas</button>
+        </div>
       </div>
       <div class="grid-card"><div class="grid-scroll"><table class="rejilla-table" id="rejilla-lanz"></table></div></div>
 

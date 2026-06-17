@@ -412,10 +412,24 @@ async function guardarNota() {
   const n = +document.getElementById("nota-lanz").value;
   const nota = document.getElementById("nota-texto").value.trim();
   try {
-    await db.collection("lanzaderas_nota").doc(String(n)).set({ numero: n, nota: nota, actualizado: firebase.firestore.Timestamp.now() });
+    await db.collection("lanzaderas_nota").doc(String(n)).set({ numero: n, nota: nota, urgente: false, actualizado: firebase.firestore.Timestamp.now() });
     cerrarNotaModal();
     alert("Indicacion guardada para Lanzadera " + n);
   } catch (e) { console.error(e); alert("Error al guardar la indicacion."); }
+}
+
+async function enviarUrgencia() {
+  const texto = prompt("Mensaje URGENTE para TODAS las lanzaderas:");
+  if (texto == null) return;
+  const t = texto.trim();
+  if (!t) return;
+  try {
+    const ts = firebase.firestore.Timestamp.now();
+    await Promise.all([1, 2, 3, 4].map(n =>
+      db.collection("lanzaderas_nota").doc(String(n)).set({ numero: n, nota: t, urgente: true, actualizado: ts })
+    ));
+    alert("Urgencia enviada a todas las lanzaderas.");
+  } catch (e) { console.error(e); alert("Error al enviar la urgencia."); }
 }
 
 // ─── INFORME DE LANZADERAS ───────────────────────────────────────────
