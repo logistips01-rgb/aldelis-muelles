@@ -6,6 +6,7 @@ const NAVES = [
   { id: "arento",   nombre: "Arento",   externa: true },
   { id: "avitrans", nombre: "Avitrans", externa: true },
   { id: "txt",      nombre: "Txt",      externa: true },
+  { id: "upasa",    nombre: "Upasa",    externa: true },
   { id: "plaza",    nombre: "Plaza",    externa: false }
 ];
 const MUELLES_CARGA    = ["M1", "M2", "M3", "M4", "M5"];

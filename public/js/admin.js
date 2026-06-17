@@ -203,7 +203,8 @@ const NAVES_PANEL = [
   { id: "merca",    nombre: "Merca" },
   { id: "arento",   nombre: "Arento" },
   { id: "avitrans", nombre: "Avitrans" },
-  { id: "txt",      nombre: "Txt" }
+  { id: "txt",      nombre: "Txt" },
+  { id: "upasa",    nombre: "Upasa" }
 ];
 const ACCION_LABEL = { cargando: "Cargando", descargando: "Descargando", presente: "Presente" };
 const ACCION_COLOR = { cargando: "#185FA5", descargando: "#1D9E75", presente: "#6B7280" };

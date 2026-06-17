@@ -55,7 +55,7 @@ service cloud.firestore {
       let d = request.resource.data;
       return d.numero is number && d.numero >= 1 && d.numero <= 4
         && d.estado in ['en_nave', 'transito']
-        && d.nave in ['caserfri','merca','arento','avitrans','txt','plaza']
+        && d.nave in ['caserfri','merca','arento','avitrans','txt','upasa','plaza']
         && d.accion in ['presente','cargando','descargando']
         && (d.muelle == null || (d.muelle is string && d.muelle.size() <= 10))
         && d.activa is bool;
