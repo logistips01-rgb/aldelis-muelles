@@ -222,20 +222,30 @@ async function cargarLanzaderas() {
   // Segmentos de presencia (en_nave) por lanzadera
   const byL = { 1: [], 2: [], 3: [], 4: [] };
   logs.forEach(l => { if (byL[l.numero]) byL[l.numero].push(l); });
-  const segs = [];
+  const segs = [];   // presencia en nave
+  const trans = [];  // en transito
   Object.keys(byL).forEach(k => {
     const arr = byL[k].sort((a, b) => a.desde.toMillis() - b.desde.toMillis());
     for (let i = 0; i < arr.length; i++) {
-      if (arr[i].estado !== "en_nave") continue;
       const startMin = (arr[i].desde.toMillis() - dayStart) / 60000;
       const nextMs = (i + 1 < arr.length) ? arr[i + 1].desde.toMillis() : (esHoy ? Date.now() : dayEnd);
-      segs.push({ numero: +k, nave: arr[i].nave, startMin, endMin: (nextMs - dayStart) / 60000 });
+      const endMin = (nextMs - dayStart) / 60000;
+      if (arr[i].estado === "en_nave") segs.push({ numero: +k, nave: arr[i].nave, startMin, endMin });
+      else if (arr[i].estado === "transito") trans.push({ numero: +k, startMin, endMin });
     }
   });
 
   const filas = NAVES_PANEL.map(n => ({ id: n.id, label: n.nombre }));
+  filas.push({ id: "_transito", label: "🚚 Transito" });
+
   pintarRejilla("rejilla-lanz", "Nave", filas, FRANJAS_LANZ, (fila, f, now) => {
     const r = franjaRango(f);
+    if (fila.id === "_transito") {
+      const aqui = trans.filter(s => s.startMin < r[1] && s.endMin > r[0]).map(s => s.numero);
+      if (!aqui.length) return "<td class='slot-td slot-libre" + now + "'></td>";
+      return "<td class='slot-td" + now + "' style='background:#F59E0B' title='En transito: " + aqui.join(", ") + "'>" +
+        "<div class='slot-empresa'>" + aqui.map(n => "L" + n).join(" ") + "</div></td>";
+    }
     const aqui = segs.filter(s => s.nave === fila.id && s.startMin < r[1] && s.endMin > r[0]).map(s => s.numero);
     if (!aqui.length) return "<td class='slot-td slot-libre" + now + "'></td>";
     return "<td class='slot-td" + now + "' style='background:#1D9E75' title='Lanzaderas: " + aqui.join(", ") + "'>" +
