@@ -87,7 +87,7 @@ const FRANJAS_CARGAS = generarFranjas(6, 24);
 const FRANJAS_LANZ   = generarFranjas(4, 24);
 
 // Linea de tiempo (Gantt) de lanzaderas: 04:00 -> 00:00
-const G_INI = 240, G_FIN = 1440, G_PXMIN = 2, G_W = (G_FIN - G_INI) * G_PXMIN, G_LABEL_W = 110;
+const G_INI = 240, G_FIN = 1440, G_PXMIN = 8, G_W = (G_FIN - G_INI) * G_PXMIN, G_LABEL_W = 110;
 
 // Pinta una rejilla generica (filas x franjas). celdaFn devuelve el <td>.
 function pintarRejilla(tableId, headerLabel, filas, franjas, celdaFn) {
@@ -308,7 +308,7 @@ function ganttBarra(startMin, endMin, color, label, onclick) {
   const a = Math.max(startMin, G_INI), b = Math.min(endMin, G_FIN);
   if (b <= a) return "";
   const left = (a - G_INI) * G_PXMIN;
-  const w = Math.max((b - a) * G_PXMIN, 8);
+  const w = Math.max((b - a) * G_PXMIN, 14);
   const estilo = "left:" + left + "px;width:" + w + "px;background:" + color + (onclick ? ";cursor:pointer" : "");
   const ev = onclick ? " onclick=\"" + onclick + "\"" : "";
   return "<div class='gantt-bar' style='" + estilo + "'" + ev + " title='" + esc(label) + "'>" +
