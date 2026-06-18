@@ -174,19 +174,62 @@ auth.onAuthStateChanged(user => {
     document.getElementById("lz-hasta").value         = hoy;
     document.getElementById("cg-desde").value         = hoy;
     document.getElementById("cg-hasta").value         = hoy;
-    cargarReservas();
+    iniciarListeners();
     aplicarRol(user);
+    // Reloj local (mueve la linea de "ahora" y refresca el render, SIN leer de la BD)
     autoRefreshInterval = setInterval(() => {
-      cargarReservas();
-      if (document.getElementById("vista-lanzaderas").style.display !== "none") cargarLanzaderas();
-      if (document.getElementById("vista-cargas").style.display !== "none")     cargarCargas();
-    }, 15000);
+      actualizarReloj();
+      cargarReservas(); cargarLanzaderas(); cargarCargas();
+    }, 60000);
   } else {
     document.getElementById("login-screen").style.display     = "flex";
     document.getElementById("dashboard-screen").style.display = "none";
     if (autoRefreshInterval) clearInterval(autoRefreshInterval);
+    pararListeners();
   }
 });
+
+let _unsubs = [];
+function pararListeners() { _unsubs.forEach(u => { try { u(); } catch (e) {} }); _unsubs = []; }
+
+function actualizarReloj() {
+  const fecha = document.getElementById("fecha-dashboard").value;
+  const ahora = new Date();
+  esHoy    = (fecha === ahora.toISOString().split("T")[0]);
+  ahoraMin = ahora.getHours() * 60 + ahora.getMinutes();
+  document.getElementById("last-refresh").textContent = "Actualizado a las " +
+    ahora.getHours().toString().padStart(2, "0") + ":" + ahora.getMinutes().toString().padStart(2, "0");
+}
+
+// Tiempo real: escucha cambios y solo cobra lecturas de lo que cambia
+function iniciarListeners() {
+  pararListeners();
+  actualizarReloj();
+  const fecha = document.getElementById("fecha-dashboard").value;
+  const dayStart = new Date(fecha + "T00:00:00").getTime();
+  const dayEnd = dayStart + 86400000;
+  const Ts = firebase.firestore.Timestamp;
+
+  _unsubs.push(db.collection("reservas").where("fecha", "==", fecha)
+    .onSnapshot(s => {
+      window._reservas = []; s.forEach(d => window._reservas.push({ id: d.id, ...d.data() }));
+      cargarReservas();
+    }, e => console.error("reservas:", e)));
+
+  _unsubs.push(db.collection("lanzaderas_log")
+    .where("desde", ">=", Ts.fromMillis(dayStart)).where("desde", "<", Ts.fromMillis(dayEnd))
+    .onSnapshot(s => {
+      window._logs = []; s.forEach(d => window._logs.push(d.data()));
+      cargarLanzaderas(); cargarReservas(); cargarCargas();
+    }, e => console.error("lanzaderas_log:", e)));
+
+  _unsubs.push(db.collection("cargas")
+    .where("inicio", ">=", Ts.fromMillis(dayStart)).where("inicio", "<", Ts.fromMillis(dayEnd))
+    .onSnapshot(s => {
+      window._cargas = []; s.forEach(d => window._cargas.push({ id: d.id, ...d.data() }));
+      cargarCargas();
+    }, e => console.error("cargas:", e)));
+}
 
 function iniciarSesion() {
   const email = document.getElementById("login-email").value.trim();
@@ -227,11 +270,7 @@ function switchVista(vista) {
 
 const MUELLES_CARGA = ["M1", "M2", "M3", "M4", "M5"];
 
-function cambioFecha() {
-  cargarReservas();
-  if (document.getElementById("vista-cargas").style.display !== "none") cargarCargas();
-  if (document.getElementById("vista-lanzaderas").style.display !== "none") cargarLanzaderas();
-}
+function cambioFecha() { iniciarListeners(); }
 
 const NAVES_PANEL = [
   { id: "plaza",    nombre: "Plaza" },
@@ -248,12 +287,8 @@ const ACCION_LABEL = { cargando: "Cargando", descargando: "Descargando", present
 const ACCION_COLOR = { cargando: "#185FA5", descargando: "#1D9E75", presente: "#6B7280" };
 
 // Tramos de lanzadera en Plaza (para superponer en parrillas de descarga/carga)
-async function lanzaderaSegmentos(dayStart, dayEnd, accionFiltro) {
-  const snap = await db.collection("lanzaderas_log")
-    .where("desde", ">=", firebase.firestore.Timestamp.fromMillis(dayStart))
-    .where("desde", "<",  firebase.firestore.Timestamp.fromMillis(dayEnd)).get();
-  const logs = [];
-  snap.forEach(d => logs.push(d.data()));
+function lanzaderaSegmentos(dayStart, dayEnd, accionFiltro) {
+  const logs = window._logs || [];
   const byL = { 1: [], 2: [], 3: [], 4: [] };
   logs.forEach(l => { if (byL[l.numero]) byL[l.numero].push(l); });
   const segs = [];
@@ -271,15 +306,11 @@ async function lanzaderaSegmentos(dayStart, dayEnd, accionFiltro) {
   return segs;
 }
 
-async function cargarLanzaderas() {
+function cargarLanzaderas() {
   const fecha = document.getElementById("fecha-dashboard").value;
   const dayStart = new Date(fecha + "T00:00:00").getTime();
   const dayEnd = dayStart + 24 * 3600 * 1000;
-  const snap = await db.collection("lanzaderas_log")
-    .where("desde", ">=", firebase.firestore.Timestamp.fromMillis(dayStart))
-    .where("desde", "<",  firebase.firestore.Timestamp.fromMillis(dayEnd)).get();
-  const logs = [];
-  snap.forEach(d => logs.push(d.data()));
+  const logs = window._logs || [];
 
   // Segmentos de presencia (en_nave) por lanzadera
   const byL = { 1: [], 2: [], 3: [], 4: [] };
@@ -413,17 +444,12 @@ function spanOcupa(iniTs, finTs, fa, fb, dayStart) {
   return s < fb && e > fa;
 }
 
-async function cargarCargas() {
+function cargarCargas() {
   const fecha = document.getElementById("fecha-dashboard").value;
   const dayStart = new Date(fecha + "T00:00:00").getTime();
   const dayEnd = dayStart + 24 * 3600 * 1000;
-  const snap = await db.collection("cargas")
-    .where("inicio", ">=", firebase.firestore.Timestamp.fromMillis(dayStart))
-    .where("inicio", "<",  firebase.firestore.Timestamp.fromMillis(dayEnd)).get();
-  const cargas = [];
-  snap.forEach(d => cargas.push({ id: d.id, ...d.data() }));
-  let lanzCarga = [];
-  try { lanzCarga = await lanzaderaSegmentos(dayStart, dayEnd, "cargando"); } catch (e) { lanzCarga = []; }
+  const cargas = window._cargas || [];
+  const lanzCarga = lanzaderaSegmentos(dayStart, dayEnd, "cargando");
 
   const filas = MUELLES_CARGA.map(m => ({ id: m, label: m }));
   pintarRejilla("rejilla-cargas", "Muelle", filas, FRANJAS_CARGAS, (fila, f, now) => {
@@ -707,28 +733,17 @@ async function exportarLanzaderas() {
   XLSX.writeFile(wb, "Aldelis_Lanzaderas_" + desde + "_" + hasta + ".xlsx");
 }
 
-async function cargarReservas() {
+function cargarReservas() {
   const fecha = document.getElementById("fecha-dashboard").value;
-  const snap  = await db.collection("reservas").where("fecha", "==", fecha).get();
-  const reservas = [];
-  snap.forEach(d => reservas.push({ id: d.id, ...d.data() }));
-  reservas.sort((a, b) => a.franja.localeCompare(b.franja));
+  const reservas = (window._reservas || []).slice().sort((a, b) => a.franja.localeCompare(b.franja));
 
   document.getElementById("m-total").textContent      = reservas.length;
   document.getElementById("m-pendientes").textContent  = reservas.filter(r => r.estado === "pendiente").length;
   document.getElementById("m-confirmadas").textContent = reservas.filter(r => r.estado === "confirmada").length;
   document.getElementById("m-curso").textContent       = reservas.filter(r => r.estado === "en_curso").length;
 
-  const ahora = new Date();
-  esHoy    = (fecha === ahora.toISOString().split("T")[0]);
-  ahoraMin = ahora.getHours() * 60 + ahora.getMinutes();
-  document.getElementById("last-refresh").textContent = "Actualizado a las " +
-    ahora.getHours().toString().padStart(2,"0") + ":" + ahora.getMinutes().toString().padStart(2,"0");
-
-  window._reservas = reservas;
   const ds = new Date(fecha + "T00:00:00").getTime();
-  try { window._lanzDescarga = await lanzaderaSegmentos(ds, ds + 86400000, "descargando"); }
-  catch (e) { window._lanzDescarga = []; }
+  window._lanzDescarga = lanzaderaSegmentos(ds, ds + 86400000, "descargando");
   renderRejilla(reservas);
   renderLista(reservas);
 }
