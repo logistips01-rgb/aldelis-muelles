@@ -61,6 +61,21 @@ let reservaActual = null;
 let autoRefreshInterval = null;
 let informeData = [];
 
+// Version de la app. SUBIR este numero al publicar cambios importantes:
+// las pestanas abiertas se recargaran solas para coger la version nueva.
+const APP_VERSION = 2;
+function vigilarVersion() {
+  db.collection("config").doc("app").onSnapshot(d => {
+    const v = d.exists ? (d.data().version || 0) : 0;
+    if (v > APP_VERSION) {
+      location.reload();
+    } else if (v < APP_VERSION) {
+      // Este cliente es el mas nuevo: publica su version para que los demas se actualicen.
+      db.collection("config").doc("app").set({ version: APP_VERSION }, { merge: true }).catch(() => {});
+    }
+  }, e => {});
+}
+
 // Resaltado de la franja "en curso" (solo si el dia mostrado es hoy)
 let esHoy = false;
 let ahoraMin = 0;
@@ -175,6 +190,7 @@ auth.onAuthStateChanged(user => {
     document.getElementById("cg-desde").value         = hoy;
     document.getElementById("cg-hasta").value         = hoy;
     iniciarListeners();
+    vigilarVersion();
     aplicarRol(user);
     // Reloj local (mueve la linea de "ahora" y refresca el render, SIN leer de la BD)
     autoRefreshInterval = setInterval(() => {
