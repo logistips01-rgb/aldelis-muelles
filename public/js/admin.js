@@ -156,6 +156,12 @@ document.addEventListener("click", function(e) {
   }
 });
 
+// Clic en una barra del Gantt -> muestra sus datos
+document.addEventListener("click", function(e) {
+  const bar = e.target.closest("[data-info]");
+  if (bar) alert(bar.getAttribute("data-info"));
+});
+
 auth.onAuthStateChanged(user => {
   if (user) {
     document.getElementById("login-screen").style.display     = "none";
@@ -297,6 +303,11 @@ async function cargarLanzaderas() {
 }
 
 // ─── LINEA DE TIEMPO (GANTT) DE LANZADERAS ───────────────────────────
+function minToHHMM(min) {
+  const h = Math.floor(min / 60) % 24, m = Math.round(min) % 60;
+  return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0");
+}
+
 function ganttNow() {
   if (!esHoy) return "";
   const nl = (ahoraMin - G_INI) * G_PXMIN;
@@ -304,14 +315,12 @@ function ganttNow() {
   return "<div class='gantt-now' style='left:" + nl + "px'></div>";
 }
 
-function ganttBarra(startMin, endMin, color, label, onclick) {
+function ganttBarra(startMin, endMin, color, label, info) {
   const a = Math.max(startMin, G_INI), b = Math.min(endMin, G_FIN);
   if (b <= a) return "";
   const left = (a - G_INI) * G_PXMIN;
   const w = Math.max((b - a) * G_PXMIN, 14);
-  const estilo = "left:" + left + "px;width:" + w + "px;background:" + color + (onclick ? ";cursor:pointer" : "");
-  const ev = onclick ? " onclick=\"" + onclick + "\"" : "";
-  return "<div class='gantt-bar' style='" + estilo + "'" + ev + " title='" + esc(label) + "'>" +
+  return "<div class='gantt-bar' style='left:" + left + "px;width:" + w + "px;background:" + color + "' data-info='" + esc(info) + "' title='" + esc(info) + "'>" +
     "<span class='gantt-bar-txt'>" + esc(label) + "</span></div>";
 }
 
@@ -319,37 +328,73 @@ function renderGanttLanz(segs, trans, finMarks) {
   const cont = document.getElementById("gantt-lanz");
   if (!cont) return;
 
-  let head = "<div class='gantt-row gantt-head'><div class='gantt-label'>Hora</div><div class='gantt-track' style='width:" + G_W + "px'>";
+  let head = "<div class='gantt-track gantt-head-track' style='width:" + G_W + "px'>";
   for (let h = 4; h <= 24; h++) {
     const left = (h * 60 - G_INI) * G_PXMIN;
     head += "<div class='gantt-tick' style='left:" + left + "px'>" + String(h % 24).padStart(2, "0") + ":00</div>";
   }
-  head += ganttNow() + "</div></div>";
+  head += ganttNow() + "</div>";
 
-  let rows = "";
+  let tracks = "";
+  let labels = "<div class='gantt-lab gantt-lab-head'>Hora</div>";
   for (let n = 1; n <= 4; n++) {
+    labels += "<div class='gantt-lab'>Lanzadera " + n + "</div>";
     let bars = "";
     segs.filter(s => s.numero === n).forEach(s => {
       let lbl = NAVE_NOMBRE[s.nave] || s.nave;
       if (s.nave === "plaza" && s.muelle) lbl += " " + (s.accion === "cargando" ? "⬆" : "⬇") + s.muelle;
-      bars += ganttBarra(s.startMin, s.endMin, "#1D9E75", lbl, "abrirNotaModal(" + n + ")");
+      const info = "Lanzadera " + n + " · " + lbl + "\nDe " + minToHHMM(s.startMin) + " a " + minToHHMM(s.endMin);
+      bars += ganttBarra(s.startMin, s.endMin, "#1D9E75", lbl, info);
     });
     trans.filter(s => s.numero === n).forEach(s => {
-      bars += ganttBarra(s.startMin, s.endMin, "#F59E0B", "→ " + (NAVE_NOMBRE[s.destino] || s.destino || "?"), "");
+      const dest = NAVE_NOMBRE[s.destino] || s.destino || "?";
+      const info = "Lanzadera " + n + " · en transito → " + dest + "\nDe " + minToHHMM(s.startMin) + " a " + minToHHMM(s.endMin);
+      bars += ganttBarra(s.startMin, s.endMin, "#F59E0B", "→ " + dest, info);
     });
     finMarks.filter(m => m.numero === n).forEach(m => {
       const left = (m.atMin - G_INI) * G_PXMIN;
-      if (left >= 0 && left <= G_W) bars += "<div class='gantt-fin' style='left:" + left + "px' title='Fin de jornada'></div>";
+      if (left >= 0 && left <= G_W) bars += "<div class='gantt-fin' style='left:" + left + "px' title='Fin de jornada " + minToHHMM(m.atMin) + "' data-info='Lanzadera " + n + " · fin de jornada " + minToHHMM(m.atMin) + "'></div>";
     });
-    rows += "<div class='gantt-row'><div class='gantt-label'>Lanzadera " + n + "</div>" +
-      "<div class='gantt-track' style='width:" + G_W + "px'>" + bars + ganttNow() + "</div></div>";
+    tracks += "<div class='gantt-track' style='width:" + G_W + "px'>" + bars + ganttNow() + "</div>";
   }
-  cont.innerHTML = head + rows;
+
+  cont.innerHTML =
+    "<div class='gantt-wrap'>" +
+      "<div class='gantt-labels'>" + labels + "</div>" +
+      "<div class='gantt-scroll2'>" + head + tracks + "</div>" +
+    "</div>" +
+    "<div class='gantt-resumen'>" + resumenEstado(segs, trans, finMarks) + "</div>";
 
   if (esHoy) {
+    const sc = cont.querySelector(".gantt-scroll2");
     const nl = (ahoraMin - G_INI) * G_PXMIN;
-    if (nl >= 0) cont.scrollLeft = Math.max(0, G_LABEL_W + nl - cont.clientWidth / 2);
+    if (sc && nl >= 0) sc.scrollLeft = Math.max(0, nl - sc.clientWidth / 2);
   }
+}
+
+function resumenEstado(segs, trans, finMarks) {
+  let html = "<div class='gantt-res-tit'>Estado actual</div><div class='gantt-res-grid'>";
+  for (let n = 1; n <= 4; n++) {
+    let best = null;
+    segs.filter(s => s.numero === n).forEach(s => {
+      if (!best || s.startMin > best.start) {
+        let t = NAVE_NOMBRE[s.nave] || s.nave;
+        if (s.nave === "plaza" && s.muelle) t += " " + (s.accion === "cargando" ? "⬆" : "⬇") + s.muelle;
+        best = { start: s.startMin, txt: "en " + t, color: "#1D9E75" };
+      }
+    });
+    trans.filter(s => s.numero === n).forEach(s => {
+      if (!best || s.startMin > best.start) best = { start: s.startMin, txt: "en transito → " + (NAVE_NOMBRE[s.destino] || s.destino || "?"), color: "#F59E0B" };
+    });
+    finMarks.filter(m => m.numero === n).forEach(m => {
+      if (!best || m.atMin > best.start) best = { start: m.atMin, txt: "fin de jornada", color: "#D41F3A" };
+    });
+    const cuerpo = best
+      ? "<span style='color:" + best.color + ";font-weight:600'>" + esc(best.txt) + "</span> <span class='gantt-res-desde'>desde " + minToHHMM(best.start) + "</span>"
+      : "<span class='gantt-res-desde'>sin actividad hoy</span>";
+    html += "<div class='gantt-res-item'><span class='gantt-res-n'>Lanzadera " + n + "</span> " + cuerpo + "</div>";
+  }
+  return html + "</div>";
 }
 
 function horaDesde(ts) {
