@@ -29,6 +29,7 @@ if (paramL && +paramL >= 1 && +paramL <= 4) sel.numero = +paramL;
 const app = document.getElementById("app");
 
 function render() {
+  ensureChatLanz();
   if (!sel.numero) return renderLanzaderas();
   if (!sel.nave)   return renderNaves();
   if (sel.nave === "plaza" && !sel.accion) return renderAccion();
@@ -219,6 +220,72 @@ function irANaves() {
   sel.nave = sel.destino; sel.accion = null; sel.muelle = null; sel.destino = null;
   if (sel.nave && sel.nave !== "plaza") registrar(); // llegada directa a nave externa (cierra el transito)
   else render();                                      // Plaza: elegir carga/descarga + muelle
+}
+
+// ─── CHAT con el almacen ─────────────────────────────────────────────
+let _chatUnsub = null, _chatMsgs = [], _chatNum = null;
+
+function ensureChatLanz() {
+  if (!sel.numero) return;
+  document.getElementById("chat-fab").style.display = "block";
+  if (_chatNum === sel.numero) return;
+  if (_chatUnsub) { _chatUnsub(); _chatUnsub = null; }
+  _chatNum = sel.numero; _chatMsgs = [];
+  _chatUnsub = db.collection("mensajes").where("lanzadera", "==", sel.numero)
+    .onSnapshot(s => {
+      const a = []; s.forEach(d => a.push(d.data()));
+      a.sort((x, y) => (x.ts ? x.ts.toMillis() : 0) - (y.ts ? y.ts.toMillis() : 0));
+      _chatMsgs = a; onChatData();
+    }, e => {});
+}
+
+function chatSeenKey() { return "chatSeenLanz_" + sel.numero; }
+
+function updateFab() {
+  const seen = +(localStorage.getItem(chatSeenKey()) || 0);
+  const unread = _chatMsgs.filter(m => m.de === "almacen" && m.ts && m.ts.toMillis() > seen).length;
+  const fab = document.getElementById("chat-fab");
+  fab.textContent = unread ? ("Chat almacen (" + unread + ")") : "Chat con almacen";
+  fab.style.background = unread ? "#D41F3A" : "#1D9E75";
+}
+
+function onChatData() {
+  updateFab();
+  if (document.getElementById("chat-overlay").style.display !== "none") renderChatLanz();
+}
+
+function renderChatLanz() {
+  const cont = document.getElementById("chat-ov-msgs");
+  cont.innerHTML = _chatMsgs.length
+    ? _chatMsgs.map(m => {
+        const right = m.de === "lanzadera";
+        return "<div class='chat-row " + (right ? "r" : "l") + "'><div class='chat-b " + (right ? "chat-b-out" : "chat-b-in") + "'>" + escTexto(m.texto) + "</div></div>";
+      }).join("")
+    : "<div style='text-align:center;color:#9CA3AF;padding:24px'>Sin mensajes. Escribe al almacen.</div>";
+  cont.scrollTop = cont.scrollHeight;
+  if (_chatMsgs.length) { const last = _chatMsgs[_chatMsgs.length - 1]; if (last.ts) localStorage.setItem(chatSeenKey(), String(last.ts.toMillis())); }
+  updateFab();
+}
+
+function abrirChat() {
+  if (!sel.numero) return;
+  document.getElementById("chat-ov-titulo").textContent = "Chat con Almacen — Lanzadera " + sel.numero;
+  document.getElementById("chat-ov-quick").innerHTML =
+    ["Voy", "OK", "5 min", "Cargando", "Problema"].map(q => "<button class='chatov-chip' onclick=\"enviarChatLanz('" + q + "')\">" + q + "</button>").join("");
+  document.getElementById("chat-overlay").style.display = "flex";
+  renderChatLanz();
+}
+
+function cerrarChat() { document.getElementById("chat-overlay").style.display = "none"; }
+
+async function enviarChatLanz(textoOpt) {
+  const inp = document.getElementById("chat-ov-text");
+  const texto = (textoOpt != null ? textoOpt : inp.value).trim();
+  if (!texto || !sel.numero) return;
+  try {
+    await db.collection("mensajes").add({ lanzadera: sel.numero, de: "lanzadera", texto: texto, ts: firebase.firestore.Timestamp.now() });
+    if (textoOpt == null) inp.value = "";
+  } catch (e) { console.error(e); alert("No se pudo enviar."); }
 }
 
 render();

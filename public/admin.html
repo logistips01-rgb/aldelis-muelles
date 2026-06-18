@@ -137,6 +137,19 @@
       </div>
       <div id="gantt-lanz"></div>
 
+      <div class="section-title" style="margin-top:24px">Chat con lanzaderas</div>
+      <div class="chat-wrap">
+        <div class="chat-threads" id="chat-threads"></div>
+        <div class="chat-main">
+          <div class="chat-msgs" id="chat-msgs"></div>
+          <div class="chat-quick" id="chat-quick"></div>
+          <div class="chat-input">
+            <input type="text" id="chat-text" placeholder="Escribe un mensaje..." onkeydown="if(event.key==='Enter')enviarChatAlmacen()">
+            <button class="btn-confirm" style="width:auto;padding:10px 18px" onclick="enviarChatAlmacen()">Enviar</button>
+          </div>
+        </div>
+      </div>
+
       <div class="section-title" style="margin-top:24px">Informe de lanzaderas</div>
       <div class="informe-range">
         <label>Desde</label><input type="date" id="lz-desde">

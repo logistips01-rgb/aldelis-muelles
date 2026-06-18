@@ -8,6 +8,19 @@ service cloud.firestore {
       allow write: if request.auth != null;
     }
 
+    // Chat almacen <-> lanzaderas
+    match /mensajes/{id} {
+      allow read: if true;
+      allow create: if validMensaje();
+    }
+
+    function validMensaje() {
+      let d = request.resource.data;
+      return d.lanzadera is number && d.lanzadera >= 1 && d.lanzadera <= 4
+        && d.de in ['almacen', 'lanzadera']
+        && d.texto is string && d.texto.size() > 0 && d.texto.size() <= 500;
+    }
+
     match /reservas/{id} {
       // Lectura: abierta de momento (la consulta publica y el calculo de
       // franjas la necesitan). Se cierra en la Fase 2 con App Check.

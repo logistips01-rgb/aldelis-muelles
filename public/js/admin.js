@@ -63,7 +63,8 @@ let informeData = [];
 
 // Version de la app. SUBIR este numero al publicar cambios importantes:
 // las pestanas abiertas se recargaran solas para coger la version nueva.
-const APP_VERSION = 2;
+const APP_VERSION = 3;
+let _chatSel = 1;
 function vigilarVersion() {
   db.collection("config").doc("app").onSnapshot(d => {
     const v = d.exists ? (d.data().version || 0) : 0;
@@ -245,6 +246,12 @@ function iniciarListeners() {
       window._cargas = []; s.forEach(d => window._cargas.push({ id: d.id, ...d.data() }));
       cargarCargas();
     }, e => console.error("cargas:", e)));
+
+  _unsubs.push(db.collection("mensajes").orderBy("ts", "desc").limit(100)
+    .onSnapshot(s => {
+      const arr = []; s.forEach(d => arr.push(d.data())); arr.reverse();
+      window._mensajes = arr; renderChat();
+    }, e => console.error("mensajes:", e)));
 }
 
 function iniciarSesion() {
@@ -558,6 +565,54 @@ async function guardarNota() {
     cerrarNotaModal();
     alert("Indicacion guardada para Lanzadera " + n);
   } catch (e) { console.error(e); alert("Error al guardar la indicacion."); }
+}
+
+// ─── CHAT (gerencia) ─────────────────────────────────────────────────
+function chatSeen(n) { return +(localStorage.getItem("chatSeen_" + n) || 0); }
+function chatSetSeen(n, ms) { localStorage.setItem("chatSeen_" + n, String(ms)); }
+
+function selectChat(n) { _chatSel = n; renderChat(); }
+
+function renderChat() {
+  const thr = document.getElementById("chat-threads");
+  if (!thr) return;
+  const msgs = window._mensajes || [];
+
+  let th = "";
+  for (let n = 1; n <= 4; n++) {
+    const delN = msgs.filter(m => m.lanzadera === n);
+    const unread = delN.filter(m => m.de === "lanzadera" && m.ts && m.ts.toMillis() > chatSeen(n)).length;
+    th += "<div class='chat-thread" + (n === _chatSel ? " sel" : "") + "' onclick='selectChat(" + n + ")'>" +
+      "<span class='chat-thread-n'>Lanzadera " + n + "</span>" +
+      (unread ? "<span class='chat-badge'>" + unread + "</span>" : "") + "</div>";
+  }
+  thr.innerHTML = th;
+
+  const conv = msgs.filter(m => m.lanzadera === _chatSel);
+  document.getElementById("chat-msgs").innerHTML = conv.length
+    ? conv.map(m => {
+        const right = m.de === "almacen";
+        return "<div class='chat-row " + (right ? "r" : "l") + "'><div class='chat-b " + (right ? "chat-b-out" : "chat-b-in") + "'>" +
+          esc(m.texto) + "<span class='chat-time'>" + (m.ts ? tsHora(m.ts) : "") + "</span></div></div>";
+      }).join("")
+    : "<div class='empty-state' style='padding:20px'>Sin mensajes con Lanzadera " + _chatSel + "</div>";
+
+  if (conv.length) { const last = conv[conv.length - 1]; if (last.ts) chatSetSeen(_chatSel, last.ts.toMillis()); }
+  const mc = document.getElementById("chat-msgs"); mc.scrollTop = mc.scrollHeight;
+
+  const quicks = ["Recibido", "Ve a Plaza", "Espera 10 min", "Llama al almacen"];
+  document.getElementById("chat-quick").innerHTML =
+    quicks.map(q => "<button class='chat-chip' onclick=\"enviarChatAlmacen('" + q + "')\">" + q + "</button>").join("");
+}
+
+async function enviarChatAlmacen(textoOpt) {
+  const inp = document.getElementById("chat-text");
+  const texto = (textoOpt != null ? textoOpt : inp.value).trim();
+  if (!texto) return;
+  try {
+    await db.collection("mensajes").add({ lanzadera: _chatSel, de: "almacen", texto: texto, ts: firebase.firestore.Timestamp.now() });
+    if (textoOpt == null) inp.value = "";
+  } catch (e) { console.error(e); alert("No se pudo enviar el mensaje."); }
 }
 
 async function enviarUrgencia() {
