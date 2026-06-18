@@ -86,6 +86,9 @@ function generarFranjas(iniHora, finHora) { // finHora exclusivo (24 = medianoch
 const FRANJAS_CARGAS = generarFranjas(6, 24);
 const FRANJAS_LANZ   = generarFranjas(4, 24);
 
+// Linea de tiempo (Gantt) de lanzaderas: 04:00 -> 00:00
+const G_INI = 240, G_FIN = 1440, G_PXMIN = 2, G_W = (G_FIN - G_INI) * G_PXMIN, G_LABEL_W = 110;
+
 // Pinta una rejilla generica (filas x franjas). celdaFn devuelve el <td>.
 function pintarRejilla(tableId, headerLabel, filas, franjas, celdaFn) {
   const table = document.getElementById(tableId);
@@ -285,35 +288,68 @@ async function cargarLanzaderas() {
       if (arr[i].estado === "fuera") { finMarks.push({ numero: +k, atMin: startMin }); continue; }
       const nextMs = (i + 1 < arr.length) ? arr[i + 1].desde.toMillis() : (esHoy ? Date.now() : dayEnd);
       const endMin = (nextMs - dayStart) / 60000;
-      if (arr[i].estado === "en_nave") segs.push({ numero: +k, nave: arr[i].nave, startMin, endMin });
+      if (arr[i].estado === "en_nave") segs.push({ numero: +k, nave: arr[i].nave, muelle: arr[i].muelle, accion: arr[i].accion, startMin, endMin });
       else if (arr[i].estado === "transito") trans.push({ numero: +k, destino: arr[i].destino || null, startMin, endMin });
     }
   });
 
-  const filas = NAVES_PANEL.map(n => ({ id: n.id, label: n.nombre }));
-  filas.push({ id: "_transito", label: "🚚 Transito" });
-  filas.push({ id: "_fin", label: "🏁 Fin jornada" });
+  renderGanttLanz(segs, trans, finMarks);
+}
 
-  pintarRejilla("rejilla-lanz", "Nave", filas, FRANJAS_LANZ, (fila, f, now) => {
-    const r = franjaRango(f);
-    if (fila.id === "_fin") {
-      const aqui = finMarks.filter(m => m.atMin >= r[0] && m.atMin < r[1]).map(m => m.numero);
-      if (!aqui.length) return "<td class='slot-td slot-libre" + now + "'></td>";
-      return "<td class='slot-td" + now + "' style='background:#D41F3A' title='Fin de jornada: " + aqui.join(", ") + "'>" +
-        "<div class='lanz-celda'>" + aqui.map(n => "L" + n).join(" ") + "</div></td>";
-    }
-    if (fila.id === "_transito") {
-      const aqui = trans.filter(s => s.startMin < r[1] && s.endMin > r[0]);
-      if (!aqui.length) return "<td class='slot-td slot-libre" + now + "'></td>";
-      const txt = aqui.map(s => "L" + s.numero + (s.destino ? "→" + (NAVE_NOMBRE[s.destino] || s.destino) : "")).join("  ");
-      return "<td class='slot-td" + now + "' style='background:#F59E0B' title='" + esc(txt) + "'>" +
-        "<div class='lanz-celda-sm'>" + esc(txt) + "</div></td>";
-    }
-    const aqui = segs.filter(s => s.nave === fila.id && s.startMin < r[1] && s.endMin > r[0]).map(s => s.numero);
-    if (!aqui.length) return "<td class='slot-td slot-libre" + now + "'></td>";
-    return "<td class='slot-td" + now + "' style='background:#1D9E75;cursor:pointer' onclick='abrirNotaModal(" + aqui[0] + ")' title='Lanzaderas: " + aqui.join(", ") + " (clic para indicacion)'>" +
-      "<div class='lanz-celda'>" + aqui.map(n => "L" + n).join(" ") + "</div></td>";
-  });
+// ─── LINEA DE TIEMPO (GANTT) DE LANZADERAS ───────────────────────────
+function ganttNow() {
+  if (!esHoy) return "";
+  const nl = (ahoraMin - G_INI) * G_PXMIN;
+  if (nl < 0 || nl > G_W) return "";
+  return "<div class='gantt-now' style='left:" + nl + "px'></div>";
+}
+
+function ganttBarra(startMin, endMin, color, label, onclick) {
+  const a = Math.max(startMin, G_INI), b = Math.min(endMin, G_FIN);
+  if (b <= a) return "";
+  const left = (a - G_INI) * G_PXMIN;
+  const w = Math.max((b - a) * G_PXMIN, 8);
+  const estilo = "left:" + left + "px;width:" + w + "px;background:" + color + (onclick ? ";cursor:pointer" : "");
+  const ev = onclick ? " onclick=\"" + onclick + "\"" : "";
+  return "<div class='gantt-bar' style='" + estilo + "'" + ev + " title='" + esc(label) + "'>" +
+    "<span class='gantt-bar-txt'>" + esc(label) + "</span></div>";
+}
+
+function renderGanttLanz(segs, trans, finMarks) {
+  const cont = document.getElementById("gantt-lanz");
+  if (!cont) return;
+
+  let head = "<div class='gantt-row gantt-head'><div class='gantt-label'>Hora</div><div class='gantt-track' style='width:" + G_W + "px'>";
+  for (let h = 4; h <= 24; h++) {
+    const left = (h * 60 - G_INI) * G_PXMIN;
+    head += "<div class='gantt-tick' style='left:" + left + "px'>" + String(h % 24).padStart(2, "0") + ":00</div>";
+  }
+  head += ganttNow() + "</div></div>";
+
+  let rows = "";
+  for (let n = 1; n <= 4; n++) {
+    let bars = "";
+    segs.filter(s => s.numero === n).forEach(s => {
+      let lbl = NAVE_NOMBRE[s.nave] || s.nave;
+      if (s.nave === "plaza" && s.muelle) lbl += " " + (s.accion === "cargando" ? "⬆" : "⬇") + s.muelle;
+      bars += ganttBarra(s.startMin, s.endMin, "#1D9E75", lbl, "abrirNotaModal(" + n + ")");
+    });
+    trans.filter(s => s.numero === n).forEach(s => {
+      bars += ganttBarra(s.startMin, s.endMin, "#F59E0B", "→ " + (NAVE_NOMBRE[s.destino] || s.destino || "?"), "");
+    });
+    finMarks.filter(m => m.numero === n).forEach(m => {
+      const left = (m.atMin - G_INI) * G_PXMIN;
+      if (left >= 0 && left <= G_W) bars += "<div class='gantt-fin' style='left:" + left + "px' title='Fin de jornada'></div>";
+    });
+    rows += "<div class='gantt-row'><div class='gantt-label'>Lanzadera " + n + "</div>" +
+      "<div class='gantt-track' style='width:" + G_W + "px'>" + bars + ganttNow() + "</div></div>";
+  }
+  cont.innerHTML = head + rows;
+
+  if (esHoy) {
+    const nl = (ahoraMin - G_INI) * G_PXMIN;
+    if (nl >= 0) cont.scrollLeft = Math.max(0, G_LABEL_W + nl - cont.clientWidth / 2);
+  }
 }
 
 function horaDesde(ts) {
