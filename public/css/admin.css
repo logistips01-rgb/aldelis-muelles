@@ -265,6 +265,10 @@
 
 .slot-td { padding: 4px; border: 1px solid #F0F0F0; cursor: pointer; vertical-align: middle; min-width: 80px; height: 48px; transition: opacity .15s; }
 .slot-td:hover { opacity: 0.8; }
+.slot-multi { padding: 2px; vertical-align: top; }
+.slot-mini { font-size: 10px; font-weight: 600; color: #fff; padding: 3px 5px; border-radius: 3px; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.slot-mini:last-child { margin-bottom: 0; }
+.slot-mini:hover { opacity: 0.85; }
 .slot-libre { background: #F5F5F5; cursor: default; }
 .slot-libre:hover { opacity: 1; }
 .slot-pendiente { background: #F59E0B; }

@@ -63,7 +63,7 @@ let informeData = [];
 
 // Version de la app. SUBIR este numero al publicar cambios importantes:
 // las pestanas abiertas se recargaran solas para coger la version nueva.
-const APP_VERSION = 8;
+const APP_VERSION = 9;
 let _chatSel = 1;
 function vigilarVersion() {
   db.collection("config").doc("app").onSnapshot(d => {
@@ -487,8 +487,8 @@ function cargarCargas() {
   const filas = MUELLES_CARGA.map(m => ({ id: m, label: m }));
   pintarRejilla("rejilla-cargas", "Muelle", filas, FRANJAS_CARGAS, (fila, f, now) => {
     const r = franjaRango(f);
-    const c = cargas.find(x => x.muelle === fila.id && spanOcupa(x.inicio, x.fin, r[0], r[1], dayStart));
-    if (!c) {
+    const cs = cargas.filter(x => x.muelle === fila.id && spanOcupa(x.inicio, x.fin, r[0], r[1], dayStart));
+    if (cs.length === 0) {
       const lz = lanzCarga.find(s => s.muelle === fila.id && s.startMin < r[1] && s.endMin > r[0]);
       if (lz) {
         return "<td class='slot-td" + now + "' style='background:#7C3AED' title='Lanzadera " + lz.numero + " (carga)'>" +
@@ -496,13 +496,22 @@ function cargarCargas() {
       }
       return "<td class='slot-td slot-libre" + now + "'></td>";
     }
-    const color = c.estado === "completada" ? "#6B7280" : "#185FA5";
-    const click = c.estado === "cargando" ? " onclick=\"completarCarga('" + c.id + "')\"" : "";
-    const cur = c.estado === "cargando" ? "cursor:pointer;" : "";
-    return "<td class='slot-td" + now + "' style='background:" + color + ";" + cur + "'" + click +
-      " title='" + esc(c.matricula_tractora + (c.destino ? " -> " + c.destino : "")) + "'>" +
-      "<div class='slot-empresa'>" + esc(c.matricula_tractora) + "</div>" +
-      "<div class='slot-estado'>" + esc(c.estado) + "</div></td>";
+    if (cs.length === 1) {
+      const c = cs[0];
+      const color = c.estado === "completada" ? "#6B7280" : "#185FA5";
+      const click = c.estado === "cargando" ? " onclick=\"completarCarga('" + c.id + "')\"" : "";
+      const cur = c.estado === "cargando" ? "cursor:pointer;" : "";
+      return "<td class='slot-td" + now + "' style='background:" + color + ";" + cur + "'" + click +
+        " title='" + esc(c.matricula_tractora + (c.destino ? " -> " + c.destino : "")) + "'>" +
+        "<div class='slot-empresa'>" + esc(c.matricula_tractora) + "</div>" +
+        "<div class='slot-estado'>" + esc(c.estado) + "</div></td>";
+    }
+    return "<td class='slot-td slot-multi" + now + "'>" + cs.map(c => {
+      const color = c.estado === "completada" ? "#6B7280" : "#185FA5";
+      const click = c.estado === "cargando" ? " onclick=\"completarCarga('" + c.id + "')\"" : "";
+      const cur = c.estado === "cargando" ? "cursor:pointer;" : "";
+      return "<div class='slot-mini'" + click + " style='background:" + color + ";" + cur + "' title='" + esc(c.matricula_tractora) + " (" + esc(c.estado) + ")'>" + esc(c.matricula_tractora) + "</div>";
+    }).join("") + "</td>";
   });
 }
 
@@ -557,15 +566,24 @@ function cargarMerca() {
   const filas = MUELLES_MERCA.map(m => ({ id: m, label: "Muelle " + m.replace("M", "") }));
   pintarRejilla("rejilla-merca", "Muelle", filas, FRANJAS_CARGAS, (fila, f, now) => {
     const r = franjaRango(f);
-    const c = items.find(x => x.muelle === fila.id && spanOcupa(x.inicio, x.fin, r[0], r[1], dayStart));
-    if (!c) return "<td class='slot-td slot-libre" + now + "'></td>";
-    const color = c.estado === "completada" ? "#6B7280" : "#1D9E75";
-    const click = c.estado === "descargando" ? " onclick=\"completarMerca('" + c.id + "')\"" : "";
-    const cur = c.estado === "descargando" ? "cursor:pointer;" : "";
-    return "<td class='slot-td" + now + "' style='background:" + color + ";" + cur + "'" + click +
-      " title='" + esc((c.empresa || "") + (c.mercancia ? " · " + c.mercancia : "")) + "'>" +
-      "<div class='slot-empresa'>" + esc((c.empresa || "").split(" ")[0]) + "</div>" +
-      "<div class='slot-estado'>" + esc(c.estado) + "</div></td>";
+    const cs = items.filter(x => x.muelle === fila.id && spanOcupa(x.inicio, x.fin, r[0], r[1], dayStart));
+    if (cs.length === 0) return "<td class='slot-td slot-libre" + now + "'></td>";
+    if (cs.length === 1) {
+      const c = cs[0];
+      const color = c.estado === "completada" ? "#6B7280" : "#1D9E75";
+      const click = c.estado === "descargando" ? " onclick=\"completarMerca('" + c.id + "')\"" : "";
+      const cur = c.estado === "descargando" ? "cursor:pointer;" : "";
+      return "<td class='slot-td" + now + "' style='background:" + color + ";" + cur + "'" + click +
+        " title='" + esc((c.empresa || "") + (c.mercancia ? " · " + c.mercancia : "")) + "'>" +
+        "<div class='slot-empresa'>" + esc((c.empresa || "").split(" ")[0]) + "</div>" +
+        "<div class='slot-estado'>" + esc(c.estado) + "</div></td>";
+    }
+    return "<td class='slot-td slot-multi" + now + "'>" + cs.map(c => {
+      const color = c.estado === "completada" ? "#6B7280" : "#1D9E75";
+      const click = c.estado === "descargando" ? " onclick=\"completarMerca('" + c.id + "')\"" : "";
+      const cur = c.estado === "descargando" ? "cursor:pointer;" : "";
+      return "<div class='slot-mini'" + click + " style='background:" + color + ";" + cur + "' title='" + esc((c.empresa || "")) + " (" + esc(c.estado) + ")'>" + esc((c.empresa || "").split(" ")[0]) + "</div>";
+    }).join("") + "</td>";
   });
 }
 
@@ -913,10 +931,15 @@ function renderSeccion(tableId, muelles, franjas, seccion, reservas) {
       const now = franjaEsAhora(franja) ? " col-now" : "";
       const hits = reservas.filter(r => r.muelle === muelle && r.franja === franja);
       const pend = reservas.filter(r => !r.muelle && r.franja === franja && r.estado === "pendiente" && r.seccion === seccion);
-      if (hits.length > 0) {
+      if (hits.length === 1) {
         const r = hits[0]; const color = ESTADO_COLOR[r.estado] || "#9CA3AF";
         tbody += "<td class='slot-td" + now + "' data-id='" + r.id + "' data-muelle='" + muelle + "' style='background:" + color + "' title='" + esc(r.empresa) + "'>" +
           "<div class='slot-empresa'>" + esc(r.empresa.split(" ")[0]) + "</div><div class='slot-estado'>" + esc(r.estado) + "</div></td>";
+      } else if (hits.length > 1) {
+        tbody += "<td class='slot-td slot-multi" + now + "'>" + hits.map(r => {
+          const color = ESTADO_COLOR[r.estado] || "#9CA3AF";
+          return "<div class='slot-mini' data-id='" + r.id + "' data-muelle='" + muelle + "' style='background:" + color + "' title='" + esc(r.empresa) + " (" + esc(r.estado) + ")'>" + esc(r.empresa.split(" ")[0]) + "</div>";
+        }).join("") + "</td>";
       } else if (pend.length > 0) {
         const r = pend[0];
         tbody += "<td class='slot-td slot-pendiente" + now + "' data-id='" + r.id + "' data-muelle='" + muelle + "' title='" + esc(r.empresa) + "'>" +
