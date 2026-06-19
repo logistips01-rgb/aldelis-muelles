@@ -63,7 +63,7 @@ let informeData = [];
 
 // Version de la app. SUBIR este numero al publicar cambios importantes:
 // las pestanas abiertas se recargaran solas para coger la version nueva.
-const APP_VERSION = 10;
+const APP_VERSION = 11;
 let _chatSel = 1;
 function vigilarVersion() {
   db.collection("config").doc("app").onSnapshot(d => {
@@ -434,6 +434,40 @@ function renderGanttLanz(segs, trans, finMarks) {
     const nl = (ahoraMin - G_INI) * G_PXMIN;
     if (sc && nl >= 0) sc.scrollLeft = Math.max(0, nl - sc.clientWidth / 2);
   }
+
+  revisarAlertas(segs, trans, finMarks);
+}
+
+// Alerta nuclear: lanzadera 2h+ en la misma nave (sin moverse)
+function revisarAlertas(segs, trans, finMarks) {
+  const alertas = [];
+  if (esHoy) {
+    for (let n = 1; n <= 4; n++) {
+      let best = null;
+      segs.filter(s => s.numero === n).forEach(s => { if (!best || s.startMin > best.start) best = { start: s.startMin, tipo: "nave", nave: s.nave, muelle: s.muelle, accion: s.accion }; });
+      trans.filter(s => s.numero === n).forEach(s => { if (!best || s.startMin > best.start) best = { start: s.startMin, tipo: "transito" }; });
+      finMarks.filter(m => m.numero === n).forEach(m => { if (!best || m.atMin > best.start) best = { start: m.atMin, tipo: "fin" }; });
+      if (best && best.tipo === "nave") {
+        const el = ahoraMin - best.start;
+        if (el >= 120) {
+          let lbl = NAVE_NOMBRE[best.nave] || best.nave;
+          if (best.nave === "plaza" && best.muelle) lbl += " " + (best.accion === "cargando" ? "⬆" : "⬇") + best.muelle;
+          alertas.push({ n: n, lbl: lbl, el: el });
+        }
+      }
+    }
+  }
+  const banner = document.getElementById("alerta-nuclear");
+  if (banner) {
+    if (alertas.length) {
+      banner.innerHTML = alertas.map(a => "🚨 ALERTA: Lanzadera " + a.n + " lleva " + formatDuracion(a.el) + " en " + esc(a.lbl)).join("&nbsp;&nbsp;·&nbsp;&nbsp;");
+      banner.style.display = "block";
+    } else {
+      banner.style.display = "none";
+    }
+  }
+  const tab = document.getElementById("btn-vista-lanzaderas");
+  if (tab) tab.classList.toggle("tab-alerta", alertas.length > 0 && !tab.classList.contains("active"));
 }
 
 function resumenEstado(segs, trans, finMarks) {
@@ -444,7 +478,7 @@ function resumenEstado(segs, trans, finMarks) {
       if (!best || s.startMin > best.start) {
         let t = NAVE_NOMBRE[s.nave] || s.nave;
         if (s.nave === "plaza" && s.muelle) t += " " + (s.accion === "cargando" ? "⬆" : "⬇") + s.muelle;
-        best = { start: s.startMin, txt: "en " + t, color: "#1D9E75" };
+        best = { start: s.startMin, txt: "en " + t, color: "#1D9E75", esNave: true };
       }
     });
     trans.filter(s => s.numero === n).forEach(s => {
@@ -453,9 +487,17 @@ function resumenEstado(segs, trans, finMarks) {
     finMarks.filter(m => m.numero === n).forEach(m => {
       if (!best || m.atMin > best.start) best = { start: m.atMin, txt: "fin de jornada", color: "#D41F3A" };
     });
-    const cuerpo = best
-      ? "<span style='color:" + best.color + ";font-weight:600'>" + esc(best.txt) + "</span> <span class='gantt-res-desde'>desde " + minToHHMM(best.start) + "</span>"
-      : "<span class='gantt-res-desde'>sin actividad hoy</span>";
+    let cuerpo;
+    if (!best) {
+      cuerpo = "<span class='gantt-res-desde'>sin actividad hoy</span>";
+    } else {
+      const el = best.esNave && esHoy ? (ahoraMin - best.start) : -1;
+      const alerta = el >= 120;
+      const color = alerta ? "#D41F3A" : best.color;
+      cuerpo = "<span style='color:" + color + ";font-weight:600'>" + esc(best.txt) + "</span> " +
+        "<span class='gantt-res-desde'>desde " + minToHHMM(best.start) + "</span>" +
+        (alerta ? " <span style='color:#D41F3A;font-weight:800'>🚨 " + formatDuracion(el) + "</span>" : "");
+    }
     html += "<div class='gantt-res-item'><span class='gantt-res-n'>Lanzadera " + n + "</span> " + cuerpo + "</div>";
   }
   return html + "</div>";

@@ -4,6 +4,22 @@
   padding: 0;
 }
 
+/* Alerta nuclear: lanzadera 2h+ en la misma nave */
+.alerta-nuclear {
+  color: #fff;
+  text-align: center;
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  padding: 16px;
+  animation: pulso-alerta 1s infinite;
+}
+@keyframes pulso-alerta {
+  0%, 100% { background: #D41F3A; }
+  50%      { background: #6e0d18; }
+}
+.tab-alerta { background: #D41F3A !important; color: #fff !important; border-color: #D41F3A !important; animation: pulso-alerta 1s infinite; }
+
 .login-wrap {
   min-height: 100vh;
   display: flex;
