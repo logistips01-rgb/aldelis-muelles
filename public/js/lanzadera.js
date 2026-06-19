@@ -7,6 +7,7 @@ const NAVES = [
   { id: "avitrans", nombre: "Avitrans", externa: true },
   { id: "txt",      nombre: "Txt",      externa: true },
   { id: "upasa",    nombre: "Upasa",    externa: true },
+  { id: "sabeco",   nombre: "Sabeco",   externa: true },
   { id: "plaza",    nombre: "Plaza",    externa: false }
 ];
 const MUELLES_CARGA    = ["M1", "M2", "M3", "M4", "M5"];
@@ -112,6 +113,7 @@ function renderHecho(estado) {
       "<p class='card-desc'>Lanzadera " + sel.numero + " en " + NOMBRE_NAVE[sel.nave] + ".</p>" +
       "<button class='btn-primary' style='width:100%' onclick='salir()'>Salir de la nave</button>" +
       "<button class='btn-back' style='width:100%;margin-top:8px' onclick='nuevo()'>Nuevo registro</button>" +
+      "<button class='btn-back' style='width:100%;margin-top:8px;color:#D41F3A;border-color:#F5C0C8' onclick='finJornada()'>Fin de jornada</button>" +
       "</div>";
   } else if (estado === "transito") {
     app.innerHTML =
