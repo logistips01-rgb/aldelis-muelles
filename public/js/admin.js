@@ -457,7 +457,6 @@ function renderGanttLanz(segs, trans, finMarks) {
 }
 
 const ADMINS_ALERTA = [
-  "dbotaya@aldelis.com",
   "arento@aldelis.com",
   "almacen@aldelis.com",
   "expediciones@aldelis.com",
