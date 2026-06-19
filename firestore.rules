@@ -83,6 +83,27 @@ service cloud.firestore {
         && d.destino is string && d.destino.size() <= 120;
     }
 
+    // Descargas de proveedores en Merca (otro almacen). Registro al momento.
+    match /descargas_merca/{id} {
+      allow read: if request.auth != null;
+      allow create: if validMerca();
+      allow update, delete: if request.auth != null;
+    }
+
+    function validMerca() {
+      let d = request.resource.data;
+      return d.keys().hasOnly([
+          'empresa','matricula','mercancia','pales','muelle','estado','inicio','fin','created_at'
+        ])
+        && d.estado == 'descargando'
+        && d.fin == null
+        && d.muelle in ['M2','M4']
+        && d.empresa is string && d.empresa.size() > 0 && d.empresa.size() <= 120
+        && d.matricula is string && d.matricula.size() > 0 && d.matricula.size() <= 20
+        && d.mercancia is string && d.mercancia.size() <= 300
+        && (d.pales == null || d.pales is number);
+    }
+
     function validLanzadera() {
       let d = request.resource.data;
       return d.numero is number && d.numero >= 1 && d.numero <= 4

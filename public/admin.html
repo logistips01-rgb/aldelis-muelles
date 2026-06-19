@@ -33,6 +33,7 @@
         <button class="tab-view" id="btn-vista-informes" onclick="switchVista('informes')">Informes</button>
         <button class="tab-view" id="btn-vista-lanzaderas" onclick="switchVista('lanzaderas')">Lanzaderas</button>
         <button class="tab-view" id="btn-vista-cargas" onclick="switchVista('cargas')">Cargas</button>
+        <button class="tab-view" id="btn-vista-merca" onclick="switchVista('merca')">Merca</button>
         <input type="date" id="fecha-dashboard" onchange="cambioFecha()">
         <button class="btn-ghost" style="width:auto;padding:6px 14px;" onclick="cerrarSesion()">Cerrar sesion</button>
       </div>
@@ -175,6 +176,31 @@
         <button class="btn-excel" onclick="exportarCargas()">Exportar Excel</button>
       </div>
       <div id="cg-resultado" style="margin-top:14px"></div>
+    </div>
+
+    <div id="vista-merca" class="reservas-wrap" style="display:none">
+      <div class="informe-header">
+        <div class="section-title" style="margin-bottom:0">Descargas de proveedores — Merca (Muelles 2 y 4)</div>
+        <button class="btn-informe" onclick="abrirMercaModal()">+ Registrar descarga</button>
+      </div>
+      <div class="grid-card"><div class="grid-scroll"><table class="rejilla-table" id="rejilla-merca"></table></div></div>
+    </div>
+  </div>
+
+  <div id="merca-modal" class="modal-overlay" style="display:none" onclick="cerrarMercaModal(event)">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title">Registrar descarga (Merca)</div>
+        <button class="close-btn" onclick="cerrarMercaModal()">x</button>
+      </div>
+      <div class="modal-body">
+        <div class="field"><label>Empresa / proveedor <span class="req">*</span></label><input type="text" id="mm-empresa"></div>
+        <div class="field"><label>Matricula <span class="req">*</span></label><input type="text" id="mm-matricula" style="text-transform:uppercase"></div>
+        <div class="field"><label>Mercancia</label><input type="text" id="mm-mercancia"></div>
+        <div class="field"><label>Pales <span class="opt">(aprox.)</span></label><input type="number" id="mm-pales" min="0"></div>
+        <div class="field"><label>Muelle <span class="req">*</span></label><select id="mm-muelle"></select></div>
+        <button class="btn-confirm" onclick="registrarMercaAlmacen()">Registrar descarga</button>
+      </div>
     </div>
   </div>
 

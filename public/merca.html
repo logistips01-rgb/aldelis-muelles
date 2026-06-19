@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aldelis — Descarga en Merca</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div style="width:100%; max-width:480px; margin:0 auto;">
+    <div class="portal-header">
+      <div class="logo">Aldelis</div>
+      <div class="logo-sub">Descarga en Merca</div>
+    </div>
+
+    <div id="m-form" class="card">
+      <h2>Registrar descarga</h2>
+      <p class="card-desc">Introduce los datos de la descarga en Merca.</p>
+      <div class="field">
+        <label>Empresa / proveedor <span class="req">*</span></label>
+        <input type="text" id="m-empresa" placeholder="Nombre del proveedor">
+      </div>
+      <div class="field">
+        <label>Matricula <span class="req">*</span></label>
+        <input type="text" id="m-matricula" placeholder="Ej: 1234 ABC" style="text-transform:uppercase">
+      </div>
+      <div class="field">
+        <label>Mercancia</label>
+        <input type="text" id="m-mercancia" placeholder="Ej: palets, cajas...">
+      </div>
+      <div class="field">
+        <label>Pales <span class="opt">(aprox.)</span></label>
+        <input type="number" id="m-pales" placeholder="Ej: 8" min="0">
+      </div>
+      <div class="field">
+        <label>Muelle <span class="req">*</span></label>
+        <select id="m-muelle"></select>
+      </div>
+      <button class="btn-primary" id="m-btn" onclick="registrarMerca()">Registrar descarga</button>
+    </div>
+
+    <div id="m-hecho" class="card text-center" style="display:none">
+      <div class="done-icon">✓</div>
+      <h2>Descarga registrada</h2>
+      <p class="card-desc">Tu descarga ha quedado registrada en el <strong id="m-hecho-muelle"></strong> de Merca.</p>
+      <button class="btn-back" style="width:100%;margin-top:8px" onclick="nuevaMerca()">Registrar otra descarga</button>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-check-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script src="js/firebase-config-compat.js"></script>
+  <script src="js/merca.js"></script>
+</body>
+</html>

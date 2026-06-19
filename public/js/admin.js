@@ -63,7 +63,7 @@ let informeData = [];
 
 // Version de la app. SUBIR este numero al publicar cambios importantes:
 // las pestanas abiertas se recargaran solas para coger la version nueva.
-const APP_VERSION = 7;
+const APP_VERSION = 8;
 let _chatSel = 1;
 function vigilarVersion() {
   db.collection("config").doc("app").onSnapshot(d => {
@@ -196,7 +196,7 @@ auth.onAuthStateChanged(user => {
     // Reloj local (mueve la linea de "ahora" y refresca el render, SIN leer de la BD)
     autoRefreshInterval = setInterval(() => {
       actualizarReloj();
-      cargarReservas(); cargarLanzaderas(); cargarCargas();
+      cargarReservas(); cargarLanzaderas(); cargarCargas(); cargarMerca();
     }, 60000);
   } else {
     document.getElementById("login-screen").style.display     = "flex";
@@ -247,6 +247,13 @@ function iniciarListeners() {
       cargarCargas();
     }, e => console.error("cargas:", e)));
 
+  _unsubs.push(db.collection("descargas_merca")
+    .where("inicio", ">=", Ts.fromMillis(dayStart)).where("inicio", "<", Ts.fromMillis(dayEnd))
+    .onSnapshot(s => {
+      window._merca = []; s.forEach(d => window._merca.push({ id: d.id, ...d.data() }));
+      cargarMerca();
+    }, e => console.error("merca:", e)));
+
   _unsubs.push(db.collection("mensajes").orderBy("ts", "desc").limit(100)
     .onSnapshot(s => {
       const arr = []; s.forEach(d => arr.push(d.data())); arr.reverse();
@@ -283,15 +290,17 @@ function aplicarRol(user) {
 }
 
 function switchVista(vista) {
-  ["rejilla", "lista", "informes", "lanzaderas", "cargas"].forEach(v => {
+  ["rejilla", "lista", "informes", "lanzaderas", "cargas", "merca"].forEach(v => {
     document.getElementById("vista-" + v).style.display = vista === v ? "block" : "none";
     document.getElementById("btn-vista-" + v).classList.toggle("active", vista === v);
   });
   if (vista === "lanzaderas") cargarLanzaderas();
   if (vista === "cargas")     cargarCargas();
+  if (vista === "merca")      cargarMerca();
 }
 
 const MUELLES_CARGA = ["M1", "M2", "M3", "M4", "M5"];
+const MUELLES_MERCA = ["M2", "M4"];
 
 function cambioFecha() { iniciarListeners(); }
 
@@ -538,6 +547,69 @@ async function registrarCargaAlmacen() {
     cerrarCargaModal();
     cargarCargas();
   } catch (e) { console.error(e); alert("Error al registrar la carga."); }
+}
+
+// ─── DESCARGAS DE PROVEEDORES EN MERCA ───────────────────────────────
+function cargarMerca() {
+  const fecha = document.getElementById("fecha-dashboard").value;
+  const dayStart = new Date(fecha + "T00:00:00").getTime();
+  const items = window._merca || [];
+  const filas = MUELLES_MERCA.map(m => ({ id: m, label: "Muelle " + m.replace("M", "") }));
+  pintarRejilla("rejilla-merca", "Muelle", filas, FRANJAS_CARGAS, (fila, f, now) => {
+    const r = franjaRango(f);
+    const c = items.find(x => x.muelle === fila.id && spanOcupa(x.inicio, x.fin, r[0], r[1], dayStart));
+    if (!c) return "<td class='slot-td slot-libre" + now + "'></td>";
+    const color = c.estado === "completada" ? "#6B7280" : "#1D9E75";
+    const click = c.estado === "descargando" ? " onclick=\"completarMerca('" + c.id + "')\"" : "";
+    const cur = c.estado === "descargando" ? "cursor:pointer;" : "";
+    return "<td class='slot-td" + now + "' style='background:" + color + ";" + cur + "'" + click +
+      " title='" + esc((c.empresa || "") + (c.mercancia ? " · " + c.mercancia : "")) + "'>" +
+      "<div class='slot-empresa'>" + esc((c.empresa || "").split(" ")[0]) + "</div>" +
+      "<div class='slot-estado'>" + esc(c.estado) + "</div></td>";
+  });
+}
+
+async function completarMerca(id) {
+  if (!confirm("¿Marcar esta descarga como completada?")) return;
+  try {
+    await db.collection("descargas_merca").doc(id).update({ estado: "completada", fin: firebase.firestore.Timestamp.now() });
+  } catch (e) { console.error(e); alert("Error al completar la descarga."); }
+}
+
+function abrirMercaModal() {
+  document.getElementById("mm-muelle").innerHTML =
+    "<option value=''>Selecciona muelle</option>" +
+    MUELLES_MERCA.map(m => "<option value='" + m + "'>Muelle " + m.replace("M", "") + "</option>").join("");
+  ["mm-empresa", "mm-matricula", "mm-mercancia", "mm-pales"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("merca-modal").style.display = "flex";
+}
+
+function cerrarMercaModal(e) {
+  if (!e || e.target.id === "merca-modal") document.getElementById("merca-modal").style.display = "none";
+}
+
+async function registrarMercaAlmacen() {
+  const empresa   = document.getElementById("mm-empresa").value.trim();
+  const matricula = document.getElementById("mm-matricula").value.trim().toUpperCase();
+  const muelle    = document.getElementById("mm-muelle").value;
+  if (!empresa)   { alert("Falta la empresa / proveedor."); return; }
+  if (!matricula) { alert("Falta la matricula."); return; }
+  if (!muelle)    { alert("Selecciona el muelle."); return; }
+  const palesV = document.getElementById("mm-pales").value.trim();
+  try {
+    await db.collection("descargas_merca").add({
+      empresa: empresa,
+      matricula: matricula,
+      mercancia: document.getElementById("mm-mercancia").value.trim(),
+      pales: palesV ? Number(palesV) : null,
+      muelle: muelle,
+      estado: "descargando",
+      inicio: firebase.firestore.Timestamp.now(),
+      fin: null,
+      created_at: firebase.firestore.Timestamp.now()
+    });
+    cerrarMercaModal();
+  } catch (e) { console.error(e); alert("Error al registrar la descarga."); }
 }
 
 // ─── INDICACIONES A LANZADERAS ───────────────────────────────────────
