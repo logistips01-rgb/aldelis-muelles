@@ -10,28 +10,6 @@ async function enviarEmailMS(to, subject, body) {
   }
 }
 
-async function enviarEmailAdminMS(datos) {
-  const admins = [
-    "mlorente@aldelis.com",
-    "garita@aldelis.com"
-  ];
-  const subject = "Nueva solicitud de descarga pendiente — " + datos.codigo;
-  const body = "Nueva solicitud de descarga recibida y pendiente de confirmacion.\n\n" +
-    "Codigo: " + datos.codigo + "\n" +
-    "Empresa: " + datos.empresa + "\n" +
-    "Matricula: " + datos.matricula + "\n" +
-    "Fecha: " + datos.fecha + "\n" +
-    "Franja: " + datos.franja + "\n" +
-    "Seccion: " + datos.seccion + "\n" +
-    "Mercancia: " + (datos.mercancia || "No indicada") + "\n" +
-    "Pales: " + (datos.pales ? datos.pales + " pales" : "No indicado") + "\n\n" +
-    "Accede al panel para confirmar, reasignar o rechazar:\nhttps://aldelis-muelles.web.app/admin.html";
-
-  for (const admin of admins) {
-    await enviarEmailMS(admin, subject, body);
-  }
-}
-
 // ─── RESTO DEL SISTEMA ───────────────────────────────────────────────
 
 const reserva = {
@@ -270,18 +248,6 @@ async function enviarReserva() {
         "Aldelis — Gestion de muelles"
       );
     }
-
-    // Email al equipo de almacen
-    await enviarEmailAdminMS({
-      codigo,
-      empresa:   reserva.empresa,
-      matricula: reserva.matricula,
-      fecha:     reserva.fecha,
-      franja:    reserva.franja,
-      seccion:   reserva.seccion,
-      mercancia: reserva.mercancia,
-      pales:     reserva.pales
-    });
 
     document.getElementById("codigo-generado").textContent = codigo;
     document.querySelectorAll(".step").forEach(s => s.classList.remove("active"));
