@@ -80,7 +80,7 @@ let informeData = [];
 
 // Version de la app. SUBIR este numero al publicar cambios importantes:
 // las pestanas abiertas se recargaran solas para coger la version nueva.
-const APP_VERSION = 12;
+const APP_VERSION = 13;
 let _chatSel = 1;
 function vigilarVersion() {
   db.collection("config").doc("app").onSnapshot(d => {
@@ -456,6 +456,25 @@ function renderGanttLanz(segs, trans, finMarks) {
   revisarAlertas(segs, trans, finMarks);
 }
 
+const ADMINS_ALERTA = [
+  "dbotaya@aldelis.com",
+  "arento@aldelis.com",
+  "almacen@aldelis.com",
+  "expediciones@aldelis.com",
+  "transfriorza@transfriorza.es",
+  "mlorente@aldelis.com",
+  "almacenfrio@aldelis.com",
+  "garita@aldelis.com",
+  "jbotaya@aldelis.com",
+  "almacenseco@aldelis.com",
+  "nchavarria@aldelis.com",
+  "jpina@aldelis.com",
+  "dgamarra@aldelis.com"
+];
+
+// IDs de alertas ya notificadas en esta sesion (evita spam cada 30s)
+const _alertasEmailEnviadas = new Set();
+
 // Alerta nuclear: lanzadera 2h+ en la misma nave (sin moverse)
 function revisarAlertas(segs, trans, finMarks) {
   const alertas = [];
@@ -486,6 +505,24 @@ function revisarAlertas(segs, trans, finMarks) {
   }
   const tab = document.getElementById("btn-vista-lanzaderas");
   if (tab) tab.classList.toggle("tab-alerta", alertas.length > 0 && !tab.classList.contains("active"));
+
+  // Enviar email solo la primera vez que se detecta cada alerta
+  const alertaIds = new Set(alertas.map(a => "lanz" + a.n));
+  alertas.forEach(a => {
+    const id = "lanz" + a.n;
+    if (!_alertasEmailEnviadas.has(id)) {
+      _alertasEmailEnviadas.add(id);
+      const asunto = "ALERTA Aldelis — Lanzadera " + a.n + " lleva " + formatDuracion(a.el) + " en " + a.lbl;
+      const cuerpo =
+        "ALERTA de Aldelis Muelles\n\n" +
+        "Lanzadera " + a.n + " lleva " + formatDuracion(a.el) + " parada en " + a.lbl + ".\n\n" +
+        "Revisa el panel:\nhttps://aldelis-muelles.web.app/admin.html\n\n" +
+        "Aldelis — Gestion de muelles";
+      ADMINS_ALERTA.forEach(to => enviarEmailMS(to, asunto, cuerpo));
+    }
+  });
+  // Si la alerta se resuelve, permitir reenvio si vuelve a ocurrir
+  _alertasEmailEnviadas.forEach(id => { if (!alertaIds.has(id)) _alertasEmailEnviadas.delete(id); });
 }
 
 function resumenEstado(segs, trans, finMarks) {
