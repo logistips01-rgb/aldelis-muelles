@@ -63,7 +63,7 @@ let informeData = [];
 
 // Version de la app. SUBIR este numero al publicar cambios importantes:
 // las pestanas abiertas se recargaran solas para coger la version nueva.
-const APP_VERSION = 6;
+const APP_VERSION = 7;
 let _chatSel = 1;
 function vigilarVersion() {
   db.collection("config").doc("app").onSnapshot(d => {
@@ -168,7 +168,7 @@ document.addEventListener("click", function(e) {
     const id = slot.getAttribute("data-id");
     if (slot.classList.contains("btn-en-curso"))   cambiarEstado(id, "en_curso");
     else if (slot.classList.contains("btn-completar")) cambiarEstado(id, "completada");
-    else abrirModal(id);
+    else abrirModal(id, slot.getAttribute("data-muelle"));
   }
 });
 
@@ -843,11 +843,11 @@ function renderSeccion(tableId, muelles, franjas, seccion, reservas) {
       const pend = reservas.filter(r => !r.muelle && r.franja === franja && r.estado === "pendiente" && r.seccion === seccion);
       if (hits.length > 0) {
         const r = hits[0]; const color = ESTADO_COLOR[r.estado] || "#9CA3AF";
-        tbody += "<td class='slot-td" + now + "' data-id='" + r.id + "' style='background:" + color + "' title='" + esc(r.empresa) + "'>" +
+        tbody += "<td class='slot-td" + now + "' data-id='" + r.id + "' data-muelle='" + muelle + "' style='background:" + color + "' title='" + esc(r.empresa) + "'>" +
           "<div class='slot-empresa'>" + esc(r.empresa.split(" ")[0]) + "</div><div class='slot-estado'>" + esc(r.estado) + "</div></td>";
       } else if (pend.length > 0) {
         const r = pend[0];
-        tbody += "<td class='slot-td slot-pendiente" + now + "' data-id='" + r.id + "' title='" + esc(r.empresa) + "'>" +
+        tbody += "<td class='slot-td slot-pendiente" + now + "' data-id='" + r.id + "' data-muelle='" + muelle + "' title='" + esc(r.empresa) + "'>" +
           "<div class='slot-empresa'>" + esc(r.empresa.split(" ")[0]) + "</div><div class='slot-estado'>pendiente</div></td>";
       } else {
         const fr = franjaRango(franja);
@@ -986,7 +986,7 @@ function exportarExcel() {
   XLSX.writeFile(wb, "Aldelis_Reservas_" + document.getElementById("informe-desde").value + "_" + document.getElementById("informe-hasta").value + ".xlsx");
 }
 
-function abrirModal(id) {
+function abrirModal(id, muellePre) {
   const r = window._reservas.find(x => x.id === id);
   if (!r) return;
   reservaActual = r;
@@ -1012,6 +1012,13 @@ function abrirModal(id) {
     document.getElementById(selId).innerHTML = m.map(x => "<option value='" + x + "'>" + x + "</option>").join("");
   });
   document.getElementById("franja-reasignar").innerHTML = f.map(x => "<option value='" + x + "'>" + x + "</option>").join("");
+
+  // Si se ha pulsado desde un muelle concreto, lo dejamos preseleccionado para aceptar ahi
+  const preferido = (muellePre && m.indexOf(muellePre) !== -1) ? muellePre : (r.muelle && m.indexOf(r.muelle) !== -1 ? r.muelle : null);
+  if (preferido) {
+    document.getElementById("muelle-confirmar").value = preferido;
+    document.getElementById("muelle-reasignar").value = preferido;
+  }
 
   document.getElementById("tab-en-curso").style.display  = r.estado === "confirmada" ? "block" : "none";
   document.getElementById("tab-completar").style.display = (r.estado === "confirmada" || r.estado === "en_curso") ? "block" : "none";
