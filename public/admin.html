@@ -7,8 +7,10 @@
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="css/admin.css">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <script>if(localStorage.getItem('darkMode')==='1')document.documentElement.classList.add('preload-dark');</script>
+  <style>.preload-dark body{background:#0F0F11!important}</style>
 </head>
-<body class="admin-body">
+<body class="admin-body" id="admin-body">
 
   <div id="login-screen" class="login-wrap">
     <div class="card" style="max-width:360px; margin:0 auto;">
@@ -29,6 +31,7 @@
       <div class="admin-logo">Aldelis - Gestion de muelles</div>
       <div class="topbar-right">
         <span id="last-refresh" style="font-size:11px;color:#9CA3AF;"></span>
+        <button class="btn-dark-toggle" id="btn-dark" onclick="toggleDarkMode()">Noche</button>
         <button class="tab-view active" id="btn-vista-rejilla" onclick="switchVista('rejilla')">Rejilla</button>
         <button class="tab-view" id="btn-vista-lista" onclick="switchVista('lista')">Lista</button>
         <button class="tab-view" id="btn-vista-informes" onclick="switchVista('informes')">Informes</button>

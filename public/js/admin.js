@@ -5,6 +5,23 @@ function esc(s){
   });
 }
 
+// Modo oscuro — guarda preferencia en localStorage
+function toggleDarkMode() {
+  const body = document.getElementById('admin-body');
+  const dark = body.classList.toggle('dark');
+  localStorage.setItem('darkMode', dark ? '1' : '0');
+  document.getElementById('btn-dark').textContent = dark ? 'Dia' : 'Noche';
+}
+
+function initDarkMode() {
+  document.documentElement.classList.remove('preload-dark');
+  if (localStorage.getItem('darkMode') === '1') {
+    document.getElementById('admin-body').classList.add('dark');
+    const btn = document.getElementById('btn-dark');
+    if (btn) btn.textContent = 'Dia';
+  }
+}
+
 // Envio de email via Firebase Function
 async function enviarEmailMS(to, subject, body) {
   if (!to) return;
@@ -63,7 +80,7 @@ let informeData = [];
 
 // Version de la app. SUBIR este numero al publicar cambios importantes:
 // las pestanas abiertas se recargaran solas para coger la version nueva.
-const APP_VERSION = 11;
+const APP_VERSION = 12;
 let _chatSel = 1;
 function vigilarVersion() {
   db.collection("config").doc("app").onSnapshot(d => {
@@ -190,6 +207,7 @@ auth.onAuthStateChanged(user => {
     document.getElementById("lz-hasta").value         = hoy;
     document.getElementById("cg-desde").value         = hoy;
     document.getElementById("cg-hasta").value         = hoy;
+    initDarkMode();
     iniciarListeners();
     vigilarVersion();
     aplicarRol(user);
