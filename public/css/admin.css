@@ -350,7 +350,7 @@
 @media (max-width: 720px) { .gantt-res-grid { grid-template-columns: 1fr; } }
 
 /* Chat almacen <-> lanzaderas */
-.chat-wrap { display: flex; background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); overflow: hidden; height: 420px; }
+.chat-wrap { display: flex; background: #fff; border-radius: 10px; border: 1px solid #C7CCD3; box-shadow: 0 4px 16px rgba(0,0,0,0.14); overflow: hidden; height: 420px; }
 .chat-threads { flex: 0 0 220px; border-right: 1px solid #EEE; overflow-y: auto; }
 .chat-thread { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; cursor: pointer; border-bottom: 1px solid #F5F5F5; }
 .chat-thread:hover { background: #F9F9F9; }
