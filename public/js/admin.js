@@ -63,7 +63,7 @@ let informeData = [];
 
 // Version de la app. SUBIR este numero al publicar cambios importantes:
 // las pestanas abiertas se recargaran solas para coger la version nueva.
-const APP_VERSION = 9;
+const APP_VERSION = 10;
 let _chatSel = 1;
 function vigilarVersion() {
   db.collection("config").doc("app").onSnapshot(d => {
@@ -746,6 +746,7 @@ async function cargarInformeLanz() {
 
   const naveT = {};                  // nave -> { sum, n }
   let transSum = 0, transN = 0, viajes = 0;
+  const MAX_DUR = 480; // 8h: por encima se considera "olvido de registrar la salida"
   Object.keys(porLanz).forEach(k => {
     const arr = porLanz[k].sort((a, b) => a.desde.toMillis() - b.desde.toMillis());
     for (let i = 0; i < arr.length; i++) {
@@ -753,8 +754,10 @@ async function cargarInformeLanz() {
       if (ev.estado === "en_nave") viajes++;
       const next = arr[i + 1];
       if (!next) continue;
-      const dur = Math.round((next.desde.toMillis() - ev.desde.toMillis()) / 60000);
-      if (dur < 0) continue;
+      const d1 = ev.desde.toDate(), d2 = next.desde.toDate();
+      const dur = Math.round((d2 - d1) / 60000);
+      // Descarta estancias rotas: negativas, de otro dia, o absurdamente largas (olvido)
+      if (dur < 0 || dur > MAX_DUR || d1.toDateString() !== d2.toDateString()) continue;
       if (ev.estado === "en_nave") {
         if (!naveT[ev.nave]) naveT[ev.nave] = { sum: 0, n: 0 };
         naveT[ev.nave].sum += dur; naveT[ev.nave].n++;
