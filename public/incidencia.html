@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aldelis — Abrir incidencia Bizerba</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div style="width:100%; max-width:480px; margin:0 auto;">
+    <div class="portal-header">
+      <div class="logo">Aldelis</div>
+      <div class="logo-sub">Incidencia Bizerba</div>
+    </div>
+
+    <div id="i-form" class="card">
+      <h2>Abrir incidencia</h2>
+      <p class="card-desc">Avisa al tecnico de una averia en tu linea.</p>
+      <div class="field">
+        <label>Linea <span class="req">*</span></label>
+        <select id="i-linea"></select>
+      </div>
+      <div class="field">
+        <label>Averia / que ocurre <span class="req">*</span></label>
+        <input type="text" id="i-averia" placeholder="Ej: la balanza no tara">
+      </div>
+      <button class="btn-primary" id="i-btn" onclick="abrirIncidencia()">Abrir incidencia</button>
+    </div>
+
+    <div id="i-hecho" class="card text-center" style="display:none">
+      <div class="done-icon">✓</div>
+      <h2>Incidencia abierta</h2>
+      <p class="card-desc">La incidencia de la <strong id="i-hecho-linea"></strong> ha quedado registrada. Un tecnico la cogera en breve.</p>
+      <button class="btn-back" style="width:100%;margin-top:8px" onclick="nuevaIncidencia()">Abrir otra incidencia</button>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-check-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script src="js/firebase-config-compat.js"></script>
+  <script src="js/incidencia.js"></script>
+</body>
+</html>
