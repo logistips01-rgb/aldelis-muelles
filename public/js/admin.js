@@ -80,7 +80,7 @@ let informeData = [];
 
 // Version de la app. SUBIR este numero al publicar cambios importantes:
 // las pestanas abiertas se recargaran solas para coger la version nueva.
-const APP_VERSION = 18;
+const APP_VERSION = 19;
 let _chatSel = 1;
 function vigilarVersion() {
   db.collection("config").doc("app").onSnapshot(d => {
@@ -309,10 +309,8 @@ const BIZERBA_USERS = ["mlorente@aldelis.com", "jpina@aldelis.com"];
 function aplicarRol(user) {
   const email = (user.email || "").toLowerCase();
   // Bizerba: solo visible para usuarios autorizados
-  if (!BIZERBA_USERS.includes(email)) {
-    const b = document.getElementById("btn-vista-bizerba");
-    if (b) b.style.display = "none";
-  }
+  const bizBtn = document.getElementById("btn-vista-bizerba");
+  if (bizBtn) bizBtn.style.display = BIZERBA_USERS.includes(email) ? "" : "none";
   const soloLanz = SOLO_LANZADERAS.includes(email);
   if (!soloLanz) return;
   ["rejilla", "lista", "informes", "cargas", "merca"].forEach(v => {
