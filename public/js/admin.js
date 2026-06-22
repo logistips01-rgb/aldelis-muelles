@@ -80,7 +80,7 @@ let informeData = [];
 
 // Version de la app. SUBIR este numero al publicar cambios importantes:
 // las pestanas abiertas se recargaran solas para coger la version nueva.
-const APP_VERSION = 15;
+const APP_VERSION = 16;
 let _chatSel = 1;
 function vigilarVersion() {
   db.collection("config").doc("app").onSnapshot(d => {
@@ -425,6 +425,7 @@ function renderGanttLanz(segs, trans, finMarks) {
     segs.filter(s => s.numero === n).forEach(s => {
       let lbl = NAVE_NOMBRE[s.nave] || s.nave;
       if (s.nave === "plaza" && s.muelle) lbl += " " + (s.accion === "cargando" ? "⬆" : "⬇") + s.muelle;
+      else if (s.nave === "merca" && s.muelle) lbl += " " + s.muelle;
       const info = "Lanzadera " + n + " · " + lbl + "\nDe " + minToHHMM(s.startMin) + " a " + minToHHMM(s.endMin);
       bars += ganttBarra(s.startMin, s.endMin, "#1D9E75", lbl, info);
     });
@@ -488,6 +489,7 @@ function revisarAlertas(segs, trans, finMarks) {
         const el = ahoraMin - best.start;
         let lbl = NAVE_NOMBRE[best.nave] || best.nave;
         if (best.nave === "plaza" && best.muelle) lbl += " " + (best.accion === "cargando" ? "⬆" : "⬇") + best.muelle;
+        else if (best.nave === "merca" && best.muelle) lbl += " " + best.muelle;
         if (el >= 120) alertas.push({ n: n, lbl: lbl, el: el });
         if (el >= 90)  emailCand.push({ n: n, lbl: lbl, el: el });
       }
@@ -539,6 +541,7 @@ function resumenEstado(segs, trans, finMarks) {
       if (!best || s.startMin > best.start) {
         let t = NAVE_NOMBRE[s.nave] || s.nave;
         if (s.nave === "plaza" && s.muelle) t += " " + (s.accion === "cargando" ? "⬆" : "⬇") + s.muelle;
+        else if (s.nave === "merca" && s.muelle) t += " " + s.muelle;
         best = { start: s.startMin, txt: "en " + t, color: "#1D9E75", esNave: true };
       }
     });

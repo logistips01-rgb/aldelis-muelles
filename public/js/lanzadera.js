@@ -12,6 +12,7 @@ const NAVES = [
 ];
 const MUELLES_CARGA    = ["M1", "M2", "M3", "M4", "M5"];
 const MUELLES_DESCARGA = ["M6", "M7", "M8", "M9", "M10", "M18", "M19", "M20"];
+const MUELLES_MERCA    = ["M2", "M4"];
 const NOMBRE_NAVE = {};
 NAVES.forEach(n => { NOMBRE_NAVE[n.id] = n.nombre; });
 
@@ -35,6 +36,7 @@ function render() {
   if (!sel.nave)   return renderNaves();
   if (sel.nave === "plaza" && !sel.accion) return renderAccion();
   if (sel.nave === "plaza" && !sel.muelle) return renderMuelles();
+  if (sel.nave === "merca" && !sel.muelle) return renderMuellesMerca();
   return renderConfirmar();
 }
 
@@ -91,9 +93,24 @@ function renderMuelles() {
     "</div>";
 }
 
+function renderMuellesMerca() {
+  app.innerHTML =
+    "<div class='card'>" + cabecera() +
+    "<h2>Selecciona muelle</h2><p class='card-desc'>Muelle en Merca.</p>" +
+    "<div class='temp-grid' style='grid-template-columns:1fr 1fr'>" +
+    MUELLES_MERCA.map(m =>
+      "<div class='temp-btn' onclick=\"pickMuelle('" + m + "')\"><div class='temp-name'>" + m + "</div></div>"
+    ).join("") +
+    "</div>" +
+    "<button class='btn-back' style='width:100%;margin-top:12px' onclick='volver(\"merca-nave\")'>&#8592; Atras</button>" +
+    "</div>";
+}
+
 function renderConfirmar() {
   const detalle = sel.nave === "plaza"
     ? "Plaza · " + (sel.accion === "cargando" ? "Cargando" : "Descargando") + " · " + sel.muelle
+    : sel.nave === "merca"
+    ? "Merca · " + sel.muelle
     : NOMBRE_NAVE[sel.nave];
   app.innerHTML =
     "<div class='card text-center'>" +
@@ -147,8 +164,10 @@ function volver(desde) {
   if (desde === "accion") { sel.nave = null; }
   if (desde === "muelle") {
     if (sel.nave === "plaza") { sel.muelle = null; sel.accion = null; }
+    else if (sel.nave === "merca") { sel.muelle = null; }
     else sel.nave = null;
   }
+  if (desde === "merca-nave") { sel.nave = null; sel.muelle = null; }
   render();
 }
 
@@ -160,7 +179,7 @@ async function escribir(estado, activa) {
     estado:      estado,
     nave:        sel.nave,
     accion:      sel.nave === "plaza" ? sel.accion : "presente",
-    muelle:      sel.nave === "plaza" ? sel.muelle : null,
+    muelle:      (sel.nave === "plaza" || sel.nave === "merca") ? sel.muelle : null,
     destino:     estado === "transito" ? (sel.destino || null) : null,
     activa:      activa,
     desde:       firebase.firestore.Timestamp.now(),
@@ -220,8 +239,8 @@ async function finJornada() {
 
 function irANaves() {
   sel.nave = sel.destino; sel.accion = null; sel.muelle = null; sel.destino = null;
-  if (sel.nave && sel.nave !== "plaza") registrar(); // llegada directa a nave externa (cierra el transito)
-  else render();                                      // Plaza: elegir carga/descarga + muelle
+  if (sel.nave && sel.nave !== "plaza" && sel.nave !== "merca") registrar(); // llegada directa a nave externa (cierra el transito)
+  else render();                                      // Plaza o Merca: elegir muelle
 }
 
 // ─── CHAT con el almacen ─────────────────────────────────────────────
