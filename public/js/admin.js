@@ -80,7 +80,7 @@ let informeData = [];
 
 // Version de la app. SUBIR este numero al publicar cambios importantes:
 // las pestanas abiertas se recargaran solas para coger la version nueva.
-const APP_VERSION = 14;
+const APP_VERSION = 15;
 let _chatSel = 1;
 function vigilarVersion() {
   db.collection("config").doc("app").onSnapshot(d => {
@@ -474,9 +474,10 @@ const ADMINS_ALERTA = [
 // IDs de alertas ya notificadas en esta sesion (evita spam cada 30s)
 const _alertasEmailEnviadas = new Set();
 
-// Alerta nuclear: lanzadera 2h+ en la misma nave (sin moverse)
+// Alerta nuclear: banner a las 2h, correo a la hora y media
 function revisarAlertas(segs, trans, finMarks) {
-  const alertas = [];
+  const alertas = [];      // para el banner rojo (>= 2h)
+  const emailCand = [];     // para el correo (cruce de 1h30)
   if (esHoy) {
     for (let n = 1; n <= 4; n++) {
       let best = null;
@@ -485,11 +486,10 @@ function revisarAlertas(segs, trans, finMarks) {
       finMarks.filter(m => m.numero === n).forEach(m => { if (!best || m.atMin > best.start) best = { start: m.atMin, tipo: "fin" }; });
       if (best && best.tipo === "nave") {
         const el = ahoraMin - best.start;
-        if (el >= 120) {
-          let lbl = NAVE_NOMBRE[best.nave] || best.nave;
-          if (best.nave === "plaza" && best.muelle) lbl += " " + (best.accion === "cargando" ? "⬆" : "⬇") + best.muelle;
-          alertas.push({ n: n, lbl: lbl, el: el });
-        }
+        let lbl = NAVE_NOMBRE[best.nave] || best.nave;
+        if (best.nave === "plaza" && best.muelle) lbl += " " + (best.accion === "cargando" ? "⬆" : "⬇") + best.muelle;
+        if (el >= 120) alertas.push({ n: n, lbl: lbl, el: el });
+        if (el >= 90)  emailCand.push({ n: n, lbl: lbl, el: el });
       }
     }
   }
@@ -506,22 +506,22 @@ function revisarAlertas(segs, trans, finMarks) {
   if (tab) tab.classList.toggle("tab-alerta", alertas.length > 0 && !tab.classList.contains("active"));
 
   // Enviar email solo la primera vez que se detecta cada alerta.
-  // Solo si la lanzadera acaba de cruzar el umbral de 2h estando el panel
-  // vigilando (ventana 120-180 min). Asi evitamos avisos de registros viejos
+  // Solo si la lanzadera acaba de cruzar el umbral de 1h30 estando el panel
+  // vigilando (ventana 90-150 min). Asi evitamos avisos de registros viejos
   // u olvidos de salida que aparecen ya con 8h+ al abrir el panel.
-  const alertaIds = new Set(alertas.map(a => "lanz" + a.n));
-  alertas.forEach(a => {
+  const alertaIds = new Set(emailCand.map(a => "lanz" + a.n));
+  emailCand.forEach(a => {
     const id = "lanz" + a.n;
-    if (!_alertasEmailEnviadas.has(id) && a.el >= 120 && a.el <= 180) {
+    if (!_alertasEmailEnviadas.has(id) && a.el >= 90 && a.el <= 150) {
       _alertasEmailEnviadas.add(id);
-      const asunto = "ALERTA Aldelis — Lanzadera " + a.n + " lleva mas de 2 horas en " + a.lbl;
+      const asunto = "ALERTA Aldelis — Lanzadera " + a.n + " lleva mas de hora y media en " + a.lbl;
       const cuerpo =
         "ALERTA de Aldelis Muelles\n\n" +
-        "La Lanzadera " + a.n + " lleva mas de 2 horas parada en " + a.lbl + ".\n\n" +
+        "La Lanzadera " + a.n + " lleva mas de hora y media parada en " + a.lbl + ".\n\n" +
         "Revisa el panel:\nhttps://aldelis-muelles.web.app/admin.html\n\n" +
         "Aldelis — Gestion de muelles";
       ADMINS_ALERTA.forEach(to => enviarEmailMS(to, asunto, cuerpo));
-    } else if (!_alertasEmailEnviadas.has(id) && a.el > 180) {
+    } else if (!_alertasEmailEnviadas.has(id) && a.el > 150) {
       // Registro viejo / salida sin registrar: marcar como notificado para no
       // mandar correo, pero seguir mostrando el banner en pantalla.
       _alertasEmailEnviadas.add(id);
