@@ -104,6 +104,22 @@ service cloud.firestore {
         && (d.pales == null || d.pales is number);
     }
 
+    // Incidencias Bizerba: produccion abre, el tecnico coge y resuelve.
+    // Lectura abierta (la app del tecnico la necesita sin login, como lanzaderas).
+    match /incidencias/{id} {
+      allow read: if true;
+      allow create, update: if validIncidencia();
+      allow delete: if request.auth != null;
+    }
+
+    function validIncidencia() {
+      let d = request.resource.data;
+      return d.linea is number && d.linea >= 0 && d.linea <= 16
+        && d.estado in ['abierta', 'aceptada', 'resuelta']
+        && d.averia is string && d.averia.size() <= 300
+        && (d.tecnico == null || (d.tecnico is number && d.tecnico >= 1 && d.tecnico <= 99));
+    }
+
     function validLanzadera() {
       let d = request.resource.data;
       return d.numero is number && d.numero >= 1 && d.numero <= 4

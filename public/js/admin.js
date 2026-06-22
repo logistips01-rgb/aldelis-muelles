@@ -80,7 +80,7 @@ let informeData = [];
 
 // Version de la app. SUBIR este numero al publicar cambios importantes:
 // las pestanas abiertas se recargaran solas para coger la version nueva.
-const APP_VERSION = 17;
+const APP_VERSION = 18;
 let _chatSel = 1;
 function vigilarVersion() {
   db.collection("config").doc("app").onSnapshot(d => {
@@ -207,6 +207,8 @@ auth.onAuthStateChanged(user => {
     document.getElementById("lz-hasta").value         = hoy;
     document.getElementById("cg-desde").value         = hoy;
     document.getElementById("cg-hasta").value         = hoy;
+    document.getElementById("bz-desde").value         = hoy;
+    document.getElementById("bz-hasta").value         = hoy;
     initDarkMode();
     iniciarListeners();
     vigilarVersion();
@@ -277,6 +279,13 @@ function iniciarListeners() {
       const arr = []; s.forEach(d => arr.push(d.data())); arr.reverse();
       window._mensajes = arr; renderChat();
     }, e => console.error("mensajes:", e)));
+
+  _unsubs.push(db.collection("incidencias")
+    .where("creada", ">=", Ts.fromMillis(dayStart)).where("creada", "<", Ts.fromMillis(dayEnd))
+    .onSnapshot(s => {
+      window._incidencias = []; s.forEach(d => window._incidencias.push({ id: d.id, ...d.data() }));
+      cargarBizerba();
+    }, e => console.error("incidencias:", e)));
 }
 
 function iniciarSesion() {
@@ -295,10 +304,18 @@ function cerrarSesion() {
 
 // Usuarios que solo ven la vista de Lanzaderas (gerente de lanzaderas)
 const SOLO_LANZADERAS = ["transfriorza@transfriorza.es"];
+// Usuarios que pueden ver la pestana Bizerba (incidencias de produccion)
+const BIZERBA_USERS = ["mlorente@aldelis.com", "jpina@aldelis.com"];
 function aplicarRol(user) {
-  const soloLanz = SOLO_LANZADERAS.includes((user.email || "").toLowerCase());
+  const email = (user.email || "").toLowerCase();
+  // Bizerba: solo visible para usuarios autorizados
+  if (!BIZERBA_USERS.includes(email)) {
+    const b = document.getElementById("btn-vista-bizerba");
+    if (b) b.style.display = "none";
+  }
+  const soloLanz = SOLO_LANZADERAS.includes(email);
   if (!soloLanz) return;
-  ["rejilla", "lista", "informes", "cargas"].forEach(v => {
+  ["rejilla", "lista", "informes", "cargas", "merca"].forEach(v => {
     const b = document.getElementById("btn-vista-" + v);
     if (b) b.style.display = "none";
   });
@@ -308,13 +325,14 @@ function aplicarRol(user) {
 }
 
 function switchVista(vista) {
-  ["rejilla", "lista", "informes", "lanzaderas", "cargas", "merca"].forEach(v => {
+  ["rejilla", "lista", "informes", "lanzaderas", "cargas", "merca", "bizerba"].forEach(v => {
     document.getElementById("vista-" + v).style.display = vista === v ? "block" : "none";
     document.getElementById("btn-vista-" + v).classList.toggle("active", vista === v);
   });
   if (vista === "lanzaderas") cargarLanzaderas();
   if (vista === "cargas")     cargarCargas();
   if (vista === "merca")      cargarMerca();
+  if (vista === "bizerba")    cargarBizerba();
 }
 
 const MUELLES_CARGA = ["M1", "M2", "M3", "M4", "M5"];
@@ -761,6 +779,187 @@ async function registrarMercaAlmacen() {
     });
     cerrarMercaModal();
   } catch (e) { console.error(e); alert("Error al registrar la descarga."); }
+}
+
+// ─── INCIDENCIAS BIZERBA ─────────────────────────────────────────────
+const LINEAS_BIZERBA = Array.from({ length: 17 }, (_, i) => i); // 0..16
+
+function difMin(a, b) { // minutos entre dos timestamps (b - a)
+  if (!a || !b) return null;
+  return Math.round((b.toMillis() - a.toMillis()) / 60000);
+}
+
+function cargarBizerba() {
+  const inc = window._incidencias || [];
+  const abiertas  = inc.filter(i => i.estado === "abierta");
+  const aceptadas = inc.filter(i => i.estado === "aceptada");
+  const resueltas = inc.filter(i => i.estado === "resuelta");
+
+  document.getElementById("biz-abiertas").textContent  = abiertas.length;
+  document.getElementById("biz-curso").textContent     = aceptadas.length;
+  document.getElementById("biz-resueltas").textContent = resueltas.length;
+
+  const resps = inc.filter(i => i.aceptada && i.creada).map(i => difMin(i.creada, i.aceptada));
+  const media = resps.length ? Math.round(resps.reduce((a, b) => a + b, 0) / resps.length) : null;
+  document.getElementById("biz-resp").textContent = media != null ? formatDuracion(media) : "—";
+
+  // Incidencias activas (sin coger + en curso), ordenadas por antiguedad
+  const activas = abiertas.concat(aceptadas).sort((a, b) => (a.creada ? a.creada.toMillis() : 0) - (b.creada ? b.creada.toMillis() : 0));
+  const cont = document.getElementById("biz-activas");
+  if (!activas.length) {
+    cont.innerHTML = "<div class='empty-state'>No hay incidencias activas.</div>";
+  } else {
+    cont.innerHTML = activas.map(i => {
+      const abierta = i.estado === "abierta";
+      const espera = i.creada ? difMin(i.creada, firebase.firestore.Timestamp.now()) : null;
+      const enCurso = i.aceptada ? difMin(i.aceptada, firebase.firestore.Timestamp.now()) : null;
+      const color = abierta ? "#D41F3A" : "#1D9E75";
+      const estLbl = abierta
+        ? "Sin coger · espera " + (espera != null ? formatDuracion(espera) : "—")
+        : "Tecnico " + (i.tecnico || "?") + " · lleva " + (enCurso != null ? formatDuracion(enCurso) : "—");
+      const btn = abierta
+        ? ""
+        : "<button class='btn-accion btn-completar' onclick=\"resolverIncidencia('" + i.id + "')\">Resuelta</button>";
+      return "<div class='reserva-item'>" +
+        "<div class='reserva-hora' style='color:" + color + "'>Linea " + i.linea + "</div>" +
+        "<div class='reserva-info'>" +
+        "<div class='reserva-empresa'>" + esc(i.averia || "Sin detalle") + "</div>" +
+        "<div class='reserva-detalle'>" + estLbl + "</div></div>" +
+        "<div style='display:flex;flex-direction:column;gap:6px;align-items:flex-end'>" +
+        "<span class='estado-pill' style='background:" + color + ";color:#fff'>" + (abierta ? "Abierta" : "En curso") + "</span>" +
+        btn + "</div></div>";
+    }).join("");
+  }
+
+  // Historial del dia
+  const tabla = document.getElementById("biz-tabla");
+  if (!inc.length) {
+    tabla.innerHTML = "<div class='empty-state'>Sin incidencias hoy.</div>";
+  } else {
+    const filas = inc.slice().sort((a, b) => (b.creada ? b.creada.toMillis() : 0) - (a.creada ? a.creada.toMillis() : 0));
+    tabla.innerHTML = "<div class='tabla-scroll'><table class='tabla-inf'><thead><tr>" +
+      "<th>Linea</th><th>Averia</th><th>Estado</th><th>Tecnico</th><th>Emitida</th><th>Cogida</th><th>Resuelta</th><th>T. respuesta</th><th>T. resolucion</th>" +
+      "</tr></thead><tbody>" +
+      filas.map(i => {
+        const tResp = difMin(i.creada, i.aceptada);
+        const tReso = difMin(i.aceptada, i.resuelta);
+        return "<tr><td>" + i.linea + "</td><td>" + esc(i.averia || "—") + "</td>" +
+          "<td>" + esc(i.estado) + "</td><td>" + (i.tecnico ? "T" + i.tecnico : "—") + "</td>" +
+          "<td>" + (i.creada ? tsHora(i.creada) : "—") + "</td>" +
+          "<td>" + (i.aceptada ? tsHora(i.aceptada) : "—") + "</td>" +
+          "<td>" + (i.resuelta ? tsHora(i.resuelta) : "—") + "</td>" +
+          "<td>" + (tResp != null ? formatDuracion(tResp) : "—") + "</td>" +
+          "<td>" + (tReso != null ? formatDuracion(tReso) : "—") + "</td></tr>";
+      }).join("") + "</tbody></table></div>";
+  }
+}
+
+async function resolverIncidencia(id) {
+  if (!confirm("¿Marcar esta incidencia como resuelta?")) return;
+  try {
+    await db.collection("incidencias").doc(id).update({ estado: "resuelta", resuelta: firebase.firestore.Timestamp.now() });
+  } catch (e) { console.error(e); alert("Error al actualizar la incidencia."); }
+}
+
+function abrirIncidenciaModal() {
+  document.getElementById("inc-linea").innerHTML =
+    "<option value=''>Selecciona linea</option>" +
+    LINEAS_BIZERBA.map(l => "<option value='" + l + "'>Linea " + l + "</option>").join("");
+  document.getElementById("inc-averia").value = "";
+  document.getElementById("incidencia-modal").style.display = "flex";
+}
+
+function cerrarIncidenciaModal(e) {
+  if (!e || e.target.id === "incidencia-modal") document.getElementById("incidencia-modal").style.display = "none";
+}
+
+async function crearIncidencia() {
+  const lineaV = document.getElementById("inc-linea").value;
+  const averia = document.getElementById("inc-averia").value.trim();
+  if (lineaV === "") { alert("Selecciona la linea."); return; }
+  if (!averia)       { alert("Describe la averia."); return; }
+  try {
+    await db.collection("incidencias").add({
+      linea:    Number(lineaV),
+      averia:   averia,
+      estado:   "abierta",
+      tecnico:  null,
+      creada:   firebase.firestore.Timestamp.now(),
+      aceptada: null,
+      resuelta: null,
+      created_at: firebase.firestore.Timestamp.now()
+    });
+    cerrarIncidenciaModal();
+  } catch (e) { console.error(e); alert("Error al abrir la incidencia."); }
+}
+
+// Informe de incidencias por rango de fechas + exportacion a Excel
+async function cargarInformeBizerba() {
+  const desde = document.getElementById("bz-desde").value;
+  const hasta = document.getElementById("bz-hasta").value;
+  if (!desde || !hasta) { alert("Selecciona el rango de fechas."); return; }
+  const startTs = firebase.firestore.Timestamp.fromMillis(new Date(desde + "T00:00:00").getTime());
+  const endTs   = firebase.firestore.Timestamp.fromMillis(new Date(hasta + "T23:59:59").getTime());
+  const snap = await db.collection("incidencias")
+    .where("creada", ">=", startTs).where("creada", "<=", endTs).get();
+  const inc = [];
+  snap.forEach(d => inc.push({ id: d.id, ...d.data() }));
+  window._bizerbaInforme = inc;
+
+  const cont = document.getElementById("bz-resultado");
+  if (!inc.length) { cont.innerHTML = "<div class='empty-state'>Sin incidencias en el periodo.</div>"; return; }
+
+  const resps = inc.filter(i => i.aceptada && i.creada).map(i => difMin(i.creada, i.aceptada));
+  const resos = inc.filter(i => i.resuelta && i.aceptada).map(i => difMin(i.aceptada, i.resuelta));
+  const mResp = resps.length ? Math.round(resps.reduce((a, b) => a + b, 0) / resps.length) : null;
+  const mReso = resos.length ? Math.round(resos.reduce((a, b) => a + b, 0) / resos.length) : null;
+  const resueltas = inc.filter(i => i.estado === "resuelta").length;
+
+  let html = "<div class='informe-metricas'>" +
+    "<div class='metric-card'><div class='metric-value'>" + inc.length + "</div><div class='metric-label'>Total incidencias</div></div>" +
+    "<div class='metric-card'><div class='metric-value'>" + resueltas + "</div><div class='metric-label'>Resueltas</div></div>" +
+    "<div class='metric-card'><div class='metric-value'>" + (mResp != null ? formatDuracion(mResp) : "—") + "</div><div class='metric-label'>T. medio respuesta</div></div>" +
+    "<div class='metric-card'><div class='metric-value'>" + (mReso != null ? formatDuracion(mReso) : "—") + "</div><div class='metric-label'>T. medio resolucion</div></div>" +
+    "</div>";
+
+  const filas = inc.slice().sort((a, b) => (b.creada ? b.creada.toMillis() : 0) - (a.creada ? a.creada.toMillis() : 0));
+  html += "<div class='informe-card'><div class='tabla-scroll'><table class='tabla-inf'><thead><tr>" +
+    "<th>Fecha</th><th>Linea</th><th>Averia</th><th>Estado</th><th>Tecnico</th><th>Emitida</th><th>Cogida</th><th>Resuelta</th><th>T. resp.</th><th>T. resol.</th>" +
+    "</tr></thead><tbody>" +
+    filas.map(i => {
+      const tResp = difMin(i.creada, i.aceptada);
+      const tReso = difMin(i.aceptada, i.resuelta);
+      return "<tr><td>" + (i.creada ? tsFecha(i.creada) : "—") + "</td><td>" + i.linea + "</td>" +
+        "<td>" + esc(i.averia || "—") + "</td><td>" + esc(i.estado) + "</td>" +
+        "<td>" + (i.tecnico ? "T" + i.tecnico : "—") + "</td>" +
+        "<td>" + (i.creada ? tsHora(i.creada) : "—") + "</td>" +
+        "<td>" + (i.aceptada ? tsHora(i.aceptada) : "—") + "</td>" +
+        "<td>" + (i.resuelta ? tsHora(i.resuelta) : "—") + "</td>" +
+        "<td>" + (tResp != null ? formatDuracion(tResp) : "—") + "</td>" +
+        "<td>" + (tReso != null ? formatDuracion(tReso) : "—") + "</td></tr>";
+    }).join("") + "</tbody></table></div></div>";
+  cont.innerHTML = html;
+}
+
+function exportarBizerba() {
+  const inc = window._bizerbaInforme || [];
+  if (!inc.length) { alert("Primero consulta un periodo para exportar."); return; }
+  const filas = inc.map(i => ({
+    "Fecha":          i.creada ? tsFecha(i.creada) : "",
+    "Linea":          i.linea,
+    "Averia":         i.averia || "",
+    "Estado":         i.estado || "",
+    "Tecnico":        i.tecnico ? "Tecnico " + i.tecnico : "",
+    "Emitida":        i.creada ? tsHora(i.creada) : "",
+    "Cogida":         i.aceptada ? tsHora(i.aceptada) : "",
+    "Resuelta":       i.resuelta ? tsHora(i.resuelta) : "",
+    "T. respuesta (min)": difMin(i.creada, i.aceptada),
+    "T. resolucion (min)": difMin(i.aceptada, i.resuelta)
+  }));
+  const ws = XLSX.utils.json_to_sheet(filas);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Incidencias");
+  XLSX.writeFile(wb, "incidencias_bizerba.xlsx");
 }
 
 // ─── INDICACIONES A LANZADERAS ───────────────────────────────────────
