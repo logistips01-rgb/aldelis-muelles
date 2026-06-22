@@ -34,7 +34,6 @@ function render() {
   ensureChatLanz();
   if (!sel.numero) return renderLanzaderas();
   if (!sel.nave)   return renderNaves();
-  if (sel.nave === "plaza" && !sel.accion) return renderAccion();
   if (sel.nave === "plaza" && !sel.muelle) return renderMuelles();
   if (sel.nave === "merca" && !sel.muelle) return renderMuellesMerca();
   return renderConfirmar();
@@ -67,29 +66,17 @@ function renderNaves() {
     "</div>";
 }
 
-function renderAccion() {
-  app.innerHTML =
-    "<div class='card'>" + cabecera() +
-    "<h2>En Plaza, ¿que haces?</h2>" +
-    "<div class='temp-grid' style='grid-template-columns:1fr 1fr'>" +
-    "<div class='temp-btn' onclick=\"pickAccion('cargando')\"><div class='temp-icon'>⬆️</div><div class='temp-name'>Cargar</div></div>" +
-    "<div class='temp-btn' onclick=\"pickAccion('descargando')\"><div class='temp-icon'>⬇️</div><div class='temp-name'>Descargar</div></div>" +
-    "</div>" +
-    "<button class='btn-back' style='width:100%;margin-top:12px' onclick='volver(\"accion\")'>&#8592; Atras</button>" +
-    "</div>";
-}
-
 function renderMuelles() {
-  const muelles = sel.accion === "cargando" ? MUELLES_CARGA : MUELLES_DESCARGA;
+  const muelles = MUELLES_CARGA.concat(MUELLES_DESCARGA);
   app.innerHTML =
     "<div class='card'>" + cabecera() +
-    "<h2>Selecciona muelle</h2><p class='card-desc'>" + (sel.accion === "cargando" ? "Carga" : "Descarga") + " en Plaza.</p>" +
+    "<h2>Selecciona muelle</h2><p class='card-desc'>Muelle en Plaza.</p>" +
     "<div class='temp-grid' style='grid-template-columns:1fr 1fr 1fr'>" +
     muelles.map(m =>
       "<div class='temp-btn' onclick=\"pickMuelle('" + m + "')\"><div class='temp-name'>" + m + "</div></div>"
     ).join("") +
     "</div>" +
-    "<button class='btn-back' style='width:100%;margin-top:12px' onclick='volver(\"muelle\")'>&#8592; Atras</button>" +
+    "<button class='btn-back' style='width:100%;margin-top:12px' onclick='volver(\"plaza-nave\")'>&#8592; Atras</button>" +
     "</div>";
 }
 
@@ -156,18 +143,22 @@ function cabecera() {
 
 function pickLanzadera(n) { sel.numero = n; render(); }
 function pickNave(id)     { sel.nave = id; sel.accion = null; sel.muelle = null; render(); }
-function pickAccion(a)    { sel.accion = a; sel.muelle = null; render(); }
-function pickMuelle(m)    { sel.muelle = m; render(); }
+function pickMuelle(m) {
+  sel.muelle = m;
+  // En Plaza se deduce carga/descarga segun el muelle elegido
+  if (sel.nave === "plaza") sel.accion = MUELLES_CARGA.indexOf(m) !== -1 ? "cargando" : "descargando";
+  render();
+}
 
 function volver(desde) {
   if (desde === "nave")   { sel.numero = paramL ? sel.numero : null; if (!paramL) sel.numero = null; }
-  if (desde === "accion") { sel.nave = null; }
   if (desde === "muelle") {
     if (sel.nave === "plaza") { sel.muelle = null; sel.accion = null; }
     else if (sel.nave === "merca") { sel.muelle = null; }
     else sel.nave = null;
   }
   if (desde === "merca-nave") { sel.nave = null; sel.muelle = null; }
+  if (desde === "plaza-nave") { sel.nave = null; sel.muelle = null; sel.accion = null; }
   render();
 }
 
