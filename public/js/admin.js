@@ -80,7 +80,7 @@ let informeData = [];
 
 // Version de la app. SUBIR este numero al publicar cambios importantes:
 // las pestanas abiertas se recargaran solas para coger la version nueva.
-const APP_VERSION = 16;
+const APP_VERSION = 17;
 let _chatSel = 1;
 function vigilarVersion() {
   db.collection("config").doc("app").onSnapshot(d => {
@@ -605,26 +605,53 @@ function cargarCargas() {
     if (cs.length === 1) {
       const c = cs[0];
       const color = c.estado === "completada" ? "#6B7280" : "#185FA5";
-      const click = c.estado === "cargando" ? " onclick=\"completarCarga('" + c.id + "')\"" : "";
-      const cur = c.estado === "cargando" ? "cursor:pointer;" : "";
-      return "<td class='slot-td" + now + "' style='background:" + color + ";" + cur + "'" + click +
+      return "<td class='slot-td" + now + "' style='background:" + color + ";cursor:pointer;'" +
+        " onclick=\"abrirCargaDetalle('" + c.id + "')\"" +
         " title='" + esc(c.matricula_tractora + (c.destino ? " -> " + c.destino : "")) + "'>" +
         "<div class='slot-empresa'>" + esc(c.matricula_tractora) + "</div>" +
         "<div class='slot-estado'>" + esc(c.estado) + "</div></td>";
     }
     return "<td class='slot-td slot-multi" + now + "'>" + cs.map(c => {
       const color = c.estado === "completada" ? "#6B7280" : "#185FA5";
-      const click = c.estado === "cargando" ? " onclick=\"completarCarga('" + c.id + "')\"" : "";
-      const cur = c.estado === "cargando" ? "cursor:pointer;" : "";
-      return "<div class='slot-mini'" + click + " style='background:" + color + ";" + cur + "' title='" + esc(c.matricula_tractora) + " (" + esc(c.estado) + ")'>" + esc(c.matricula_tractora) + "</div>";
+      return "<div class='slot-mini' onclick=\"abrirCargaDetalle('" + c.id + "')\" style='background:" + color + ";cursor:pointer;' title='" + esc(c.matricula_tractora) + " (" + esc(c.estado) + ")'>" + esc(c.matricula_tractora) + "</div>";
     }).join("") + "</td>";
   });
+}
+
+function abrirCargaDetalle(id) {
+  const c = (window._cargas || []).find(x => x.id === id);
+  if (!c) return;
+  document.getElementById("cd-sub").textContent =
+    "Muelle " + (c.muelle || "").replace("M", "") + " · " + (c.estado || "");
+  const rows = [
+    ["Matricula tractora", c.matricula_tractora || "—"],
+    ["Matricula semi", c.matricula_semi || "—"],
+    ["Chofer", c.chofer || "—"],
+    ["DNI", c.dni || "—"],
+    ["Destino", c.destino || "—"],
+    ["Muelle", c.muelle || "—"],
+    ["Estado", c.estado || "—"],
+    ["Inicio", c.inicio ? tsHora(c.inicio) : "—"],
+    ["Fin", c.fin ? tsHora(c.fin) : "—"]
+  ];
+  document.getElementById("cd-datos").innerHTML = rows.map(r =>
+    "<div class='resumen-row'><span class='resumen-label'>" + r[0] + "</span><span class='resumen-value'>" + esc(r[1]) + "</span></div>"
+  ).join("");
+  document.getElementById("cd-acciones").innerHTML = c.estado === "cargando"
+    ? "<button class='btn-confirm' onclick=\"completarCarga('" + c.id + "')\">Marcar como completada</button>"
+    : "";
+  document.getElementById("carga-detalle-modal").style.display = "flex";
+}
+
+function cerrarCargaDetalle(e) {
+  if (!e || e.target.id === "carga-detalle-modal") document.getElementById("carga-detalle-modal").style.display = "none";
 }
 
 async function completarCarga(id) {
   if (!confirm("¿Marcar esta carga como completada?")) return;
   try {
     await db.collection("cargas").doc(id).update({ estado: "completada", fin: firebase.firestore.Timestamp.now() });
+    cerrarCargaDetalle();
     cargarCargas();
   } catch (e) { console.error(e); alert("Error al completar la carga."); }
 }

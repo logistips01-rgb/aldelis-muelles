@@ -208,6 +208,19 @@
     </div>
   </div>
 
+  <div id="carga-detalle-modal" class="modal-overlay" style="display:none" onclick="cerrarCargaDetalle(event)">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div><div class="modal-title">Detalle de la carga</div><div class="modal-sub" id="cd-sub"></div></div>
+        <button class="close-btn" onclick="cerrarCargaDetalle()">x</button>
+      </div>
+      <div class="modal-body">
+        <div id="cd-datos" class="resumen"></div>
+        <div id="cd-acciones" style="margin-top:16px"></div>
+      </div>
+    </div>
+  </div>
+
   <div id="carga-modal" class="modal-overlay" style="display:none" onclick="cerrarCargaModal(event)">
     <div class="modal-box">
       <div class="modal-header">
