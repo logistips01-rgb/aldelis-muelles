@@ -56,7 +56,7 @@ function pickTecnico(n) { tecnico = n; iniciar(); }
 
 function render() {
   if (!tecnico) return renderIdentificar();
-  const mias = _incidencias.filter(i => i.estado === "aceptada" && i.tecnico === tecnico);
+  const mias = _incidencias.filter(i => (i.estado === "aceptada" || i.estado === "repuesto") && i.tecnico === tecnico);
   const abiertas = _incidencias.filter(i => i.estado === "abierta");
 
   let html = "<div class='card'>" +
@@ -66,11 +66,19 @@ function render() {
   if (mias.length) {
     html += "<h2>Atendiendo ahora</h2>";
     mias.forEach(i => {
-      html += "<div style='border:1.5px solid #1D9E75;border-radius:10px;padding:12px 14px;margin-bottom:10px;background:#EAF3DE'>" +
+      const enRepuesto = i.estado === "repuesto";
+      const borde = enRepuesto ? "#E08A00" : "#1D9E75";
+      const fondo = enRepuesto ? "#FBF0DA" : "#EAF3DE";
+      html += "<div style='border:1.5px solid " + borde + ";border-radius:10px;padding:12px 14px;margin-bottom:10px;background:" + fondo + "'>" +
         "<div style='font-size:16px;font-weight:700;color:#1A1A1A'>Linea " + i.linea + "</div>" +
         "<div style='font-size:14px;color:#374151;margin:4px 0'>" + escTexto(i.averia || "Sin detalle") + "</div>" +
+        (enRepuesto ? "<div style='font-size:13px;font-weight:600;color:#B36A00;margin:2px 0'>⏳ Esperando repuesto</div>" : "") +
+        (i.observaciones ? "<div style='font-size:13px;color:#4B5563;font-style:italic;margin:2px 0'>“" + escTexto(i.observaciones) + "”</div>" : "") +
         "<div style='font-size:12px;color:#6B7280'>Cogida " + tiempoDesde(i.aceptada) + "</div>" +
-        "<button class='btn-primary' style='width:100%;margin-top:8px' onclick=\"resolver('" + i.id + "')\">Marcar resuelta</button>" +
+        "<textarea id='obs-" + i.id + "' rows='2' placeholder='Que le pasaba / que has hecho / falta repuesto...' " +
+        "style='width:100%;margin-top:8px;padding:8px;border:1px solid #B7BDC6;border-radius:8px;font-family:inherit;font-size:14px;box-sizing:border-box'>" + escTexto(i.observaciones || "") + "</textarea>" +
+        "<button class='btn-primary' style='width:100%;margin-top:6px' onclick=\"resolver('" + i.id + "')\">Marcar resuelta</button>" +
+        "<button class='btn-back' style='width:100%;margin-top:6px' onclick=\"faltaRepuesto('" + i.id + "')\">Falta repuesto (dejar pendiente)</button>" +
         "</div>";
     });
   }
@@ -110,12 +118,29 @@ async function coger(id) {
   } catch (e) { console.error(e); alert("No se pudo coger. Reintenta."); }
 }
 
+function leerObs(id) {
+  const el = document.getElementById("obs-" + id);
+  return el ? el.value.trim() : "";
+}
+
 async function resolver(id) {
   if (!confirm("¿Marcar esta incidencia como resuelta?")) return;
   try {
     await db.collection("incidencias").doc(id).update({
       estado: "resuelta",
+      observaciones: leerObs(id),
       resuelta: firebase.firestore.Timestamp.now()
+    });
+  } catch (e) { console.error(e); alert("No se pudo registrar. Reintenta."); }
+}
+
+async function faltaRepuesto(id) {
+  const obs = leerObs(id);
+  if (!obs) { alert("Indica en observaciones que repuesto falta."); return; }
+  try {
+    await db.collection("incidencias").doc(id).update({
+      estado: "repuesto",
+      observaciones: obs
     });
   } catch (e) { console.error(e); alert("No se pudo registrar. Reintenta."); }
 }

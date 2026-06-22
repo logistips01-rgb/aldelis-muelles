@@ -80,7 +80,7 @@ let informeData = [];
 
 // Version de la app. SUBIR este numero al publicar cambios importantes:
 // las pestanas abiertas se recargaran solas para coger la version nueva.
-const APP_VERSION = 19;
+const APP_VERSION = 20;
 let _chatSel = 1;
 function vigilarVersion() {
   db.collection("config").doc("app").onSnapshot(d => {
@@ -787,44 +787,58 @@ function difMin(a, b) { // minutos entre dos timestamps (b - a)
   return Math.round((b.toMillis() - a.toMillis()) / 60000);
 }
 
+function estadoLabel(e) {
+  return { abierta: "Abierta", aceptada: "En curso", repuesto: "Falta repuesto", resuelta: "Resuelta" }[e] || e;
+}
+
 function cargarBizerba() {
   const inc = window._incidencias || [];
   const abiertas  = inc.filter(i => i.estado === "abierta");
   const aceptadas = inc.filter(i => i.estado === "aceptada");
+  const repuesto  = inc.filter(i => i.estado === "repuesto");
   const resueltas = inc.filter(i => i.estado === "resuelta");
 
   document.getElementById("biz-abiertas").textContent  = abiertas.length;
   document.getElementById("biz-curso").textContent     = aceptadas.length;
+  document.getElementById("biz-repuesto").textContent  = repuesto.length;
   document.getElementById("biz-resueltas").textContent = resueltas.length;
 
   const resps = inc.filter(i => i.aceptada && i.creada).map(i => difMin(i.creada, i.aceptada));
   const media = resps.length ? Math.round(resps.reduce((a, b) => a + b, 0) / resps.length) : null;
   document.getElementById("biz-resp").textContent = media != null ? formatDuracion(media) : "—";
 
-  // Incidencias activas (sin coger + en curso), ordenadas por antiguedad
-  const activas = abiertas.concat(aceptadas).sort((a, b) => (a.creada ? a.creada.toMillis() : 0) - (b.creada ? b.creada.toMillis() : 0));
+  // Incidencias activas (sin coger + en curso + esperando repuesto), por antiguedad
+  const activas = abiertas.concat(aceptadas, repuesto).sort((a, b) => (a.creada ? a.creada.toMillis() : 0) - (b.creada ? b.creada.toMillis() : 0));
   const cont = document.getElementById("biz-activas");
   if (!activas.length) {
     cont.innerHTML = "<div class='empty-state'>No hay incidencias activas.</div>";
   } else {
     cont.innerHTML = activas.map(i => {
-      const abierta = i.estado === "abierta";
-      const espera = i.creada ? difMin(i.creada, firebase.firestore.Timestamp.now()) : null;
+      const espera  = i.creada ? difMin(i.creada, firebase.firestore.Timestamp.now()) : null;
       const enCurso = i.aceptada ? difMin(i.aceptada, firebase.firestore.Timestamp.now()) : null;
-      const color = abierta ? "#D41F3A" : "#1D9E75";
-      const estLbl = abierta
-        ? "Sin coger · espera " + (espera != null ? formatDuracion(espera) : "—")
-        : "Tecnico " + (i.tecnico || "?") + " · lleva " + (enCurso != null ? formatDuracion(enCurso) : "—");
-      const btn = abierta
+      let color, estLbl, pill;
+      if (i.estado === "abierta") {
+        color = "#D41F3A"; pill = "Abierta";
+        estLbl = "Sin coger · espera " + (espera != null ? formatDuracion(espera) : "—");
+      } else if (i.estado === "repuesto") {
+        color = "#E08A00"; pill = "Falta repuesto";
+        estLbl = "Tecnico " + (i.tecnico || "?") + " · esperando repuesto";
+      } else {
+        color = "#1D9E75"; pill = "En curso";
+        estLbl = "Tecnico " + (i.tecnico || "?") + " · lleva " + (enCurso != null ? formatDuracion(enCurso) : "—");
+      }
+      const obs = i.observaciones
+        ? "<div class='reserva-detalle' style='font-style:italic'>“" + esc(i.observaciones) + "”</div>" : "";
+      const btn = i.estado === "abierta"
         ? ""
         : "<button class='btn-accion btn-completar' onclick=\"resolverIncidencia('" + i.id + "')\">Resuelta</button>";
       return "<div class='reserva-item'>" +
         "<div class='reserva-hora' style='color:" + color + "'>Linea " + i.linea + "</div>" +
         "<div class='reserva-info'>" +
         "<div class='reserva-empresa'>" + esc(i.averia || "Sin detalle") + "</div>" +
-        "<div class='reserva-detalle'>" + estLbl + "</div></div>" +
+        "<div class='reserva-detalle'>" + estLbl + "</div>" + obs + "</div>" +
         "<div style='display:flex;flex-direction:column;gap:6px;align-items:flex-end'>" +
-        "<span class='estado-pill' style='background:" + color + ";color:#fff'>" + (abierta ? "Abierta" : "En curso") + "</span>" +
+        "<span class='estado-pill' style='background:" + color + ";color:#fff'>" + pill + "</span>" +
         btn + "</div></div>";
     }).join("");
   }
@@ -836,13 +850,14 @@ function cargarBizerba() {
   } else {
     const filas = inc.slice().sort((a, b) => (b.creada ? b.creada.toMillis() : 0) - (a.creada ? a.creada.toMillis() : 0));
     tabla.innerHTML = "<div class='tabla-scroll'><table class='tabla-inf'><thead><tr>" +
-      "<th>Linea</th><th>Averia</th><th>Estado</th><th>Tecnico</th><th>Emitida</th><th>Cogida</th><th>Resuelta</th><th>T. respuesta</th><th>T. resolucion</th>" +
+      "<th>Linea</th><th>Averia</th><th>Estado</th><th>Tecnico</th><th>Observaciones</th><th>Emitida</th><th>Cogida</th><th>Resuelta</th><th>T. respuesta</th><th>T. resolucion</th>" +
       "</tr></thead><tbody>" +
       filas.map(i => {
         const tResp = difMin(i.creada, i.aceptada);
         const tReso = difMin(i.aceptada, i.resuelta);
         return "<tr><td>" + i.linea + "</td><td>" + esc(i.averia || "—") + "</td>" +
-          "<td>" + esc(i.estado) + "</td><td>" + (i.tecnico ? "T" + i.tecnico : "—") + "</td>" +
+          "<td>" + esc(estadoLabel(i.estado)) + "</td><td>" + (i.tecnico ? "T" + i.tecnico : "—") + "</td>" +
+          "<td>" + esc(i.observaciones || "—") + "</td>" +
           "<td>" + (i.creada ? tsHora(i.creada) : "—") + "</td>" +
           "<td>" + (i.aceptada ? tsHora(i.aceptada) : "—") + "</td>" +
           "<td>" + (i.resuelta ? tsHora(i.resuelta) : "—") + "</td>" +
@@ -882,6 +897,7 @@ async function crearIncidencia() {
       averia:   averia,
       estado:   "abierta",
       tecnico:  null,
+      observaciones: "",
       creada:   firebase.firestore.Timestamp.now(),
       aceptada: null,
       resuelta: null,
@@ -922,14 +938,15 @@ async function cargarInformeBizerba() {
 
   const filas = inc.slice().sort((a, b) => (b.creada ? b.creada.toMillis() : 0) - (a.creada ? a.creada.toMillis() : 0));
   html += "<div class='informe-card'><div class='tabla-scroll'><table class='tabla-inf'><thead><tr>" +
-    "<th>Fecha</th><th>Linea</th><th>Averia</th><th>Estado</th><th>Tecnico</th><th>Emitida</th><th>Cogida</th><th>Resuelta</th><th>T. resp.</th><th>T. resol.</th>" +
+    "<th>Fecha</th><th>Linea</th><th>Averia</th><th>Estado</th><th>Tecnico</th><th>Observaciones</th><th>Emitida</th><th>Cogida</th><th>Resuelta</th><th>T. resp.</th><th>T. resol.</th>" +
     "</tr></thead><tbody>" +
     filas.map(i => {
       const tResp = difMin(i.creada, i.aceptada);
       const tReso = difMin(i.aceptada, i.resuelta);
       return "<tr><td>" + (i.creada ? tsFecha(i.creada) : "—") + "</td><td>" + i.linea + "</td>" +
-        "<td>" + esc(i.averia || "—") + "</td><td>" + esc(i.estado) + "</td>" +
+        "<td>" + esc(i.averia || "—") + "</td><td>" + esc(estadoLabel(i.estado)) + "</td>" +
         "<td>" + (i.tecnico ? "T" + i.tecnico : "—") + "</td>" +
+        "<td>" + esc(i.observaciones || "—") + "</td>" +
         "<td>" + (i.creada ? tsHora(i.creada) : "—") + "</td>" +
         "<td>" + (i.aceptada ? tsHora(i.aceptada) : "—") + "</td>" +
         "<td>" + (i.resuelta ? tsHora(i.resuelta) : "—") + "</td>" +
@@ -946,8 +963,9 @@ function exportarBizerba() {
     "Fecha":          i.creada ? tsFecha(i.creada) : "",
     "Linea":          i.linea,
     "Averia":         i.averia || "",
-    "Estado":         i.estado || "",
+    "Estado":         estadoLabel(i.estado),
     "Tecnico":        i.tecnico ? "Tecnico " + i.tecnico : "",
+    "Observaciones":  i.observaciones || "",
     "Emitida":        i.creada ? tsHora(i.creada) : "",
     "Cogida":         i.aceptada ? tsHora(i.aceptada) : "",
     "Resuelta":       i.resuelta ? tsHora(i.resuelta) : "",

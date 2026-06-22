@@ -115,8 +115,9 @@ service cloud.firestore {
     function validIncidencia() {
       let d = request.resource.data;
       return d.linea is number && d.linea >= 0 && d.linea <= 16
-        && d.estado in ['abierta', 'aceptada', 'resuelta']
+        && d.estado in ['abierta', 'aceptada', 'repuesto', 'resuelta']
         && d.averia is string && d.averia.size() <= 300
+        && (d.observaciones == null || (d.observaciones is string && d.observaciones.size() <= 500))
         && (d.tecnico == null || (d.tecnico is number && d.tecnico >= 1 && d.tecnico <= 99));
     }
 

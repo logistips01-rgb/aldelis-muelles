@@ -14,14 +14,15 @@ async function abrirIncidencia() {
   btn.disabled = true; btn.textContent = "Abriendo...";
   try {
     await db.collection("incidencias").add({
-      linea:      Number(lineaV),
-      averia:     averia,
-      estado:     "abierta",
-      tecnico:    null,
-      creada:     firebase.firestore.Timestamp.now(),
-      aceptada:   null,
-      resuelta:   null,
-      created_at: firebase.firestore.Timestamp.now()
+      linea:        Number(lineaV),
+      averia:       averia,
+      estado:       "abierta",
+      tecnico:      null,
+      observaciones: "",
+      creada:       firebase.firestore.Timestamp.now(),
+      aceptada:     null,
+      resuelta:     null,
+      created_at:   firebase.firestore.Timestamp.now()
     });
     document.getElementById("i-form").style.display = "none";
     document.getElementById("i-hecho-linea").textContent = "Linea " + lineaV;
