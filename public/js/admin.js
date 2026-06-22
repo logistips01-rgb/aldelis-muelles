@@ -80,7 +80,7 @@ let informeData = [];
 
 // Version de la app. SUBIR este numero al publicar cambios importantes:
 // las pestanas abiertas se recargaran solas para coger la version nueva.
-const APP_VERSION = 13;
+const APP_VERSION = 14;
 let _chatSel = 1;
 function vigilarVersion() {
   db.collection("config").doc("app").onSnapshot(d => {
@@ -505,19 +505,26 @@ function revisarAlertas(segs, trans, finMarks) {
   const tab = document.getElementById("btn-vista-lanzaderas");
   if (tab) tab.classList.toggle("tab-alerta", alertas.length > 0 && !tab.classList.contains("active"));
 
-  // Enviar email solo la primera vez que se detecta cada alerta
+  // Enviar email solo la primera vez que se detecta cada alerta.
+  // Solo si la lanzadera acaba de cruzar el umbral de 2h estando el panel
+  // vigilando (ventana 120-180 min). Asi evitamos avisos de registros viejos
+  // u olvidos de salida que aparecen ya con 8h+ al abrir el panel.
   const alertaIds = new Set(alertas.map(a => "lanz" + a.n));
   alertas.forEach(a => {
     const id = "lanz" + a.n;
-    if (!_alertasEmailEnviadas.has(id)) {
+    if (!_alertasEmailEnviadas.has(id) && a.el >= 120 && a.el <= 180) {
       _alertasEmailEnviadas.add(id);
-      const asunto = "ALERTA Aldelis — Lanzadera " + a.n + " lleva " + formatDuracion(a.el) + " en " + a.lbl;
+      const asunto = "ALERTA Aldelis — Lanzadera " + a.n + " lleva mas de 2 horas en " + a.lbl;
       const cuerpo =
         "ALERTA de Aldelis Muelles\n\n" +
-        "Lanzadera " + a.n + " lleva " + formatDuracion(a.el) + " parada en " + a.lbl + ".\n\n" +
+        "La Lanzadera " + a.n + " lleva mas de 2 horas parada en " + a.lbl + ".\n\n" +
         "Revisa el panel:\nhttps://aldelis-muelles.web.app/admin.html\n\n" +
         "Aldelis — Gestion de muelles";
       ADMINS_ALERTA.forEach(to => enviarEmailMS(to, asunto, cuerpo));
+    } else if (!_alertasEmailEnviadas.has(id) && a.el > 180) {
+      // Registro viejo / salida sin registrar: marcar como notificado para no
+      // mandar correo, pero seguir mostrando el banner en pantalla.
+      _alertasEmailEnviadas.add(id);
     }
   });
   // Si la alerta se resuelve, permitir reenvio si vuelve a ocurrir
