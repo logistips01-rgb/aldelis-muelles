@@ -80,7 +80,7 @@ let informeData = [];
 
 // Version de la app. SUBIR este numero al publicar cambios importantes:
 // las pestanas abiertas se recargaran solas para coger la version nueva.
-const APP_VERSION = 20;
+const APP_VERSION = 21;
 let _chatSel = 1;
 function vigilarVersion() {
   db.collection("config").doc("app").onSnapshot(d => {
@@ -257,7 +257,7 @@ function iniciarListeners() {
     .where("desde", ">=", Ts.fromMillis(dayStart)).where("desde", "<", Ts.fromMillis(dayEnd))
     .onSnapshot(s => {
       window._logs = []; s.forEach(d => window._logs.push(d.data()));
-      cargarLanzaderas(); cargarReservas(); cargarCargas();
+      cargarLanzaderas(); cargarReservas(); cargarCargas(); cargarMerca();
     }, e => console.error("lanzaderas_log:", e)));
 
   _unsubs.push(db.collection("cargas")
@@ -353,8 +353,9 @@ NAVES_PANEL.forEach(n => { NAVE_NOMBRE[n.id] = n.nombre; });
 const ACCION_LABEL = { cargando: "Cargando", descargando: "Descargando", presente: "Presente" };
 const ACCION_COLOR = { cargando: "#185FA5", descargando: "#1D9E75", presente: "#6B7280" };
 
-// Tramos de lanzadera en Plaza (para superponer en parrillas de descarga/carga)
-function lanzaderaSegmentos(dayStart, dayEnd, accionFiltro) {
+// Tramos de lanzadera (para superponer en parrillas de descarga/carga/merca)
+function lanzaderaSegmentos(dayStart, dayEnd, accionFiltro, nave) {
+  nave = nave || "plaza";
   const logs = window._logs || [];
   const byL = { 1: [], 2: [], 3: [], 4: [] };
   logs.forEach(l => { if (byL[l.numero]) byL[l.numero].push(l); });
@@ -363,7 +364,7 @@ function lanzaderaSegmentos(dayStart, dayEnd, accionFiltro) {
     const arr = byL[k].sort((a, b) => a.desde.toMillis() - b.desde.toMillis());
     for (let i = 0; i < arr.length; i++) {
       const ev = arr[i];
-      if (ev.estado === "en_nave" && ev.nave === "plaza" && ev.accion === accionFiltro) {
+      if (ev.estado === "en_nave" && ev.nave === nave && (accionFiltro == null || ev.accion === accionFiltro)) {
         const startMin = (ev.desde.toMillis() - dayStart) / 60000;
         const nextMs = (i + 1 < arr.length) ? arr[i + 1].desde.toMillis() : (esHoy ? Date.now() : dayEnd);
         segs.push({ numero: +k, muelle: ev.muelle, startMin, endMin: (nextMs - dayStart) / 60000 });
@@ -712,11 +713,20 @@ function cargarMerca() {
   const fecha = document.getElementById("fecha-dashboard").value;
   const dayStart = new Date(fecha + "T00:00:00").getTime();
   const items = window._merca || [];
+  const dayEnd = dayStart + 24 * 3600 * 1000;
+  const lanzMerca = lanzaderaSegmentos(dayStart, dayEnd, null, "merca");
   const filas = MUELLES_MERCA.map(m => ({ id: m, label: "Muelle " + m.replace("M", "") }));
   pintarRejilla("rejilla-merca", "Muelle", filas, FRANJAS_CARGAS, (fila, f, now) => {
     const r = franjaRango(f);
     const cs = items.filter(x => x.muelle === fila.id && spanOcupa(x.inicio, x.fin, r[0], r[1], dayStart));
-    if (cs.length === 0) return "<td class='slot-td slot-libre" + now + "'></td>";
+    if (cs.length === 0) {
+      const lz = lanzMerca.find(s => s.muelle === fila.id && s.startMin < r[1] && s.endMin > r[0]);
+      if (lz) {
+        return "<td class='slot-td" + now + "' style='background:#7C3AED' title='Lanzadera " + lz.numero + " en Merca'>" +
+          "<div class='slot-empresa'>L" + lz.numero + "</div><div class='slot-estado'>lanzad.</div></td>";
+      }
+      return "<td class='slot-td slot-libre" + now + "'></td>";
+    }
     if (cs.length === 1) {
       const c = cs[0];
       const color = c.estado === "completada" ? "#6B7280" : "#1D9E75";
