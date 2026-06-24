@@ -4,7 +4,7 @@
 // IMPORTANTE: pega aqui la clave VAPID de tu proyecto.
 // Firebase Console > Configuracion del proyecto > Cloud Messaging >
 // "Certificados push web" > Generar par de claves > copia la clave publica.
-const VAPID_KEY = "PEGA_AQUI_TU_CLAVE_VAPID";
+const VAPID_KEY = "T4bHfnb0RK7JEblvHMW5p8dp8E-3D3yzTncOuAp6GXo";
 
 let _pushDone = false;
 
