@@ -270,6 +270,7 @@ function beep() {
 function ensureChatLanz() {
   if (!sel.numero) return;
   document.getElementById("chat-fab").style.display = "block";
+  if (typeof initPush === "function") initPush("lanzadera", sel.numero);
   if (_chatNum === sel.numero) return;
   if (_chatUnsub) { _chatUnsub(); _chatUnsub = null; }
   _chatNum = sel.numero; _chatMsgs = [];

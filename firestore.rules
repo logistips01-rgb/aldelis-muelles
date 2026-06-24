@@ -104,6 +104,21 @@ service cloud.firestore {
         && (d.pales == null || d.pales is number);
     }
 
+    // Tokens de notificaciones push (un doc por dispositivo).
+    // Los clientes solo escriben su token; el envio lo hace la Cloud Function.
+    match /push_tokens/{id} {
+      allow read: if request.auth != null;
+      allow create, update: if validToken();
+      allow delete: if request.auth != null;
+    }
+
+    function validToken() {
+      let d = request.resource.data;
+      return d.token is string && d.token.size() > 0 && d.token.size() <= 400
+        && d.rol in ['almacen', 'lanzadera']
+        && (d.lanzadera == null || (d.lanzadera is number && d.lanzadera >= 1 && d.lanzadera <= 4));
+    }
+
     // Incidencias Bizerba: produccion abre, el tecnico coge y resuelve.
     // Lectura abierta (la app del tecnico la necesita sin login, como lanzaderas).
     match /incidencias/{id} {

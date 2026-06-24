@@ -1,4 +1,57 @@
 const functions = require("firebase-functions");
+const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+const admin = require("firebase-admin");
+if (!admin.apps.length) admin.initializeApp();
+
+// Notificacion push al crearse un mensaje de chat.
+// - Mensaje de una lanzadera  -> avisa a los dispositivos del almacen.
+// - Mensaje del almacen        -> avisa a esa lanzadera.
+exports.notifChat = onDocumentCreated("mensajes/{id}", async (event) => {
+  const m = event.data && event.data.data();
+  if (!m) return;
+
+  let title, body, url, query;
+  const fs = admin.firestore();
+
+  if (m.de === "lanzadera") {
+    title = "Lanzadera " + (m.lanzadera || "");
+    body  = m.texto || "";
+    url   = "/admin.html";
+    query = fs.collection("push_tokens").where("rol", "==", "almacen");
+  } else if (m.de === "almacen") {
+    title = m.emisor || "Almacen";
+    body  = m.texto || "";
+    url   = "/lanzadera.html";
+    query = fs.collection("push_tokens").where("rol", "==", "lanzadera").where("lanzadera", "==", m.lanzadera);
+  } else {
+    return;
+  }
+
+  const snap = await query.get();
+  const tokens = snap.docs.map((d) => d.get("token")).filter(Boolean);
+  if (!tokens.length) return;
+
+  const res = await admin.messaging().sendEachForMulticast({
+    tokens: tokens,
+    data: { title: String(title), body: String(body), url: url, tag: "chat-" + (m.lanzadera || "") },
+    webpush: { headers: { Urgency: "high" } },
+    android: { priority: "high" }
+  });
+
+  // Limpia tokens que ya no son validos
+  const dels = [];
+  res.responses.forEach((r, i) => {
+    if (!r.success) {
+      const code = r.error && r.error.code;
+      if (code === "messaging/registration-token-not-registered" ||
+          code === "messaging/invalid-registration-token" ||
+          code === "messaging/invalid-argument") {
+        dels.push(snap.docs[i].ref.delete());
+      }
+    }
+  });
+  if (dels.length) await Promise.all(dels);
+});
 
 const MS_CLIENT_ID = "5c27366e-433f-4b07-a2a3-2b40f2217863";
 const MS_TENANT_ID = "31f702d7-3d33-43a6-b35f-c15ff5aa0f1c";

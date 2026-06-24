@@ -80,7 +80,7 @@ let informeData = [];
 
 // Version de la app. SUBIR este numero al publicar cambios importantes:
 // las pestanas abiertas se recargaran solas para coger la version nueva.
-const APP_VERSION = 24;
+const APP_VERSION = 25;
 let _chatSel = 1;
 function vigilarVersion() {
   db.collection("config").doc("app").onSnapshot(d => {
@@ -214,6 +214,7 @@ auth.onAuthStateChanged(user => {
     vigilarVersion();
     aplicarRol(user);
     _emisorActual = nombreEmisor(user.email);
+    if (typeof initPush === "function") initPush("almacen");
     // Reloj local (mueve la linea de "ahora" y refresca el render, SIN leer de la BD)
     autoRefreshInterval = setInterval(() => {
       actualizarReloj();
