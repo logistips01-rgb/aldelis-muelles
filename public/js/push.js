@@ -4,7 +4,7 @@
 // IMPORTANTE: pega aqui la clave VAPID de tu proyecto.
 // Firebase Console > Configuracion del proyecto > Cloud Messaging >
 // "Certificados push web" > Generar par de claves > copia la clave publica.
-const VAPID_KEY = "T4bHfnb0RK7JEblvHMW5p8dp8E-3D3yzTncOuAp6GXo";
+const VAPID_KEY = "BH4_YKLoPlyvHiuAhH5A5etWLGmkLupieyX0mguHGWAesEFh48zgmnIOq_xFRS0O1MCe7iLjhitIXGeS_C0Hh8I";
 
 let _pushDone = false;
 
@@ -14,7 +14,7 @@ async function initPush(rol, lanzaderaNum) {
     if (!("serviceWorker" in navigator) || !("Notification" in window)) return;
     if (!firebase.messaging || !firebase.messaging.isSupported || !firebase.messaging.isSupported()) return;
     if (!VAPID_KEY || VAPID_KEY.indexOf("PEGA_AQUI") === 0) {
-      console.warn("T4bHfnb0RK7JEblvHMW5p8dp8E-3D3yzTncOuAp6GXo");
+      console.warn("[push] Falta configurar VAPID_KEY en push.js");
       return;
     }
 
