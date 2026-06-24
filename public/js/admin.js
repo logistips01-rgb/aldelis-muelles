@@ -80,7 +80,7 @@ let informeData = [];
 
 // Version de la app. SUBIR este numero al publicar cambios importantes:
 // las pestanas abiertas se recargaran solas para coger la version nueva.
-const APP_VERSION = 21;
+const APP_VERSION = 22;
 let _chatSel = 1;
 function vigilarVersion() {
   db.collection("config").doc("app").onSnapshot(d => {
@@ -213,6 +213,7 @@ auth.onAuthStateChanged(user => {
     iniciarListeners();
     vigilarVersion();
     aplicarRol(user);
+    _emisorActual = nombreEmisor(user.email);
     // Reloj local (mueve la linea de "ahora" y refresca el render, SIN leer de la BD)
     autoRefreshInterval = setInterval(() => {
       actualizarReloj();
@@ -1020,6 +1021,20 @@ async function guardarNota() {
 function chatSeen(n) { return +(localStorage.getItem("chatSeen_" + n) || 0); }
 function chatSetSeen(n, ms) { localStorage.setItem("chatSeen_" + n, String(ms)); }
 
+// Nombre del emisor segun el email del usuario (para mostrar quien escribe).
+// Anade aqui mas correos -> nombre a mostrar.
+const EMISOR_NOMBRES = {
+  "almacenfrio@aldelis.com": "Almacen frio",
+  "almacenseco@aldelis.com": "Almacen seco"
+};
+let _emisorActual = "Almacen";
+function nombreEmisor(email) {
+  email = (email || "").toLowerCase();
+  if (EMISOR_NOMBRES[email]) return EMISOR_NOMBRES[email];
+  const local = email.split("@")[0];
+  return local ? local.charAt(0).toUpperCase() + local.slice(1) : "Almacen";
+}
+
 function selectChat(n) { _chatSel = n; renderChat(); }
 
 function renderChat() {
@@ -1041,8 +1056,10 @@ function renderChat() {
   document.getElementById("chat-msgs").innerHTML = conv.length
     ? conv.map(m => {
         const right = m.de === "almacen";
+        const emisor = (right && m.emisor)
+          ? "<span class='chat-emisor'>" + esc(m.emisor) + "</span>" : "";
         return "<div class='chat-row " + (right ? "r" : "l") + "'><div class='chat-b " + (right ? "chat-b-out" : "chat-b-in") + "'>" +
-          esc(m.texto) + "<span class='chat-time'>" + (m.ts ? tsHora(m.ts) : "") + "</span></div></div>";
+          emisor + esc(m.texto) + "<span class='chat-time'>" + (m.ts ? tsHora(m.ts) : "") + "</span></div></div>";
       }).join("")
     : "<div class='empty-state' style='padding:20px'>Sin mensajes con Lanzadera " + _chatSel + "</div>";
 
@@ -1059,7 +1076,7 @@ async function enviarChatAlmacen(textoOpt) {
   const texto = (textoOpt != null ? textoOpt : inp.value).trim();
   if (!texto) return;
   try {
-    await db.collection("mensajes").add({ lanzadera: _chatSel, de: "almacen", texto: texto, ts: firebase.firestore.Timestamp.now() });
+    await db.collection("mensajes").add({ lanzadera: _chatSel, de: "almacen", emisor: _emisorActual, texto: texto, ts: firebase.firestore.Timestamp.now() });
     if (textoOpt == null) inp.value = "";
   } catch (e) { console.error(e); alert("No se pudo enviar el mensaje."); }
 }

@@ -385,6 +385,7 @@
 .chat-b-in { background: #fff; color: #1A1A1A; }
 .chat-b-out { background: #1D9E75; color: #fff; }
 .chat-time { display: block; font-size: 10px; opacity: 0.7; margin-top: 3px; text-align: right; }
+.chat-emisor { display: block; font-size: 11px; font-weight: 600; opacity: 0.85; margin-bottom: 2px; }
 .chat-quick { display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 12px; border-top: 1px solid #E0E0E0; background: #EDEFF2; }
 .chat-chip { font-size: 13px; padding: 5px 12px; border-radius: 16px; border: 1.5px solid #1D9E75; background: #fff; color: #1D9E75; cursor: pointer; font-family: 'Inter', sans-serif; }
 .chat-chip:hover { background: #EAF3DE; }

@@ -266,12 +266,21 @@ function onChatData() {
   if (document.getElementById("chat-overlay").style.display !== "none") renderChatLanz();
 }
 
+function horaChat(ts) {
+  if (!ts) return "";
+  const d = ts.toDate();
+  return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+}
+
 function renderChatLanz() {
   const cont = document.getElementById("chat-ov-msgs");
   cont.innerHTML = _chatMsgs.length
     ? _chatMsgs.map(m => {
         const right = m.de === "lanzadera";
-        return "<div class='chat-row " + (right ? "r" : "l") + "'><div class='chat-b " + (right ? "chat-b-out" : "chat-b-in") + "'>" + escTexto(m.texto) + "</div></div>";
+        const emisor = (!right && m.emisor)
+          ? "<span class='chat-emisor'>" + escTexto(m.emisor) + "</span>" : "";
+        const hora = "<span class='chat-time'>" + horaChat(m.ts) + "</span>";
+        return "<div class='chat-row " + (right ? "r" : "l") + "'><div class='chat-b " + (right ? "chat-b-out" : "chat-b-in") + "'>" + emisor + escTexto(m.texto) + hora + "</div></div>";
       }).join("")
     : "<div style='text-align:center;color:#9CA3AF;padding:24px'>Sin mensajes. Escribe al almacen.</div>";
   cont.scrollTop = cont.scrollHeight;
