@@ -80,7 +80,7 @@ let informeData = [];
 
 // Version de la app. SUBIR este numero al publicar cambios importantes:
 // las pestanas abiertas se recargaran solas para coger la version nueva.
-const APP_VERSION = 22;
+const APP_VERSION = 23;
 let _chatSel = 1;
 function vigilarVersion() {
   db.collection("config").doc("app").onSnapshot(d => {
@@ -1024,8 +1024,16 @@ function chatSetSeen(n, ms) { localStorage.setItem("chatSeen_" + n, String(ms));
 // Nombre del emisor segun el email del usuario (para mostrar quien escribe).
 // Anade aqui mas correos -> nombre a mostrar.
 const EMISOR_NOMBRES = {
+  "almacen@aldelis.com": "Almacen",
   "almacenfrio@aldelis.com": "Almacen frio",
-  "almacenseco@aldelis.com": "Almacen seco"
+  "almacenseco@aldelis.com": "Almacen seco",
+  "expediciones@aldelis.com": "Expediciones",
+  "transfriorza@transfriorza.es": "Transfriorza",
+  "mlorente@aldelis.com": "M. Lorente",
+  "jpina@aldelis.com": "J. Pina",
+  "jbotaya@aldelis.com": "J. Botaya",
+  "dgamarra@aldelis.com": "D. Gamarra",
+  "nchavarria@aldelis.com": "N. Chavarria"
 };
 let _emisorActual = "Almacen";
 function nombreEmisor(email) {
