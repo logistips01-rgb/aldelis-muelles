@@ -386,6 +386,7 @@
 .chat-b-out { background: #1D9E75; color: #fff; }
 .chat-time { display: block; font-size: 10px; opacity: 0.7; margin-top: 3px; text-align: right; }
 .chat-emisor { display: block; font-size: 11px; font-weight: 600; opacity: 0.85; margin-bottom: 2px; }
+.chat-day { display: table; margin: 10px auto; padding: 3px 12px; border-radius: 12px; background: #D8DCE1; font-size: 12px; font-weight: 600; color: #4B5563; }
 .chat-quick { display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 12px; border-top: 1px solid #E0E0E0; background: #EDEFF2; }
 .chat-chip { font-size: 13px; padding: 5px 12px; border-radius: 16px; border: 1.5px solid #1D9E75; background: #fff; color: #1D9E75; cursor: pointer; font-family: 'Inter', sans-serif; }
 .chat-chip:hover { background: #EAF3DE; }
@@ -559,6 +560,7 @@ body.dark .chat-thread.sel { background: #0A1A06; }
 body.dark .chat-thread-n { color: #E8E8EA; }
 body.dark .chat-msgs { background: #0A0A0D; }
 body.dark .chat-b-in { background: #242428; color: #E8E8EA; }
+body.dark .chat-day { background: #2D2D32; color: #B7BDC6; }
 body.dark .chat-quick { border-top-color: #2D2D32; background: #161619; }
 body.dark .chat-chip { background: #1B1B1F; border-color: #1D9E75; color: #34D399; }
 body.dark .chat-chip:hover { background: #0A1A06; }

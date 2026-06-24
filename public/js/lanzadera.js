@@ -310,15 +310,30 @@ function horaChat(ts) {
   return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
 }
 
+function diaChat(ts) {
+  if (!ts) return "";
+  const d = ts.toDate(); d.setHours(0, 0, 0, 0);
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  const dif = Math.round((hoy - d) / 86400000);
+  if (dif === 0) return "Hoy";
+  if (dif === 1) return "Ayer";
+  if (dif === 2) return "Antes de ayer";
+  return String(d.getDate()).padStart(2, "0") + "/" + String(d.getMonth() + 1).padStart(2, "0") + "/" + d.getFullYear();
+}
+
 function renderChatLanz() {
   const cont = document.getElementById("chat-ov-msgs");
+  let _prevDia = null;
   cont.innerHTML = _chatMsgs.length
     ? _chatMsgs.map(m => {
         const right = m.de === "lanzadera";
         const emisor = (!right && m.emisor)
           ? "<span class='chat-emisor'>" + escTexto(m.emisor) + "</span>" : "";
         const hora = "<span class='chat-time'>" + horaChat(m.ts) + "</span>";
-        return "<div class='chat-row " + (right ? "r" : "l") + "'><div class='chat-b " + (right ? "chat-b-out" : "chat-b-in") + "'>" + emisor + escTexto(m.texto) + hora + "</div></div>";
+        let sep = "";
+        const dia = m.ts ? diaChat(m.ts) : "";
+        if (dia && dia !== _prevDia) { sep = "<div class='chat-day'>" + dia + "</div>"; _prevDia = dia; }
+        return sep + "<div class='chat-row " + (right ? "r" : "l") + "'><div class='chat-b " + (right ? "chat-b-out" : "chat-b-in") + "'>" + emisor + escTexto(m.texto) + hora + "</div></div>";
       }).join("")
     : "<div style='text-align:center;color:#9CA3AF;padding:24px'>Sin mensajes. Escribe al almacen.</div>";
   cont.scrollTop = cont.scrollHeight;

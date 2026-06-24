@@ -80,7 +80,7 @@ let informeData = [];
 
 // Version de la app. SUBIR este numero al publicar cambios importantes:
 // las pestanas abiertas se recargaran solas para coger la version nueva.
-const APP_VERSION = 25;
+const APP_VERSION = 26;
 let _chatSel = 1;
 function vigilarVersion() {
   db.collection("config").doc("app").onSnapshot(d => {
@@ -1082,6 +1082,18 @@ function beep() {
 
 function selectChat(n) { _chatSel = n; renderChat(); }
 
+// Etiqueta de dia para el chat: Hoy / Ayer / Antes de ayer / fecha
+function diaChat(ts) {
+  if (!ts) return "";
+  const d = ts.toDate(); d.setHours(0, 0, 0, 0);
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  const dif = Math.round((hoy - d) / 86400000);
+  if (dif === 0) return "Hoy";
+  if (dif === 1) return "Ayer";
+  if (dif === 2) return "Antes de ayer";
+  return String(d.getDate()).padStart(2, "0") + "/" + String(d.getMonth() + 1).padStart(2, "0") + "/" + d.getFullYear();
+}
+
 function renderChat() {
   const thr = document.getElementById("chat-threads");
   if (!thr) return;
@@ -1098,12 +1110,16 @@ function renderChat() {
   thr.innerHTML = th;
 
   const conv = msgs.filter(m => m.lanzadera === _chatSel);
+  let _prevDia = null;
   document.getElementById("chat-msgs").innerHTML = conv.length
     ? conv.map(m => {
         const right = m.de === "almacen";
         const emisor = (right && m.emisor)
           ? "<span class='chat-emisor'>" + esc(m.emisor) + "</span>" : "";
-        return "<div class='chat-row " + (right ? "r" : "l") + "'><div class='chat-b " + (right ? "chat-b-out" : "chat-b-in") + "'>" +
+        let sep = "";
+        const dia = m.ts ? diaChat(m.ts) : "";
+        if (dia && dia !== _prevDia) { sep = "<div class='chat-day'>" + dia + "</div>"; _prevDia = dia; }
+        return sep + "<div class='chat-row " + (right ? "r" : "l") + "'><div class='chat-b " + (right ? "chat-b-out" : "chat-b-in") + "'>" +
           emisor + esc(m.texto) + "<span class='chat-time'>" + (m.ts ? tsHora(m.ts) : "") + "</span></div></div>";
       }).join("")
     : "<div class='empty-state' style='padding:20px'>Sin mensajes con Lanzadera " + _chatSel + "</div>";
