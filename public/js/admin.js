@@ -80,7 +80,7 @@ let informeData = [];
 
 // Version de la app. SUBIR este numero al publicar cambios importantes:
 // las pestanas abiertas se recargaran solas para coger la version nueva.
-const APP_VERSION = 23;
+const APP_VERSION = 24;
 let _chatSel = 1;
 function vigilarVersion() {
   db.collection("config").doc("app").onSnapshot(d => {
@@ -279,6 +279,12 @@ function iniciarListeners() {
     .onSnapshot(s => {
       const arr = []; s.forEach(d => arr.push(d.data())); arr.reverse();
       window._mensajes = arr; renderChat();
+      // Aviso sonoro al recibir un mensaje nuevo de una lanzadera
+      let maxLanz = 0;
+      arr.forEach(m => { if (m.de === "lanzadera" && m.ts) maxLanz = Math.max(maxLanz, m.ts.toMillis()); });
+      if (_msgBeepInit && maxLanz > _msgBeepMaxTs) beep();
+      _msgBeepMaxTs = Math.max(_msgBeepMaxTs, maxLanz);
+      _msgBeepInit = true;
     }, e => console.error("mensajes:", e)));
 
   _unsubs.push(db.collection("incidencias")
@@ -1041,6 +1047,36 @@ function nombreEmisor(email) {
   if (EMISOR_NOMBRES[email]) return EMISOR_NOMBRES[email];
   const local = email.split("@")[0];
   return local ? local.charAt(0).toUpperCase() + local.slice(1) : "Almacen";
+}
+
+// ─── AVISO SONORO DE CHAT ────────────────────────────────────────────
+let _msgBeepInit = false, _msgBeepMaxTs = 0;
+let _audioCtx = null;
+function unlockAudio() {
+  try {
+    _audioCtx = _audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (_audioCtx.state === "suspended") _audioCtx.resume();
+  } catch (e) {}
+}
+document.addEventListener("click", unlockAudio);
+document.addEventListener("keydown", unlockAudio);
+
+function beep() {
+  try {
+    if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (_audioCtx.state === "suspended") _audioCtx.resume();
+    const t0 = _audioCtx.currentTime;
+    [880, 1175].forEach((freq, i) => {
+      const o = _audioCtx.createOscillator(), g = _audioCtx.createGain();
+      o.connect(g); g.connect(_audioCtx.destination);
+      o.type = "sine"; o.frequency.value = freq;
+      const start = t0 + i * 0.18;
+      g.gain.setValueAtTime(0.0001, start);
+      g.gain.exponentialRampToValueAtTime(0.35, start + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, start + 0.16);
+      o.start(start); o.stop(start + 0.18);
+    });
+  } catch (e) {}
 }
 
 function selectChat(n) { _chatSel = n; renderChat(); }

@@ -236,6 +236,36 @@ function irANaves() {
 
 // ─── CHAT con el almacen ─────────────────────────────────────────────
 let _chatUnsub = null, _chatMsgs = [], _chatNum = null;
+let _beepInit = false, _beepMaxTs = 0;
+
+// ─── AVISO SONORO ────────────────────────────────────────────────────
+let _audioCtx = null;
+function unlockAudio() {
+  try {
+    _audioCtx = _audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (_audioCtx.state === "suspended") _audioCtx.resume();
+  } catch (e) {}
+}
+document.addEventListener("click", unlockAudio);
+document.addEventListener("touchstart", unlockAudio);
+
+function beep() {
+  try {
+    if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (_audioCtx.state === "suspended") _audioCtx.resume();
+    const t0 = _audioCtx.currentTime;
+    [880, 1175].forEach((freq, i) => {
+      const o = _audioCtx.createOscillator(), g = _audioCtx.createGain();
+      o.connect(g); g.connect(_audioCtx.destination);
+      o.type = "sine"; o.frequency.value = freq;
+      const start = t0 + i * 0.18;
+      g.gain.setValueAtTime(0.0001, start);
+      g.gain.exponentialRampToValueAtTime(0.4, start + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, start + 0.16);
+      o.start(start); o.stop(start + 0.18);
+    });
+  } catch (e) {}
+}
 
 function ensureChatLanz() {
   if (!sel.numero) return;
@@ -243,6 +273,7 @@ function ensureChatLanz() {
   if (_chatNum === sel.numero) return;
   if (_chatUnsub) { _chatUnsub(); _chatUnsub = null; }
   _chatNum = sel.numero; _chatMsgs = [];
+  _beepInit = false; _beepMaxTs = 0;
   _chatUnsub = db.collection("mensajes").where("lanzadera", "==", sel.numero)
     .onSnapshot(s => {
       const a = []; s.forEach(d => a.push(d.data()));
@@ -263,6 +294,12 @@ function updateFab() {
 
 function onChatData() {
   updateFab();
+  // Aviso sonoro al recibir un mensaje nuevo del almacen
+  let maxAlm = 0;
+  _chatMsgs.forEach(m => { if (m.de === "almacen" && m.ts) maxAlm = Math.max(maxAlm, m.ts.toMillis()); });
+  if (_beepInit && maxAlm > _beepMaxTs) beep();
+  _beepMaxTs = Math.max(_beepMaxTs, maxAlm);
+  _beepInit = true;
   if (document.getElementById("chat-overlay").style.display !== "none") renderChatLanz();
 }
 
