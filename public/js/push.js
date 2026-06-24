@@ -14,7 +14,7 @@ async function initPush(rol, lanzaderaNum) {
     if (!("serviceWorker" in navigator) || !("Notification" in window)) return;
     if (!firebase.messaging || !firebase.messaging.isSupported || !firebase.messaging.isSupported()) return;
     if (!VAPID_KEY || VAPID_KEY.indexOf("PEGA_AQUI") === 0) {
-      console.warn("[push] Falta configurar VAPID_KEY en push.js");
+      console.warn("T4bHfnb0RK7JEblvHMW5p8dp8E-3D3yzTncOuAp6GXo");
       return;
     }
 
