@@ -2,6 +2,25 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // Version de la app (interruptor de auto-actualizacion).
+    match /config/{id} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Chat almacen <-> lanzaderas
+    match /mensajes/{id} {
+      allow read: if true;
+      allow create: if validMensaje();
+    }
+
+    function validMensaje() {
+      let d = request.resource.data;
+      return d.lanzadera is number && d.lanzadera >= 1 && d.lanzadera <= 4
+        && d.de in ['almacen', 'lanzadera']
+        && d.texto is string && d.texto.size() > 0 && d.texto.size() <= 500;
+    }
+
     match /reservas/{id} {
       // Lectura: abierta de momento (la consulta publica y el calculo de
       // franjas la necesitan). Se cierra en la Fase 2 con App Check.
@@ -12,6 +31,120 @@ service cloud.firestore {
 
       // Modificar / borrar: solo personal autenticado (almacen).
       allow update, delete: if request.auth != null;
+    }
+
+    // Estado en vivo de las lanzaderas (una doc por lanzadera, id "1".."4").
+    // App Check ya restringe la escritura a la propia web.
+    match /lanzaderas/{id} {
+      allow read: if true;
+      allow create, update: if validLanzadera();
+    }
+
+    // Historico de movimientos (para informes). Solo se anade, no se edita.
+    match /lanzaderas_log/{id} {
+      allow read: if request.auth != null;
+      allow create: if validLanzadera();
+    }
+
+    // Indicaciones para las lanzaderas (una doc por lanzadera). El conductor
+    // las lee al salir; el almacen las escribe; el conductor las limpia.
+    match /lanzaderas_nota/{id} {
+      allow read: if true;
+      allow create, update: if validNota();
+    }
+
+    function validNota() {
+      let d = request.resource.data;
+      return d.numero is number && d.numero >= 1 && d.numero <= 4
+        && d.nota is string && d.nota.size() <= 200;
+    }
+
+    // Cargas (registro al momento en muelles de carga M1-M5).
+    // Lectura solo almacen (incluye DNI). Crear: transportista o almacen.
+    match /cargas/{id} {
+      allow read: if request.auth != null;
+      allow create: if validCarga();
+      allow update, delete: if request.auth != null;
+    }
+
+    function validCarga() {
+      let d = request.resource.data;
+      return d.keys().hasOnly([
+          'matricula_tractora','matricula_semi','chofer','dni',
+          'destino','muelle','estado','inicio','fin','created_at'
+        ])
+        && d.estado == 'cargando'
+        && d.fin == null
+        && d.muelle in ['M1','M2','M3','M4','M5']
+        && d.matricula_tractora is string && d.matricula_tractora.size() > 0 && d.matricula_tractora.size() <= 20
+        && d.matricula_semi is string && d.matricula_semi.size() <= 20
+        && d.chofer is string && d.chofer.size() <= 120
+        && d.dni is string && d.dni.size() <= 20
+        && d.destino is string && d.destino.size() <= 120;
+    }
+
+    // Descargas de proveedores en Merca (otro almacen). Registro al momento.
+    match /descargas_merca/{id} {
+      allow read: if request.auth != null;
+      allow create: if validMerca();
+      allow update, delete: if request.auth != null;
+    }
+
+    function validMerca() {
+      let d = request.resource.data;
+      return d.keys().hasOnly([
+          'empresa','matricula','mercancia','pales','muelle','estado','inicio','fin','created_at'
+        ])
+        && d.estado == 'descargando'
+        && d.fin == null
+        && d.muelle in ['M2','M4']
+        && d.empresa is string && d.empresa.size() > 0 && d.empresa.size() <= 120
+        && d.matricula is string && d.matricula.size() > 0 && d.matricula.size() <= 20
+        && d.mercancia is string && d.mercancia.size() <= 300
+        && (d.pales == null || d.pales is number);
+    }
+
+    // Tokens de notificaciones push (un doc por dispositivo).
+    // Los clientes solo escriben su token; el envio lo hace la Cloud Function.
+    match /push_tokens/{id} {
+      allow read: if request.auth != null;
+      allow create, update: if validToken();
+      allow delete: if request.auth != null;
+    }
+
+    function validToken() {
+      let d = request.resource.data;
+      return d.token is string && d.token.size() > 0 && d.token.size() <= 400
+        && d.rol in ['almacen', 'lanzadera']
+        && (d.lanzadera == null || (d.lanzadera is number && d.lanzadera >= 1 && d.lanzadera <= 4));
+    }
+
+    // Incidencias Bizerba: produccion abre, el tecnico coge y resuelve.
+    // Lectura abierta (la app del tecnico la necesita sin login, como lanzaderas).
+    match /incidencias/{id} {
+      allow read: if true;
+      allow create, update: if validIncidencia();
+      allow delete: if request.auth != null;
+    }
+
+    function validIncidencia() {
+      let d = request.resource.data;
+      return d.linea is number && d.linea >= 0 && d.linea <= 16
+        && d.estado in ['abierta', 'aceptada', 'repuesto', 'resuelta']
+        && d.averia is string && d.averia.size() <= 300
+        && (d.observaciones == null || (d.observaciones is string && d.observaciones.size() <= 500))
+        && (d.tecnico == null || (d.tecnico is number && d.tecnico >= 1 && d.tecnico <= 99));
+    }
+
+    function validLanzadera() {
+      let d = request.resource.data;
+      return d.numero is number && d.numero >= 1 && d.numero <= 4
+        && d.estado in ['en_nave', 'transito', 'fuera']
+        && d.nave is string && d.nave.size() > 0 && d.nave.size() <= 60
+        && d.accion in ['presente','cargando','descargando']
+        && (d.muelle == null || (d.muelle is string && d.muelle.size() <= 10))
+        && (d.destino == null || (d.destino is string && d.destino.size() <= 60))
+        && d.activa is bool;
     }
 
     function validReserva() {

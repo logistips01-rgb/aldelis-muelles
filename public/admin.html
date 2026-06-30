@@ -7,8 +7,10 @@
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="css/admin.css">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <script>if(localStorage.getItem('darkMode')==='1')document.documentElement.classList.add('preload-dark');</script>
+  <style>.preload-dark body{background:#0F0F11!important}</style>
 </head>
-<body class="admin-body">
+<body class="admin-body" id="admin-body">
 
   <div id="login-screen" class="login-wrap">
     <div class="card" style="max-width:360px; margin:0 auto;">
@@ -24,14 +26,21 @@
   </div>
 
   <div id="dashboard-screen" style="display:none">
+    <div id="alerta-nuclear" class="alerta-nuclear" style="display:none"></div>
     <div class="admin-topbar">
       <div class="admin-logo">Aldelis - Gestion de muelles</div>
       <div class="topbar-right">
         <span id="last-refresh" style="font-size:11px;color:#9CA3AF;"></span>
+        <button class="btn-dark-toggle" id="btn-dark" onclick="toggleDarkMode()">Noche</button>
         <button class="tab-view active" id="btn-vista-rejilla" onclick="switchVista('rejilla')">Rejilla</button>
         <button class="tab-view" id="btn-vista-lista" onclick="switchVista('lista')">Lista</button>
         <button class="tab-view" id="btn-vista-informes" onclick="switchVista('informes')">Informes</button>
-        <input type="date" id="fecha-dashboard" onchange="cargarReservas()">
+        <button class="tab-view" id="btn-vista-lanzaderas" onclick="switchVista('lanzaderas')">Lanzaderas</button>
+        <button class="tab-view" id="btn-vista-cargas" onclick="switchVista('cargas')">Cargas</button>
+        <button class="tab-view" id="btn-vista-merca" onclick="switchVista('merca')">Merca</button>
+        <button class="tab-view" id="btn-vista-bizerba" onclick="switchVista('bizerba')" style="display:none">Bizerba</button>
+        <button class="tab-view" id="btn-vista-config" onclick="switchVista('config')" style="display:none">Config</button>
+        <input type="date" id="fecha-dashboard" onchange="cambioFecha()">
         <button class="btn-ghost" style="width:auto;padding:6px 14px;" onclick="cerrarSesion()">Cerrar sesion</button>
       </div>
     </div>
@@ -99,6 +108,14 @@
         <div class="metric-card"><div class="metric-value" id="inf-empresas">0</div><div class="metric-label">Empresas distintas</div></div>
       </div>
       <div id="informe-tablas" style="display:none">
+        <div class="informe-card" style="margin-bottom:16px">
+          <div class="informe-card-title">Rendimiento de descarga</div>
+          <div class="rendimiento-row">
+            <div><div class="metric-value" id="rend-medio">—</div><div class="metric-label">Tiempo medio de descarga</div></div>
+            <div><div class="metric-value" id="rend-ritmo">—</div><div class="metric-label">Ritmo medio (min/palet)</div></div>
+            <div><div class="metric-value" id="rend-muestras">0</div><div class="metric-label">Descargas con datos</div></div>
+          </div>
+        </div>
         <div class="informe-grid">
           <div class="informe-card"><div class="informe-card-title">Franjas mas demandadas</div><div id="tabla-franjas"></div></div>
           <div class="informe-card"><div class="informe-card-title">Empresas mas frecuentes</div><div id="tabla-empresas"></div></div>
@@ -106,11 +123,214 @@
           <div class="informe-card"><div class="informe-card-title">Ocupacion por muelle</div><div id="tabla-muelles"></div></div>
         </div>
         <div class="informe-card" style="margin-top:16px">
+          <div class="informe-card-title">Mapa de calor por franja</div>
+          <div id="tabla-heatmap"></div>
+        </div>
+        <div class="informe-card" style="margin-top:16px">
           <div class="informe-card-title">Listado completo del periodo</div>
           <div id="tabla-completa"></div>
         </div>
       </div>
       <div id="informe-empty" style="display:none" class="empty-state">No hay reservas en el periodo seleccionado.</div>
+    </div>
+
+    <div id="vista-lanzaderas" class="reservas-wrap" style="display:none">
+      <div class="informe-header">
+        <div class="section-title" style="margin-bottom:0">Ubicacion de lanzaderas por hora</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn-informe" onclick="abrirNotaModal()">Indicacion a lanzadera</button>
+          <button class="btn-informe" style="background:#D41F3A" onclick="enviarUrgencia()">🚨 Urgencia a todas</button>
+        </div>
+      </div>
+      <div id="gantt-lanz"></div>
+
+      <div class="section-title" style="margin-top:24px">Chat con lanzaderas</div>
+      <div class="chat-wrap">
+        <div class="chat-threads" id="chat-threads"></div>
+        <div class="chat-main">
+          <div class="chat-msgs" id="chat-msgs"></div>
+          <div class="chat-quick" id="chat-quick"></div>
+          <div class="chat-input">
+            <input type="text" id="chat-text" placeholder="Escribe un mensaje..." onkeydown="if(event.key==='Enter')enviarChatAlmacen()">
+            <button class="btn-confirm" style="width:auto;padding:10px 18px" onclick="enviarChatAlmacen()">Enviar</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-title" style="margin-top:24px">Informe de lanzaderas</div>
+      <div class="informe-range">
+        <label>Desde</label><input type="date" id="lz-desde">
+        <label>Hasta</label><input type="date" id="lz-hasta">
+        <button class="btn-informe" onclick="cargarInformeLanz()">Consultar</button>
+        <button class="btn-excel" onclick="exportarLanzaderas()">Exportar Excel</button>
+      </div>
+      <div id="lz-resultado" style="margin-top:14px"></div>
+    </div>
+
+    <div id="vista-cargas" class="reservas-wrap" style="display:none">
+      <div class="informe-header">
+        <div class="section-title" style="margin-bottom:0">Cargas en curso — Muelles 1 a 5</div>
+        <button class="btn-informe" onclick="abrirCargaModal()">+ Registrar carga</button>
+      </div>
+      <div class="grid-card"><div class="grid-scroll"><table class="rejilla-table" id="rejilla-cargas"></table></div></div>
+
+      <div class="section-title" style="margin-top:24px">Informe de cargas</div>
+      <div class="informe-range">
+        <label>Desde</label><input type="date" id="cg-desde">
+        <label>Hasta</label><input type="date" id="cg-hasta">
+        <button class="btn-informe" onclick="cargarInformeCargas()">Consultar</button>
+        <button class="btn-excel" onclick="exportarCargas()">Exportar Excel</button>
+      </div>
+      <div id="cg-resultado" style="margin-top:14px"></div>
+    </div>
+
+    <div id="vista-merca" class="reservas-wrap" style="display:none">
+      <div class="informe-header">
+        <div class="section-title" style="margin-bottom:0">Descargas de proveedores — Merca (Muelles 2 y 4)</div>
+        <button class="btn-informe" onclick="abrirMercaModal()">+ Registrar descarga</button>
+      </div>
+      <div class="grid-card"><div class="grid-scroll"><table class="rejilla-table" id="rejilla-merca"></table></div></div>
+    </div>
+
+    <div id="vista-config" class="reservas-wrap" style="display:none">
+      <div class="informe-header">
+        <div class="section-title" style="margin-bottom:0">Configuracion del sistema</div>
+      </div>
+
+      <div class="informe-card" style="margin-top:16px">
+        <div class="informe-card-title">Destinatarios de alertas de lanzaderas</div>
+        <p style="font-size:13px;color:#6B7280;margin-bottom:12px">Cuando una lanzadera supera el tiempo maximo, se envia un correo a todos estos destinatarios.</p>
+        <div id="cfg-alertas-lista"></div>
+        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+          <input type="email" id="cfg-alerta-email" placeholder="nuevo@email.com" style="flex:1;min-width:200px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
+          <button class="btn-informe" onclick="agregarEmailAlerta()">Agregar</button>
+        </div>
+      </div>
+
+      <div class="informe-card" style="margin-top:16px">
+        <div class="informe-card-title">Tiempo maximo de lanzadera</div>
+        <p style="font-size:13px;color:#6B7280;margin-bottom:12px">Si una lanzadera lleva mas de este tiempo parada en una nave, se envia la alerta por correo. El banner rojo aparece 30 minutos despues.</p>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input type="number" id="cfg-tiempo-max" min="15" max="480" step="5" value="90" style="width:90px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
+          <span style="font-size:14px;color:#6B7280">minutos</span>
+          <button class="btn-informe" onclick="guardarTiempoMax()">Guardar</button>
+          <span id="cfg-tiempo-ok" style="font-size:13px;color:#1D9E75;display:none">Guardado correctamente</span>
+        </div>
+      </div>
+
+      <div class="informe-card" style="margin-top:16px">
+        <div class="informe-card-title">Destinos de lanzadera</div>
+        <p style="font-size:13px;color:#6B7280;margin-bottom:12px">Naves y ubicaciones disponibles. Los cambios se aplican de inmediato en este panel y en las apps de los conductores.</p>
+        <div id="cfg-destinos-lista"></div>
+        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+          <input type="text" id="cfg-destino-id" placeholder="ID (ej: nueva_nave)" style="width:160px;flex-shrink:0;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
+          <input type="text" id="cfg-destino-nombre" placeholder="Nombre (ej: Nueva Nave)" style="flex:1;min-width:140px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
+          <button class="btn-informe" onclick="agregarDestino()">Agregar</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="vista-bizerba" class="reservas-wrap" style="display:none">
+      <div class="informe-header">
+        <div class="section-title" style="margin-bottom:0">Incidencias Bizerba — Lineas 0 a 16</div>
+        <button class="btn-informe" onclick="abrirIncidenciaModal()">+ Nueva incidencia</button>
+      </div>
+      <div class="informe-metricas">
+        <div class="metric-card accent"><div class="metric-value" id="biz-abiertas">0</div><div class="metric-label">Sin coger</div></div>
+        <div class="metric-card"><div class="metric-value" id="biz-curso">0</div><div class="metric-label">En curso</div></div>
+        <div class="metric-card"><div class="metric-value" id="biz-repuesto">0</div><div class="metric-label">Falta repuesto</div></div>
+        <div class="metric-card"><div class="metric-value" id="biz-resueltas">0</div><div class="metric-label">Resueltas hoy</div></div>
+        <div class="metric-card"><div class="metric-value" id="biz-resp">—</div><div class="metric-label">T. medio respuesta</div></div>
+      </div>
+      <div class="section-title" style="margin-top:8px">Incidencias activas</div>
+      <div id="biz-activas"></div>
+      <div class="section-title" style="margin-top:24px">Historial del dia</div>
+      <div id="biz-tabla"></div>
+
+      <div class="section-title" style="margin-top:24px">Informe de incidencias</div>
+      <div class="informe-range">
+        <label>Desde</label><input type="date" id="bz-desde">
+        <label>Hasta</label><input type="date" id="bz-hasta">
+        <button class="btn-informe" onclick="cargarInformeBizerba()">Consultar</button>
+        <button class="btn-excel" onclick="exportarBizerba()">Exportar Excel</button>
+      </div>
+      <div id="bz-resultado" style="margin-top:14px"></div>
+    </div>
+  </div>
+
+  <div id="incidencia-modal" class="modal-overlay" style="display:none" onclick="cerrarIncidenciaModal(event)">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title">Nueva incidencia Bizerba</div>
+        <button class="close-btn" onclick="cerrarIncidenciaModal()">x</button>
+      </div>
+      <div class="modal-body">
+        <div class="field"><label>Linea <span class="req">*</span></label><select id="inc-linea"></select></div>
+        <div class="field"><label>Averia / descripcion <span class="req">*</span></label><input type="text" id="inc-averia" placeholder="Ej: la balanza no tara"></div>
+        <button class="btn-confirm" onclick="crearIncidencia()">Abrir incidencia</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="merca-modal" class="modal-overlay" style="display:none" onclick="cerrarMercaModal(event)">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title">Registrar descarga (Merca)</div>
+        <button class="close-btn" onclick="cerrarMercaModal()">x</button>
+      </div>
+      <div class="modal-body">
+        <div class="field"><label>Empresa / proveedor <span class="req">*</span></label><input type="text" id="mm-empresa"></div>
+        <div class="field"><label>Matricula <span class="req">*</span></label><input type="text" id="mm-matricula" style="text-transform:uppercase"></div>
+        <div class="field"><label>Mercancia</label><input type="text" id="mm-mercancia"></div>
+        <div class="field"><label>Pales <span class="opt">(aprox.)</span></label><input type="number" id="mm-pales" min="0"></div>
+        <div class="field"><label>Muelle <span class="req">*</span></label><select id="mm-muelle"></select></div>
+        <button class="btn-confirm" onclick="registrarMercaAlmacen()">Registrar descarga</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="carga-detalle-modal" class="modal-overlay" style="display:none" onclick="cerrarCargaDetalle(event)">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div><div class="modal-title">Detalle de la carga</div><div class="modal-sub" id="cd-sub"></div></div>
+        <button class="close-btn" onclick="cerrarCargaDetalle()">x</button>
+      </div>
+      <div class="modal-body">
+        <div id="cd-datos" class="resumen"></div>
+        <div id="cd-acciones" style="margin-top:16px"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="carga-modal" class="modal-overlay" style="display:none" onclick="cerrarCargaModal(event)">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title">Registrar carga</div>
+        <button class="close-btn" onclick="cerrarCargaModal()">x</button>
+      </div>
+      <div class="modal-body">
+        <div class="field"><label>Matricula tractora <span class="req">*</span></label><input type="text" id="cm-tractora" style="text-transform:uppercase"></div>
+        <div class="field"><label>Matricula semirremolque</label><input type="text" id="cm-semi" style="text-transform:uppercase"></div>
+        <div class="field"><label>Chofer</label><input type="text" id="cm-chofer"></div>
+        <div class="field"><label>DNI</label><input type="text" id="cm-dni" style="text-transform:uppercase"></div>
+        <div class="field"><label>Destino</label><input type="text" id="cm-destino"></div>
+        <div class="field"><label>Muelle de carga <span class="req">*</span></label><select id="cm-muelle"></select></div>
+        <button class="btn-confirm" onclick="registrarCargaAlmacen()">Registrar carga</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="nota-modal" class="modal-overlay" style="display:none" onclick="cerrarNotaModal(event)">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title">Indicacion para lanzadera</div>
+        <button class="close-btn" onclick="cerrarNotaModal()">x</button>
+      </div>
+      <div class="modal-body">
+        <div class="field"><label>Lanzadera</label><select id="nota-lanz" onchange="cargarNotaActual()"></select></div>
+        <div class="field"><label>Indicacion <span class="opt">(se mostrara al conductor al salir)</span></label><input type="text" id="nota-texto" placeholder="Ej: ir a Upasa a cargar"></div>
+        <button class="btn-confirm" onclick="guardarNota()">Guardar indicacion</button>
+      </div>
     </div>
   </div>
 
@@ -175,9 +395,11 @@
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-  
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js"></script>
+
   <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
   <script src="js/firebase-config-compat.js"></script>
+  <script src="js/push.js"></script>
   <script src="js/admin.js"></script>
 </body>
 </html>
