@@ -87,6 +87,7 @@ h2 {
   font-size: 14px;
   font-family: 'Inter', sans-serif;
   color: #1A1A1A;
+  background: #F5F6F8;
   outline: none;
   transition: border-color .15s;
 }
