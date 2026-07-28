@@ -80,7 +80,7 @@ let informeData = [];
 
 // Version de la app. SUBIR este numero al publicar cambios importantes:
 // las pestanas abiertas se recargaran solas para coger la version nueva.
-const APP_VERSION = 29;
+const APP_VERSION = 30;
 let _chatSel = 1;
 function vigilarVersion() {
   db.collection("config").doc("app").onSnapshot(d => {
@@ -722,92 +722,182 @@ function construirCuerpoInformeCostes() {
 
   if (!allSegs.length) return null;
 
+  const enNaveSegs = allSegs.filter(s => s.estado === "en_nave");
+  const transitoSegs = allSegs.filter(s => s.estado === "transito");
+  const viajes = enNaveSegs.length;
+  const totalNaveMin = enNaveSegs.reduce((s, x) => s + x.durMin, 0);
+  const totalTransMin = transitoSegs.reduce((s, x) => s + x.durMin, 0);
+  const mediaNaveSeg = viajes ? Math.round(totalNaveMin / viajes) : 0;
+
   const costePorLanz = { 1: 0, 2: 0, 3: 0, 4: 0 };
   allSegs.forEach(s => { costePorLanz[s.numero] += s.coste; });
   const costeTotal = allSegs.reduce((s, x) => s + x.coste, 0);
-  const enNaveSegs = allSegs.filter(s => s.estado === "en_nave");
-  const transitoSegs = allSegs.filter(s => s.estado === "transito");
-  const topEsperas = enNaveSegs.slice().sort((a, b) => b.coste - a.coste).slice(0, 8);
+  const totalMin = allSegs.reduce((s, x) => s + x.durMin, 0);
+  const tasaMedia = totalMin > 0 ? costeTotal / totalMin : 8.68;
+
+  const naveStats = {};
+  enNaveSegs.forEach(s => {
+    if (!naveStats[s.nave]) naveStats[s.nave] = { sum: 0, n: 0 };
+    naveStats[s.nave].sum += s.durMin; naveStats[s.nave].n++;
+  });
+
+  const muelleStats = {};
+  enNaveSegs.filter(s => s.muelle).forEach(s => {
+    if (!muelleStats[s.muelle]) muelleStats[s.muelle] = { sum: 0, n: 0 };
+    muelleStats[s.muelle].sum += s.durMin; muelleStats[s.muelle].n++;
+  });
+  const muellesArr = Object.entries(muelleStats)
+    .map(([k, v]) => ({ muelle: k, avg: Math.round(v.sum / v.n), n: v.n }))
+    .sort((a, b) => a.avg - b.avg);
+  const masRapido = muellesArr[0] || null;
+  const masLento = muellesArr[muellesArr.length - 1] || null;
+
   const navesCostes = Object.entries(
     enNaveSegs.reduce((acc, s) => { acc[s.nave] = (acc[s.nave] || 0) + s.coste; return acc; }, {})
   ).sort((a, b) => b[1] - a[1]);
 
-  const viajes = enNaveSegs.length;
-  const totalNaveMin = enNaveSegs.reduce((s, x) => s + x.durMin, 0);
-  const totalTransMin = transitoSegs.reduce((s, x) => s + x.durMin, 0);
-
+  const topEsperas = enNaveSegs.slice().sort((a, b) => b.coste - a.coste).slice(0, 8);
   const fechaFmt = fecha.split("-").reverse().join("/");
 
-  // ── HTML email ────────────────────────────────────────────────────
-  const lanzCards = [1,2,3,4].filter(n => costePorLanz[n] > 0).map(n =>
-    "<td style='width:25%;padding:8px;text-align:center'>" +
-    "<div style='background:#f8f8f8;border-radius:8px;padding:14px 8px'>" +
-    "<div style='font-size:11px;color:#888;margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em'>Lanzadera " + n + "</div>" +
-    "<div style='font-size:20px;font-weight:700;color:#1A1A1A'>" + formatEuro(costePorLanz[n]) + "</div>" +
+  // ── helpers ───────────────────────────────────────────────────────
+  const CARD = "border-radius:8px;border:1px solid #e8e8e8;background:#ffffff";
+
+  function dataRow(label, value) {
+    return "<tr>" +
+      "<td style='padding:6px 0;color:#555;font-size:13px;border-bottom:1px solid #f0f0f0'>" + label + "</td>" +
+      "<td style='padding:6px 0;font-weight:600;text-align:right;font-size:13px;color:#1A1A1A;border-bottom:1px solid #f0f0f0'>" + value + "</td>" +
+      "</tr>";
+  }
+
+  // ── 4 metric cards ────────────────────────────────────────────────
+  function mCard(val, label, accent) {
+    return "<td style='padding:5px'><div style='" + CARD + ";padding:14px 8px;text-align:center'>" +
+      "<div style='font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px'>" + label + "</div>" +
+      "<div style='font-size:19px;font-weight:700;color:" + (accent || "#1A1A1A") + "'>" + val + "</div>" +
+      "</div></td>";
+  }
+  const metricRow =
+    "<table width='100%' cellpadding='0' cellspacing='0'><tr>" +
+    mCard(viajes + "", "Viajes a nave") +
+    mCard(formatDuracion(mediaNaveSeg), "Tiempo medio visita") +
+    mCard(formatDuracion(totalNaveMin), "Total en nave") +
+    mCard(formatDuracion(totalTransMin), "Total en transito") +
+    "</tr></table>";
+
+  // ── Nave times ────────────────────────────────────────────────────
+  let naveTimeRows = NAVES_PANEL.filter(n => naveStats[n.id]).map(n => {
+    const s = naveStats[n.id];
+    return dataRow(esc(n.nombre), formatDuracion(Math.round(s.sum / s.n)) + " · " + s.n + " vis.");
+  }).join("") || "<tr><td colspan='2' style='color:#bbb;font-size:13px;padding:8px 0'>Sin datos</td></tr>";
+
+  // ── Muelle times + ahorro ─────────────────────────────────────────
+  const plazaMuelles = ["M6","M7","M8","M18","M19","M20"].filter(m => muelleStats[m]);
+  const mercaMuelles = ["M2","M4"].filter(m => muelleStats[m]);
+  let muelleTimeRows = "";
+  if (plazaMuelles.length) {
+    muelleTimeRows += "<tr><td colspan='2' style='padding:4px 0 2px;font-size:10px;color:#bbb;text-transform:uppercase;letter-spacing:.06em'>Plaza</td></tr>";
+    plazaMuelles.forEach(m => { const s = muelleStats[m]; muelleTimeRows += dataRow(m, formatDuracion(Math.round(s.sum/s.n)) + " · " + s.n + " vis."); });
+  }
+  if (mercaMuelles.length) {
+    muelleTimeRows += "<tr><td colspan='2' style='padding:8px 0 2px;font-size:10px;color:#bbb;text-transform:uppercase;letter-spacing:.06em'>Merca</td></tr>";
+    mercaMuelles.forEach(m => { const s = muelleStats[m]; muelleTimeRows += dataRow(m, formatDuracion(Math.round(s.sum/s.n)) + " · " + s.n + " vis."); });
+  }
+  if (!muelleTimeRows) muelleTimeRows = "<tr><td colspan='2' style='color:#bbb;font-size:13px;padding:8px 0'>Sin datos</td></tr>";
+
+  let ahorroBlock = "";
+  if (masRapido && masLento && masRapido.muelle !== masLento.muelle) {
+    const diffMin = masLento.avg - masRapido.avg;
+    const ahorroVisita = diffMin * tasaMedia;
+    const ahorroTotal = ahorroVisita * masRapido.n;
+    ahorroBlock =
+      "<tr><td colspan='2'><div style='margin-top:12px;padding-top:10px;border-top:1px solid #eee'>" +
+      "<div style='font-size:12px;color:#1D9E75;margin-bottom:3px'>&#9650; Mas rapido: <strong>" + esc(masRapido.muelle) + "</strong> · " + formatDuracion(masRapido.avg) + " media</div>" +
+      "<div style='font-size:12px;color:#D41F3A;margin-bottom:8px'>&#9660; Mas lento: <strong>" + esc(masLento.muelle) + "</strong> · " + formatDuracion(masLento.avg) + " media</div>" +
+      "<div style='font-size:12px;background:#f0faf5;border-radius:6px;padding:8px;color:#1A1A1A'>" +
+      "Diferencia: <strong>" + formatDuracion(diffMin) + "</strong> por visita &middot; " +
+      "Ahorro estimado en " + esc(masRapido.muelle) + ": <strong style='color:#1D9E75'>" + formatEuro(ahorroTotal) + "</strong> " +
+      "(" + masRapido.n + " vis. &times; " + formatEuro(ahorroVisita) + ")" +
+      "</div></div></td></tr>";
+  }
+
+  // ── 2 cols: nave times | muelle times ─────────────────────────────
+  const colNave =
+    "<td width='50%' valign='top' style='" + CARD + ";padding:14px'>" +
+    "<div style='font-size:12px;font-weight:700;color:#1A1A1A;margin-bottom:10px'>Tiempo medio por nave</div>" +
+    "<table width='100%' cellpadding='0' cellspacing='0'>" + naveTimeRows + "</table></td>";
+  const colMuelle =
+    "<td width='8'></td><td valign='top' style='" + CARD + ";padding:14px'>" +
+    "<div style='font-size:12px;font-weight:700;color:#1A1A1A;margin-bottom:10px'>Tiempo medio por muelle</div>" +
+    "<table width='100%' cellpadding='0' cellspacing='0'>" + muelleTimeRows + ahorroBlock + "</table></td>";
+  const twoColNaves = "<table width='100%' cellpadding='0' cellspacing='0'><tr>" + colNave + colMuelle + "</tr></table>";
+
+  // ── 4 lanzadera cost cards ─────────────────────────────────────────
+  const lanzCards = [1,2,3,4].map(n =>
+    "<td style='padding:5px'><div style='" + CARD + ";padding:12px 6px;text-align:center'>" +
+    "<div style='font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px'>Lanzadera " + n + "</div>" +
+    "<div style='font-size:17px;font-weight:700;color:" + (costePorLanz[n] > 0 ? "#1A1A1A" : "#ccc") + "'>" + (costePorLanz[n] > 0 ? formatEuro(costePorLanz[n]) : "—") + "</div>" +
     "</div></td>"
   ).join("");
 
-  const naveRows = navesCostes.map(([nave, coste]) =>
-    "<tr><td style='padding:7px 12px;color:#555;border-bottom:1px solid #f0f0f0'>" + esc(NAVE_NOMBRE[nave] || nave) + "</td>" +
-    "<td style='padding:7px 12px;font-weight:600;text-align:right;border-bottom:1px solid #f0f0f0'>" + formatEuro(coste) + "</td></tr>"
+  // ── 2 cols: coste nave | esperas mas caras ─────────────────────────
+  let naveCosteRows = navesCostes.map(([nave, coste]) =>
+    dataRow(esc(NAVE_NOMBRE[nave] || nave), formatEuro(coste))
+  ).join("") || "<tr><td colspan='2' style='color:#bbb;font-size:13px;padding:8px 0'>Sin datos</td></tr>";
+
+  const esperasTh = "<tr style='background:#f5f5f5'>" +
+    "<th style='padding:5px 8px;text-align:left;font-size:11px;color:#888;font-weight:600'>Lanz.</th>" +
+    "<th style='padding:5px 8px;text-align:left;font-size:11px;color:#888;font-weight:600'>Nave</th>" +
+    "<th style='padding:5px 8px;text-align:left;font-size:11px;color:#888;font-weight:600'>Muelle</th>" +
+    "<th style='padding:5px 8px;text-align:left;font-size:11px;color:#888;font-weight:600'>Dur.</th>" +
+    "<th style='padding:5px 8px;text-align:right;font-size:11px;color:#888;font-weight:600'>Coste</th></tr>";
+  const esperasTr = topEsperas.map(s =>
+    "<tr>" +
+    "<td style='padding:5px 8px;font-size:12px;border-bottom:1px solid #f5f5f5'>L" + s.numero + "</td>" +
+    "<td style='padding:5px 8px;font-size:12px;border-bottom:1px solid #f5f5f5'>" + esc(NAVE_NOMBRE[s.nave] || s.nave || "?") + "</td>" +
+    "<td style='padding:5px 8px;font-size:12px;border-bottom:1px solid #f5f5f5'>" + esc(s.muelle || "—") + "</td>" +
+    "<td style='padding:5px 8px;font-size:12px;border-bottom:1px solid #f5f5f5'>" + formatDuracion(s.durMin) + "</td>" +
+    "<td style='padding:5px 8px;font-size:12px;font-weight:700;color:#D41F3A;text-align:right;border-bottom:1px solid #f5f5f5'>" + formatEuro(s.coste) + "</td>" +
+    "</tr>"
   ).join("");
 
-  const esperaRows = topEsperas.map(s => {
-    const lugar = esc(NAVE_NOMBRE[s.nave] || s.nave || "?") + (s.muelle ? " <span style='color:#888'>" + esc(s.muelle) + "</span>" : "");
-    return "<tr>" +
-      "<td style='padding:7px 12px;border-bottom:1px solid #f0f0f0'>L" + s.numero + "</td>" +
-      "<td style='padding:7px 12px;border-bottom:1px solid #f0f0f0'>" + lugar + "</td>" +
-      "<td style='padding:7px 12px;border-bottom:1px solid #f0f0f0'>" + formatDuracion(s.durMin) + "</td>" +
-      "<td style='padding:7px 12px;font-weight:700;color:#D41F3A;border-bottom:1px solid #f0f0f0;text-align:right'>" + formatEuro(s.coste) + "</td>" +
-      "</tr>";
-  }).join("");
+  const colNaveCoste =
+    "<td width='35%' valign='top' style='" + CARD + ";padding:14px'>" +
+    "<div style='font-size:12px;font-weight:700;color:#1A1A1A;margin-bottom:10px'>Coste por nave</div>" +
+    "<table width='100%' cellpadding='0' cellspacing='0'>" + naveCosteRows + "</table></td>";
+  const colEsperas =
+    "<td width='8'></td><td valign='top' style='" + CARD + ";padding:14px'>" +
+    "<div style='font-size:12px;font-weight:700;color:#1A1A1A;margin-bottom:10px'>Esperas mas caras</div>" +
+    "<table width='100%' cellpadding='0' cellspacing='0'>" + esperasTh + esperasTr + "</table></td>";
+  const twoColCostes = "<table width='100%' cellpadding='0' cellspacing='0'><tr>" + colNaveCoste + colEsperas + "</tr></table>";
 
+  // ── assemble ──────────────────────────────────────────────────────
   const html =
-    "<!DOCTYPE html><html><body style='margin:0;padding:0;background:#f4f4f4;font-family:Arial,sans-serif'>" +
-    "<div style='max-width:600px;margin:0 auto;background:#fff'>" +
+    "<!DOCTYPE html><html><body style='margin:0;padding:0;background:#f0f0f0;font-family:Arial,Helvetica,sans-serif'>" +
+    "<div style='max-width:700px;margin:0 auto;padding:16px 10px'>" +
 
-    // Header
-    "<div style='background:#D41F3A;padding:24px 32px'>" +
-    "<div style='color:#fff;font-size:22px;font-weight:700;letter-spacing:-0.5px'>Aldelis</div>" +
-    "<div style='color:rgba(255,255,255,.75);font-size:13px;margin-top:2px'>Informe de costes de operacion · " + fechaFmt + "</div>" +
+    "<div style='background:#D41F3A;border-radius:8px;padding:20px 22px;margin-bottom:12px'>" +
+    "<div style='color:#fff;font-size:20px;font-weight:700;letter-spacing:-.5px'>Aldelis</div>" +
+    "<div style='color:rgba(255,255,255,.8);font-size:12px;margin-top:2px'>Informe de costes de operacion &middot; " + fechaFmt + "</div>" +
     "</div>" +
 
-    // Resumen
-    "<div style='padding:24px 32px 0'>" +
-    "<div style='font-size:12px;color:#888;text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px'>Resumen del dia</div>" +
-    "<table style='width:100%;border-collapse:collapse'><tr>" +
-    "<td style='padding:8px;text-align:center'><div style='background:#f8f8f8;border-radius:8px;padding:12px 8px'><div style='font-size:11px;color:#888;margin-bottom:4px'>Viajes</div><div style='font-size:22px;font-weight:700'>" + viajes + "</div></div></td>" +
-    "<td style='padding:8px;text-align:center'><div style='background:#f8f8f8;border-radius:8px;padding:12px 8px'><div style='font-size:11px;color:#888;margin-bottom:4px'>Tiempo en nave</div><div style='font-size:22px;font-weight:700'>" + formatDuracion(totalNaveMin) + "</div></div></td>" +
-    "<td style='padding:8px;text-align:center'><div style='background:#f8f8f8;border-radius:8px;padding:12px 8px'><div style='font-size:11px;color:#888;margin-bottom:4px'>Coste total ops</div><div style='font-size:22px;font-weight:700;color:#D41F3A'>" + formatEuro(costeTotal) + "</div></div></td>" +
-    "</tr></table></div>" +
+    metricRow +
 
-    // Por lanzadera
-    "<div style='padding:20px 32px 0'>" +
-    "<div style='font-size:12px;color:#888;text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px'>Coste por lanzadera</div>" +
-    "<table style='width:100%;border-collapse:collapse'><tr>" + lanzCards + "</tr></table></div>" +
+    "<div style='height:10px'></div>" + twoColNaves +
 
-    // Coste por nave
-    (naveRows ? "<div style='padding:20px 32px 0'>" +
-    "<div style='font-size:12px;color:#888;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px'>Coste por nave</div>" +
-    "<table style='width:100%;border-collapse:collapse'>" + naveRows + "</table></div>" : "") +
-
-    // Esperas mas caras
-    (esperaRows ? "<div style='padding:20px 32px 0'>" +
-    "<div style='font-size:12px;color:#888;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px'>Esperas mas caras</div>" +
-    "<table style='width:100%;border-collapse:collapse'>" +
-    "<tr style='background:#f8f8f8'><th style='padding:7px 12px;text-align:left;font-size:12px;font-weight:600'>Lanz.</th><th style='padding:7px 12px;text-align:left;font-size:12px;font-weight:600'>Nave / Muelle</th><th style='padding:7px 12px;text-align:left;font-size:12px;font-weight:600'>Duracion</th><th style='padding:7px 12px;text-align:right;font-size:12px;font-weight:600'>Coste</th></tr>" +
-    esperaRows + "</table></div>" : "") +
-
-    // Nota al pie
-    "<div style='padding:24px 32px;margin-top:8px;border-top:1px solid #eee'>" +
-    "<p style='font-size:12px;color:#aaa;margin:0'>Los costes reflejan el coste de operacion del dia (tiempo en nave + transito), no el importe fijo del contrato.</p>" +
+    "<div style='height:10px'></div>" +
+    "<div style='" + CARD + ";padding:14px'>" +
+    "<div style='font-size:12px;font-weight:700;color:#1A1A1A;margin-bottom:10px'>Costes de operacion</div>" +
+    "<table width='100%' cellpadding='0' cellspacing='0'><tr>" + lanzCards + "</tr></table>" +
     "</div>" +
+
+    "<div style='height:10px'></div>" + twoColCostes +
+
+    "<div style='height:14px'></div>" +
+    "<div style='text-align:center;font-size:11px;color:#aaa'>Los costes reflejan el coste de operacion del dia, no el importe fijo del contrato.</div>" +
 
     "</div></body></html>";
 
-  // Texto plano de respaldo
   const cuerpo = "Informe de costes " + fechaFmt + " — Total operaciones: " + formatEuro(costeTotal);
-
   return { fechaFmt, costeTotal, cuerpo, html };
 }
 
@@ -824,7 +914,7 @@ async function enviarInformeDiarioCostes(esAuto) {
   }
   const asunto = "Informe de costes Lanzaderas — " + datos.fechaFmt + " — " + formatEuro(datos.costeTotal);
   try {
-    await Promise.all(emails.map(to => enviarEmailMS(to, asunto, datos.cuerpo)));
+    await Promise.all(emails.map(to => enviarEmailMS(to, asunto, datos.cuerpo, datos.html)));
     const hora = new Date().getHours().toString().padStart(2,"0") + ":" + new Date().getMinutes().toString().padStart(2,"0");
     const hoy = new Date().toISOString().split("T")[0];
     localStorage.setItem("costesEnviados_" + hoy, hora);
