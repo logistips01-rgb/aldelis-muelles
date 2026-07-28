@@ -80,7 +80,7 @@ let informeData = [];
 
 // Version de la app. SUBIR este numero al publicar cambios importantes:
 // las pestanas abiertas se recargaran solas para coger la version nueva.
-const APP_VERSION = 33;
+const APP_VERSION = 34;
 let _chatSel = 1;
 function vigilarVersion() {
   db.collection("config").doc("app").onSnapshot(d => {
@@ -901,20 +901,71 @@ function construirCuerpoInformeCostes() {
   return { fechaFmt, costeTotal, cuerpo, html };
 }
 
+function _cargarHtml2Canvas() {
+  if (window.html2canvas) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://html2canvas.hertzen.com/dist/html2canvas.min.js';
+    s.onload = resolve; s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+
 async function enviarInformeDiarioCostes(esAuto) {
   const emails = _costesEmailsCache;
-  if (!emails.length) {
-    if (!esAuto) alert("No hay destinatarios configurados en la pestana Costes.");
-    return;
-  }
+  if (!emails.length) return;
+
+  // Asegura que el historial está renderizado (lee de window._logs)
+  cargarHistorialDiario();
+
   const datos = construirCuerpoInformeCostes();
-  if (!datos) {
-    if (!esAuto) alert("Sin datos de lanzaderas para hoy.");
-    return;
-  }
+  if (!datos) return;
+
   const asunto = "Informe de costes Lanzaderas — " + datos.fechaFmt + " — " + formatEuro(datos.costeTotal);
+  let html = datos.html; // fallback tabla
+
   try {
-    await Promise.all(emails.map(to => enviarEmailMS(to, asunto, datos.cuerpo, datos.html)));
+    await _cargarHtml2Canvas();
+
+    const el = document.getElementById('costes-historial');
+    const isDark = document.getElementById('admin-body').classList.contains('dark');
+    const bg = isDark ? '#0F0F11' : '#F5F5F5';
+
+    // Clon off-screen a ancho fijo para captura consistente
+    const clone = document.createElement('div');
+    clone.style.cssText = 'position:fixed;left:-9999px;top:0;width:960px;padding:16px;box-sizing:border-box;background:' + bg + ';z-index:-9999';
+    clone.innerHTML = el.innerHTML;
+    document.body.appendChild(clone);
+
+    try {
+      const canvas = await window.html2canvas(clone, {
+        scale: 1.5,
+        backgroundColor: bg,
+        logging: false,
+        useCORS: false
+      });
+      if (canvas.height > 50) {
+        const imgData = canvas.toDataURL('image/png');
+        html =
+          "<!DOCTYPE html><html><body style='margin:0;padding:16px;background:#f0f0f0;font-family:Arial,Helvetica,sans-serif'>" +
+          "<div style='max-width:960px;margin:0 auto'>" +
+          "<div style='background:#D41F3A;border-radius:8px 8px 0 0;padding:18px 22px'>" +
+          "<div style='color:#fff;font-size:18px;font-weight:700;letter-spacing:-.5px'>Aldelis</div>" +
+          "<div style='color:rgba(255,255,255,.8);font-size:12px;margin-top:2px'>Informe de costes &middot; " + datos.fechaFmt + "</div>" +
+          "</div>" +
+          "<img src='" + imgData + "' style='width:100%;display:block' alt='Informe de costes'>" +
+          "<p style='text-align:center;font-size:11px;color:#aaa;margin:10px 0 0'>Costes de operacion del dia (no importe fijo del contrato).</p>" +
+          "</div></body></html>";
+      }
+    } finally {
+      document.body.removeChild(clone);
+    }
+  } catch(e) {
+    console.warn("html2canvas falló, usando HTML tabla:", e.message);
+  }
+
+  try {
+    await Promise.all(emails.map(to => enviarEmailMS(to, asunto, datos.cuerpo, html)));
     const hora = new Date().getHours().toString().padStart(2,"0") + ":" + new Date().getMinutes().toString().padStart(2,"0");
     const hoy = new Date().toISOString().split("T")[0];
     localStorage.setItem("costesEnviados_" + hoy, hora);
