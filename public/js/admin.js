@@ -23,11 +23,11 @@ function initDarkMode() {
 }
 
 // Envio de email via Firebase Function (body = texto plano, html = HTML opcional)
-async function enviarEmailMS(to, subject, body, html) {
+async function enviarEmailMS(to, subject, body, html, imageBase64) {
   if (!to) return;
   try {
-    const enviarEmail = firebase.functions().httpsCallable("enviarEmail");
-    await enviarEmail({ to, subject, body, html: html || null });
+    const enviarEmail = firebase.functions().httpsCallable("enviarEmail", { timeout: 60000 });
+    await enviarEmail({ to, subject, body, html: html || null, imageBase64: imageBase64 || null });
     console.log("Email OK a " + to);
   } catch(e) {
     console.error("Error email:", e);
@@ -80,7 +80,7 @@ let informeData = [];
 
 // Version de la app. SUBIR este numero al publicar cambios importantes:
 // las pestanas abiertas se recargaran solas para coger la version nueva.
-const APP_VERSION = 35;
+const APP_VERSION = 36;
 let _chatSel = 1;
 function vigilarVersion() {
   db.collection("config").doc("app").onSnapshot(d => {
@@ -937,6 +937,7 @@ async function enviarInformeDiarioCostes(esAuto) {
     clone.innerHTML = el.innerHTML;
     document.body.appendChild(clone);
 
+    let imageBase64 = null;
     try {
       const canvas = await window.html2canvas(clone, {
         scale: 1.5,
@@ -945,12 +946,9 @@ async function enviarInformeDiarioCostes(esAuto) {
         useCORS: false
       });
       if (canvas.height > 50) {
-        // Subir a Storage para obtener URL pública (base64 bloqueado por Gmail)
-        const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
-        const fecha = document.getElementById("fecha-dashboard").value;
-        const ref = firebase.storage().ref("informes/costes-" + fecha + ".png");
-        await ref.put(blob, { contentType: 'image/png', cacheControl: 'public,max-age=86400' });
-        const imgUrl = await ref.getDownloadURL();
+        // base64 sin prefijo para pasarlo como adjunto inline (cid:) al Cloud Function
+        const dataUrl = canvas.toDataURL('image/png');
+        imageBase64 = dataUrl.replace(/^data:image\/png;base64,/, '');
         html =
           "<!DOCTYPE html><html><body style='margin:0;padding:16px;background:#f0f0f0;font-family:Arial,Helvetica,sans-serif'>" +
           "<div style='max-width:960px;margin:0 auto'>" +
@@ -958,7 +956,7 @@ async function enviarInformeDiarioCostes(esAuto) {
           "<div style='color:#fff;font-size:18px;font-weight:700;letter-spacing:-.5px'>Aldelis</div>" +
           "<div style='color:rgba(255,255,255,.8);font-size:12px;margin-top:2px'>Informe de costes &middot; " + datos.fechaFmt + "</div>" +
           "</div>" +
-          "<img src='" + imgUrl + "' style='width:100%;display:block' alt='Informe de costes'>" +
+          "<img src='cid:informe-costes' style='width:100%;display:block' alt='Informe de costes'>" +
           "<p style='text-align:center;font-size:11px;color:#aaa;margin:10px 0 0'>Costes de operacion del dia (no importe fijo del contrato).</p>" +
           "</div></body></html>";
       }
@@ -970,7 +968,7 @@ async function enviarInformeDiarioCostes(esAuto) {
   }
 
   try {
-    await Promise.all(emails.map(to => enviarEmailMS(to, asunto, datos.cuerpo, html)));
+    await Promise.all(emails.map(to => enviarEmailMS(to, asunto, datos.cuerpo, html, imageBase64)));
     const hora = new Date().getHours().toString().padStart(2,"0") + ":" + new Date().getMinutes().toString().padStart(2,"0");
     const hoy = new Date().toISOString().split("T")[0];
     localStorage.setItem("costesEnviados_" + hoy, hora);

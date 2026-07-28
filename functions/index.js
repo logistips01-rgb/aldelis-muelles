@@ -10,10 +10,11 @@ exports.enviarEmail = functions.https.onCall(async (request) => {
 
   console.log("DATOS RECIBIDOS:", JSON.stringify(data));
 
-  const to      = data.to;
-  const subject = data.subject;
-  const body    = data.body;
-  const html    = data.html;
+  const to          = data.to;
+  const subject     = data.subject;
+  const body        = data.body;
+  const html        = data.html;
+  const imageBase64 = data.imageBase64 || null; // PNG base64 sin prefijo data:
 
   if (!to || !subject || (!body && !html)) {
     console.log("FALTAN DATOS", { to, subject, body, html });
@@ -56,7 +57,15 @@ exports.enviarEmail = functions.https.onCall(async (request) => {
           message: {
             subject,
             body: html ? { contentType: "HTML", content: html } : { contentType: "Text", content: body },
-            toRecipients: [{ emailAddress: { address: to } }]
+            toRecipients: [{ emailAddress: { address: to } }],
+            attachments: imageBase64 ? [{
+              "@odata.type": "#microsoft.graph.fileAttachment",
+              name: "informe.png",
+              contentType: "image/png",
+              contentBytes: imageBase64,
+              contentId: "informe-costes",
+              isInline: true
+            }] : []
           },
           saveToSentItems: false
         })
