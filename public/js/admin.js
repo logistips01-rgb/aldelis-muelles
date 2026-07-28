@@ -80,7 +80,7 @@ let informeData = [];
 
 // Version de la app. SUBIR este numero al publicar cambios importantes:
 // las pestanas abiertas se recargaran solas para coger la version nueva.
-const APP_VERSION = 37;
+const APP_VERSION = 38;
 let _chatSel = 1;
 function vigilarVersion() {
   db.collection("config").doc("app").onSnapshot(d => {
@@ -932,33 +932,37 @@ async function enviarInformeDiarioCostes(esAuto) {
     const isDark = document.getElementById('admin-body').classList.contains('dark');
     const bg = isDark ? '#0F0F11' : '#F5F5F5';
 
-    // Clon off-screen a ancho fijo para captura consistente
+    // Captura al ancho real del panel para que llene el email
+    const panelW = Math.max(document.documentElement.clientWidth || 0, 900);
     const clone = document.createElement('div');
-    clone.style.cssText = 'position:fixed;left:-9999px;top:0;width:960px;padding:16px;box-sizing:border-box;background:' + bg + ';z-index:-9999';
+    clone.style.cssText = 'position:fixed;left:-9999px;top:0;width:' + panelW + 'px;padding:16px;box-sizing:border-box;background:' + bg + ';z-index:-9999';
     clone.innerHTML = el.innerHTML;
     document.body.appendChild(clone);
 
     try {
       const canvas = await window.html2canvas(clone, {
-        scale: 1.5,
+        scale: 1,
         backgroundColor: bg,
         logging: false,
-        useCORS: false
+        useCORS: false,
+        width: panelW
       });
       if (canvas.height > 50) {
-        // base64 sin prefijo para pasarlo como adjunto inline (cid:) al Cloud Function
         const dataUrl = canvas.toDataURL('image/png');
         imageBase64 = dataUrl.replace(/^data:image\/png;base64,/, '');
         html =
-          "<!DOCTYPE html><html><body style='margin:0;padding:16px;background:#f0f0f0;font-family:Arial,Helvetica,sans-serif'>" +
-          "<div style='max-width:960px;margin:0 auto'>" +
-          "<div style='background:#D41F3A;border-radius:8px 8px 0 0;padding:18px 22px'>" +
+          "<!DOCTYPE html><html><body style='margin:0;padding:0;background:#f0f0f0;font-family:Arial,Helvetica,sans-serif'>" +
+          "<table width='100%' cellpadding='0' cellspacing='0'><tr><td align='center'>" +
+          "<table width='100%' cellpadding='0' cellspacing='0' style='max-width:100%'>" +
+          "<tr><td style='background:#D41F3A;padding:18px 22px'>" +
           "<div style='color:#fff;font-size:18px;font-weight:700;letter-spacing:-.5px'>Aldelis</div>" +
           "<div style='color:rgba(255,255,255,.8);font-size:12px;margin-top:2px'>Informe de costes &middot; " + datos.fechaFmt + "</div>" +
-          "</div>" +
-          "<img src='cid:informe-costes' style='width:100%;display:block' alt='Informe de costes'>" +
-          "<p style='text-align:center;font-size:11px;color:#aaa;margin:10px 0 0'>Costes de operacion del dia (no importe fijo del contrato).</p>" +
-          "</div></body></html>";
+          "</td></tr>" +
+          "<tr><td><img src='cid:informe-costes' width='100%' style='width:100%;display:block;border:0' alt='Informe de costes'></td></tr>" +
+          "<tr><td style='padding:10px;text-align:center;font-size:11px;color:#aaa'>Costes de operacion del dia (no importe fijo del contrato).</td></tr>" +
+          "</table>" +
+          "</td></tr></table>" +
+          "</body></html>";
       }
     } finally {
       document.body.removeChild(clone);
