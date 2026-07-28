@@ -22,12 +22,12 @@ function initDarkMode() {
   }
 }
 
-// Envio de email via Firebase Function
-async function enviarEmailMS(to, subject, body) {
+// Envio de email via Firebase Function (body = texto plano, html = HTML opcional)
+async function enviarEmailMS(to, subject, body, html) {
   if (!to) return;
   try {
     const enviarEmail = firebase.functions().httpsCallable("enviarEmail");
-    await enviarEmail({ to, subject, body });
+    await enviarEmail({ to, subject, body, html: html || null });
     console.log("Email OK a " + to);
   } catch(e) {
     console.error("Error email:", e);
@@ -80,7 +80,7 @@ let informeData = [];
 
 // Version de la app. SUBIR este numero al publicar cambios importantes:
 // las pestanas abiertas se recargaran solas para coger la version nueva.
-const APP_VERSION = 27;
+const APP_VERSION = 28;
 let _chatSel = 1;
 function vigilarVersion() {
   db.collection("config").doc("app").onSnapshot(d => {
@@ -381,8 +381,17 @@ const NAVE_NOMBRE = {};
 NAVES_PANEL.forEach(n => { NAVE_NOMBRE[n.id] = n.nombre; });
 const ACCION_LABEL = { cargando: "Cargando", descargando: "Descargando", presente: "Presente" };
 const ACCION_COLOR = { cargando: "#185FA5", descargando: "#1D9E75", presente: "#6B7280" };
-// Coste por minuto de cada lanzadera (L1/L2: 12.500€/24h; L3: 12.500€/8h jornada; L4: 150€/h)
-const LANZ_COSTE_MIN = { 1: 12500/1440, 2: 12500/1440, 3: 12500/480, 4: 150/60 };
+// Coste por minuto de cada lanzadera — se recalcula con diasLaborables del mes
+// L1/L2: 12.500€/mes ÷ diasLaborables ÷ 1440 min/día
+// L3:    12.500€/mes ÷ diasLaborables ÷ 480 min/jornada (8h)
+// L4:    150€/h → 2,50€/min (tarifa horaria fija)
+let _diasLaborables = 22;
+let LANZ_COSTE_MIN = {};
+function recalcLanzCosteMin() {
+  const d = _diasLaborables > 0 ? _diasLaborables : 22;
+  LANZ_COSTE_MIN = { 1: 12500/(d*1440), 2: 12500/(d*1440), 3: 12500/(d*480), 4: 150/60 };
+}
+recalcLanzCosteMin();
 
 // Tramos de lanzadera (para superponer en parrillas de descarga/carga/merca)
 function lanzaderaSegmentos(dayStart, dayEnd, accionFiltro, nave) {
@@ -716,27 +725,91 @@ function construirCuerpoInformeCostes() {
   const costePorLanz = { 1: 0, 2: 0, 3: 0, 4: 0 };
   allSegs.forEach(s => { costePorLanz[s.numero] += s.coste; });
   const costeTotal = allSegs.reduce((s, x) => s + x.coste, 0);
-  const topEsperas = allSegs.filter(s => s.estado === "en_nave").sort((a, b) => b.coste - a.coste).slice(0, 5);
+  const enNaveSegs = allSegs.filter(s => s.estado === "en_nave");
+  const transitoSegs = allSegs.filter(s => s.estado === "transito");
+  const topEsperas = enNaveSegs.slice().sort((a, b) => b.coste - a.coste).slice(0, 8);
+  const navesCostes = Object.entries(
+    enNaveSegs.reduce((acc, s) => { acc[s.nave] = (acc[s.nave] || 0) + s.coste; return acc; }, {})
+  ).sort((a, b) => b[1] - a[1]);
+
+  const viajes = enNaveSegs.length;
+  const totalNaveMin = enNaveSegs.reduce((s, x) => s + x.durMin, 0);
+  const totalTransMin = transitoSegs.reduce((s, x) => s + x.durMin, 0);
 
   const fechaFmt = fecha.split("-").reverse().join("/");
-  let cuerpo = "INFORME DE COSTES DE OPERACION — Aldelis Lanzaderas — " + fechaFmt + "\n\n";
-  cuerpo += "COSTES DEL DIA (coste de operacion, no contrato):\n";
-  [1, 2, 3, 4].forEach(n => {
-    if (costePorLanz[n] > 0) cuerpo += "  Lanzadera " + n + ": " + formatEuro(costePorLanz[n]) + "\n";
-  });
-  cuerpo += "  TOTAL OPERACIONES: " + formatEuro(costeTotal) + "\n\n";
 
-  if (topEsperas.length) {
-    cuerpo += "ESPERAS MAS CARAS DEL DIA:\n";
-    topEsperas.forEach(s => {
-      const lugar = (NAVE_NOMBRE[s.nave] || s.nave || "?") + (s.muelle ? " " + s.muelle : "");
-      cuerpo += "  L" + s.numero + " - " + lugar + " - " + formatDuracion(s.durMin) + " - " + formatEuro(s.coste) + "\n";
-    });
-    cuerpo += "\n";
-  }
+  // ── HTML email ────────────────────────────────────────────────────
+  const lanzCards = [1,2,3,4].filter(n => costePorLanz[n] > 0).map(n =>
+    "<td style='width:25%;padding:8px;text-align:center'>" +
+    "<div style='background:#f8f8f8;border-radius:8px;padding:14px 8px'>" +
+    "<div style='font-size:11px;color:#888;margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em'>Lanzadera " + n + "</div>" +
+    "<div style='font-size:20px;font-weight:700;color:#1A1A1A'>" + formatEuro(costePorLanz[n]) + "</div>" +
+    "</div></td>"
+  ).join("");
 
-  cuerpo += "Ver panel: https://aldelis-muelles.web.app/admin.html\n\nAldelis — Gestion de muelles";
-  return { fechaFmt, costeTotal, cuerpo };
+  const naveRows = navesCostes.map(([nave, coste]) =>
+    "<tr><td style='padding:7px 12px;color:#555;border-bottom:1px solid #f0f0f0'>" + esc(NAVE_NOMBRE[nave] || nave) + "</td>" +
+    "<td style='padding:7px 12px;font-weight:600;text-align:right;border-bottom:1px solid #f0f0f0'>" + formatEuro(coste) + "</td></tr>"
+  ).join("");
+
+  const esperaRows = topEsperas.map(s => {
+    const lugar = esc(NAVE_NOMBRE[s.nave] || s.nave || "?") + (s.muelle ? " <span style='color:#888'>" + esc(s.muelle) + "</span>" : "");
+    return "<tr>" +
+      "<td style='padding:7px 12px;border-bottom:1px solid #f0f0f0'>L" + s.numero + "</td>" +
+      "<td style='padding:7px 12px;border-bottom:1px solid #f0f0f0'>" + lugar + "</td>" +
+      "<td style='padding:7px 12px;border-bottom:1px solid #f0f0f0'>" + formatDuracion(s.durMin) + "</td>" +
+      "<td style='padding:7px 12px;font-weight:700;color:#D41F3A;border-bottom:1px solid #f0f0f0;text-align:right'>" + formatEuro(s.coste) + "</td>" +
+      "</tr>";
+  }).join("");
+
+  const html =
+    "<!DOCTYPE html><html><body style='margin:0;padding:0;background:#f4f4f4;font-family:Arial,sans-serif'>" +
+    "<div style='max-width:600px;margin:0 auto;background:#fff'>" +
+
+    // Header
+    "<div style='background:#D41F3A;padding:24px 32px'>" +
+    "<div style='color:#fff;font-size:22px;font-weight:700;letter-spacing:-0.5px'>Aldelis</div>" +
+    "<div style='color:rgba(255,255,255,.75);font-size:13px;margin-top:2px'>Informe de costes de operacion · " + fechaFmt + "</div>" +
+    "</div>" +
+
+    // Resumen
+    "<div style='padding:24px 32px 0'>" +
+    "<div style='font-size:12px;color:#888;text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px'>Resumen del dia</div>" +
+    "<table style='width:100%;border-collapse:collapse'><tr>" +
+    "<td style='padding:8px;text-align:center'><div style='background:#f8f8f8;border-radius:8px;padding:12px 8px'><div style='font-size:11px;color:#888;margin-bottom:4px'>Viajes</div><div style='font-size:22px;font-weight:700'>" + viajes + "</div></div></td>" +
+    "<td style='padding:8px;text-align:center'><div style='background:#f8f8f8;border-radius:8px;padding:12px 8px'><div style='font-size:11px;color:#888;margin-bottom:4px'>Tiempo en nave</div><div style='font-size:22px;font-weight:700'>" + formatDuracion(totalNaveMin) + "</div></div></td>" +
+    "<td style='padding:8px;text-align:center'><div style='background:#f8f8f8;border-radius:8px;padding:12px 8px'><div style='font-size:11px;color:#888;margin-bottom:4px'>Coste total ops</div><div style='font-size:22px;font-weight:700;color:#D41F3A'>" + formatEuro(costeTotal) + "</div></div></td>" +
+    "</tr></table></div>" +
+
+    // Por lanzadera
+    "<div style='padding:20px 32px 0'>" +
+    "<div style='font-size:12px;color:#888;text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px'>Coste por lanzadera</div>" +
+    "<table style='width:100%;border-collapse:collapse'><tr>" + lanzCards + "</tr></table></div>" +
+
+    // Coste por nave
+    (naveRows ? "<div style='padding:20px 32px 0'>" +
+    "<div style='font-size:12px;color:#888;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px'>Coste por nave</div>" +
+    "<table style='width:100%;border-collapse:collapse'>" + naveRows + "</table></div>" : "") +
+
+    // Esperas mas caras
+    (esperaRows ? "<div style='padding:20px 32px 0'>" +
+    "<div style='font-size:12px;color:#888;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px'>Esperas mas caras</div>" +
+    "<table style='width:100%;border-collapse:collapse'>" +
+    "<tr style='background:#f8f8f8'><th style='padding:7px 12px;text-align:left;font-size:12px;font-weight:600'>Lanz.</th><th style='padding:7px 12px;text-align:left;font-size:12px;font-weight:600'>Nave / Muelle</th><th style='padding:7px 12px;text-align:left;font-size:12px;font-weight:600'>Duracion</th><th style='padding:7px 12px;text-align:right;font-size:12px;font-weight:600'>Coste</th></tr>" +
+    esperaRows + "</table></div>" : "") +
+
+    // Nota + enlace
+    "<div style='padding:24px 32px;margin-top:8px;border-top:1px solid #eee'>" +
+    "<p style='font-size:12px;color:#aaa;margin:0 0 12px'>Los costes reflejan el coste de operacion del dia (tiempo en nave + transito), no el importe fijo del contrato.</p>" +
+    "<a href='https://aldelis-muelles.web.app/admin.html' style='display:inline-block;background:#D41F3A;color:#fff;text-decoration:none;padding:10px 20px;border-radius:6px;font-size:13px;font-weight:600'>Ver panel</a>" +
+    "</div>" +
+
+    "</div></body></html>";
+
+  // Texto plano de respaldo
+  const cuerpo = "Informe de costes " + fechaFmt + " — Total operaciones: " + formatEuro(costeTotal) + "\nVer panel: https://aldelis-muelles.web.app/admin.html";
+
+  return { fechaFmt, costeTotal, cuerpo, html };
 }
 
 async function enviarInformeDiarioCostes(esAuto) {
@@ -1998,11 +2071,18 @@ function cargarConfigListeners() {
   }, () => {});
 
   db.collection("config").doc("app").onSnapshot(d => {
-    if (d.exists && typeof d.data().tiempoMaxLanz === "number") {
-      _tiempoMaxLanz = d.data().tiempoMaxLanz;
+    if (d.exists) {
+      const data = d.data();
+      if (typeof data.tiempoMaxLanz === "number") _tiempoMaxLanz = data.tiempoMaxLanz;
+      if (typeof data.diasLaborables === "number" && data.diasLaborables > 0) {
+        _diasLaborables = data.diasLaborables;
+        recalcLanzCosteMin();
+      }
     }
-    const el = document.getElementById("cfg-tiempo-max");
-    if (el) el.value = _tiempoMaxLanz;
+    const elT = document.getElementById("cfg-tiempo-max");
+    if (elT) elT.value = _tiempoMaxLanz;
+    const elD = document.getElementById("cfg-dias-lab");
+    if (elD) elD.value = _diasLaborables;
   }, () => {});
 
   db.collection("config").doc("destinos").onSnapshot(d => {
@@ -2022,8 +2102,10 @@ function actualizarNavesPanel(lista) {
 function cargarConfig() {
   renderCfgAlertas();
   renderCfgDestinos();
-  const el = document.getElementById("cfg-tiempo-max");
-  if (el) el.value = _tiempoMaxLanz;
+  const elT = document.getElementById("cfg-tiempo-max");
+  if (elT) elT.value = _tiempoMaxLanz;
+  const elD = document.getElementById("cfg-dias-lab");
+  if (elD) elD.value = _diasLaborables;
 }
 
 function renderCfgAlertas() {
@@ -2083,6 +2165,16 @@ async function guardarTiempoMax() {
   try {
     await db.collection("config").doc("app").set({ tiempoMaxLanz: val }, { merge: true });
     const ok = document.getElementById("cfg-tiempo-ok");
+    if (ok) { ok.style.display = ""; setTimeout(() => { ok.style.display = "none"; }, 2500); }
+  } catch(e) { alert("Error al guardar: " + e.message); }
+}
+
+async function guardarDiasLaborables() {
+  const val = parseInt(document.getElementById("cfg-dias-lab").value, 10);
+  if (isNaN(val) || val < 18 || val > 26) { alert("Introduce un valor entre 18 y 26 dias."); return; }
+  try {
+    await db.collection("config").doc("app").set({ diasLaborables: val }, { merge: true });
+    const ok = document.getElementById("cfg-dias-ok");
     if (ok) { ok.style.display = ""; setTimeout(() => { ok.style.display = "none"; }, 2500); }
   } catch(e) { alert("Error al guardar: " + e.message); }
 }

@@ -243,6 +243,17 @@
       </div>
 
       <div class="informe-card" style="margin-top:16px">
+        <div class="informe-card-title">Dias laborables al mes</div>
+        <p style="font-size:13px;color:#6B7280;margin-bottom:12px">Numero de dias laborables del mes actual. Afecta al coste diario de las lanzaderas 1, 2 y 3 (12.500 € / mes). Usa 20 para meses con festivos extra, 24 para meses completos.</p>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input type="number" id="cfg-dias-lab" min="18" max="26" step="1" value="22" style="width:90px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
+          <span style="font-size:14px;color:#6B7280">dias</span>
+          <button class="btn-informe" onclick="guardarDiasLaborables()">Guardar</button>
+          <span id="cfg-dias-ok" style="font-size:13px;color:#1D9E75;display:none">Guardado correctamente</span>
+        </div>
+      </div>
+
+      <div class="informe-card" style="margin-top:16px">
         <div class="informe-card-title">Destinos de lanzadera</div>
         <p style="font-size:13px;color:#6B7280;margin-bottom:12px">Naves y ubicaciones disponibles. Los cambios se aplican de inmediato en este panel y en las apps de los conductores.</p>
         <div id="cfg-destinos-lista"></div>

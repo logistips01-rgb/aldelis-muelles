@@ -13,9 +13,10 @@ exports.enviarEmail = functions.https.onCall(async (request) => {
   const to      = data.to;
   const subject = data.subject;
   const body    = data.body;
+  const html    = data.html;
 
-  if (!to || !subject || !body) {
-    console.log("FALTAN DATOS", { to, subject, body });
+  if (!to || !subject || (!body && !html)) {
+    console.log("FALTAN DATOS", { to, subject, body, html });
     return { ok: false, error: "Faltan datos" };
   }
 
@@ -54,7 +55,7 @@ exports.enviarEmail = functions.https.onCall(async (request) => {
         body: JSON.stringify({
           message: {
             subject,
-            body: { contentType: "Text", content: body },
+            body: html ? { contentType: "HTML", content: html } : { contentType: "Text", content: body },
             toRecipients: [{ emailAddress: { address: to } }]
           },
           saveToSentItems: false
