@@ -80,7 +80,7 @@ let informeData = [];
 
 // Version de la app. SUBIR este numero al publicar cambios importantes:
 // las pestanas abiertas se recargaran solas para coger la version nueva.
-const APP_VERSION = 28;
+const APP_VERSION = 29;
 let _chatSel = 1;
 function vigilarVersion() {
   db.collection("config").doc("app").onSnapshot(d => {
@@ -798,16 +798,15 @@ function construirCuerpoInformeCostes() {
     "<tr style='background:#f8f8f8'><th style='padding:7px 12px;text-align:left;font-size:12px;font-weight:600'>Lanz.</th><th style='padding:7px 12px;text-align:left;font-size:12px;font-weight:600'>Nave / Muelle</th><th style='padding:7px 12px;text-align:left;font-size:12px;font-weight:600'>Duracion</th><th style='padding:7px 12px;text-align:right;font-size:12px;font-weight:600'>Coste</th></tr>" +
     esperaRows + "</table></div>" : "") +
 
-    // Nota + enlace
+    // Nota al pie
     "<div style='padding:24px 32px;margin-top:8px;border-top:1px solid #eee'>" +
-    "<p style='font-size:12px;color:#aaa;margin:0 0 12px'>Los costes reflejan el coste de operacion del dia (tiempo en nave + transito), no el importe fijo del contrato.</p>" +
-    "<a href='https://aldelis-muelles.web.app/admin.html' style='display:inline-block;background:#D41F3A;color:#fff;text-decoration:none;padding:10px 20px;border-radius:6px;font-size:13px;font-weight:600'>Ver panel</a>" +
+    "<p style='font-size:12px;color:#aaa;margin:0'>Los costes reflejan el coste de operacion del dia (tiempo en nave + transito), no el importe fijo del contrato.</p>" +
     "</div>" +
 
     "</div></body></html>";
 
   // Texto plano de respaldo
-  const cuerpo = "Informe de costes " + fechaFmt + " — Total operaciones: " + formatEuro(costeTotal) + "\nVer panel: https://aldelis-muelles.web.app/admin.html";
+  const cuerpo = "Informe de costes " + fechaFmt + " — Total operaciones: " + formatEuro(costeTotal);
 
   return { fechaFmt, costeTotal, cuerpo, html };
 }
