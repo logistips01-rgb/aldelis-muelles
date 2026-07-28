@@ -80,7 +80,7 @@ let informeData = [];
 
 // Version de la app. SUBIR este numero al publicar cambios importantes:
 // las pestanas abiertas se recargaran solas para coger la version nueva.
-const APP_VERSION = 30;
+const APP_VERSION = 31;
 let _chatSel = 1;
 function vigilarVersion() {
   db.collection("config").doc("app").onSnapshot(d => {
@@ -919,9 +919,12 @@ async function enviarInformeDiarioCostes(esAuto) {
     const hoy = new Date().toISOString().split("T")[0];
     localStorage.setItem("costesEnviados_" + hoy, hora);
     actualizarUltimoEnvio();
-    if (!esAuto) alert("Informe enviado a " + emails.length + " destinatario(s).");
+    if (!esAuto) {
+      const ok = document.getElementById("costes-envio-ok");
+      if (ok) { ok.style.display = ""; setTimeout(() => { ok.style.display = "none"; }, 3000); }
+    }
   } catch(e) {
-    if (!esAuto) alert("Error al enviar: " + e.message);
+    console.error("Error enviando informe costes:", e);
   }
 }
 
