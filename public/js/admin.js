@@ -80,7 +80,7 @@ let informeData = [];
 
 // Version de la app. SUBIR este numero al publicar cambios importantes:
 // las pestanas abiertas se recargaran solas para coger la version nueva.
-const APP_VERSION = 34;
+const APP_VERSION = 35;
 let _chatSel = 1;
 function vigilarVersion() {
   db.collection("config").doc("app").onSnapshot(d => {
@@ -945,7 +945,12 @@ async function enviarInformeDiarioCostes(esAuto) {
         useCORS: false
       });
       if (canvas.height > 50) {
-        const imgData = canvas.toDataURL('image/png');
+        // Subir a Storage para obtener URL pública (base64 bloqueado por Gmail)
+        const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+        const fecha = document.getElementById("fecha-dashboard").value;
+        const ref = firebase.storage().ref("informes/costes-" + fecha + ".png");
+        await ref.put(blob, { contentType: 'image/png', cacheControl: 'public,max-age=86400' });
+        const imgUrl = await ref.getDownloadURL();
         html =
           "<!DOCTYPE html><html><body style='margin:0;padding:16px;background:#f0f0f0;font-family:Arial,Helvetica,sans-serif'>" +
           "<div style='max-width:960px;margin:0 auto'>" +
@@ -953,7 +958,7 @@ async function enviarInformeDiarioCostes(esAuto) {
           "<div style='color:#fff;font-size:18px;font-weight:700;letter-spacing:-.5px'>Aldelis</div>" +
           "<div style='color:rgba(255,255,255,.8);font-size:12px;margin-top:2px'>Informe de costes &middot; " + datos.fechaFmt + "</div>" +
           "</div>" +
-          "<img src='" + imgData + "' style='width:100%;display:block' alt='Informe de costes'>" +
+          "<img src='" + imgUrl + "' style='width:100%;display:block' alt='Informe de costes'>" +
           "<p style='text-align:center;font-size:11px;color:#aaa;margin:10px 0 0'>Costes de operacion del dia (no importe fijo del contrato).</p>" +
           "</div></body></html>";
       }
