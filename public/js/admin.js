@@ -178,6 +178,14 @@ function formatRitmo(v) {
   return (Math.round(v * 10) / 10).toString().replace(".", ",") + " min/palet";
 }
 
+// Formato moneda: "1.234,56 €"
+function formatEuro(v) {
+  if (v == null || isNaN(v)) return "—";
+  const parts = v.toFixed(2).split(".");
+  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  return parts[0] + "," + parts[1] + " €";
+}
+
 document.addEventListener("click", function(e) {
   const slot = e.target.closest("[data-id]");
   if (slot) {
@@ -363,6 +371,8 @@ const NAVE_NOMBRE = {};
 NAVES_PANEL.forEach(n => { NAVE_NOMBRE[n.id] = n.nombre; });
 const ACCION_LABEL = { cargando: "Cargando", descargando: "Descargando", presente: "Presente" };
 const ACCION_COLOR = { cargando: "#185FA5", descargando: "#1D9E75", presente: "#6B7280" };
+// Coste por minuto de cada lanzadera (L1/L2: 12.500€/24h; L3: 12.500€/8h jornada; L4: 150€/h)
+const LANZ_COSTE_MIN = { 1: 12500/1440, 2: 12500/1440, 3: 12500/480, 4: 150/60 };
 
 // Tramos de lanzadera (para superponer en parrillas de descarga/carga/merca)
 function lanzaderaSegmentos(dayStart, dayEnd, accionFiltro, nave) {
@@ -410,6 +420,211 @@ function cargarLanzaderas() {
   });
 
   renderGanttLanz(segs, trans, finMarks);
+  cargarHistorialDiario();
+}
+
+// ─── HISTORIAL DIARIO DE LANZADERAS ─────────────────────────────────
+function cargarHistorialDiario() {
+  const cont = document.getElementById("lz-historial");
+  if (!cont) return;
+
+  const fecha = document.getElementById("fecha-dashboard").value;
+  const dayEnd = new Date(fecha + "T00:00:00").getTime() + 86400000;
+  const logs = (window._logs || []).slice();
+
+  if (!logs.length) {
+    cont.innerHTML = "<div class='empty-state'>Sin movimientos registrados hoy.</div>";
+    return;
+  }
+
+  const MAX_DUR = 480;
+  const byL = { 1: [], 2: [], 3: [], 4: [] };
+  logs.forEach(l => { if (byL[l.numero]) byL[l.numero].push(l); });
+
+  const allSegs = [];
+  [1, 2, 3, 4].forEach(n => {
+    const arr = byL[n].sort((a, b) => a.desde.toMillis() - b.desde.toMillis());
+    for (let i = 0; i < arr.length; i++) {
+      const ev = arr[i];
+      if (ev.estado === "fuera") continue;
+      const startMs = ev.desde.toMillis();
+      const nextMs = i + 1 < arr.length ? arr[i + 1].desde.toMillis() : (esHoy ? Date.now() : dayEnd);
+      const durMin = Math.round((nextMs - startMs) / 60000);
+      if (durMin < 0 || durMin > MAX_DUR) continue;
+      allSegs.push({
+        numero: n, estado: ev.estado,
+        nave: ev.nave || null, muelle: ev.muelle || null,
+        accion: ev.accion || null, destino: ev.destino || null,
+        startMs, durMin,
+        coste: durMin * (LANZ_COSTE_MIN[n] || 0)
+      });
+    }
+  });
+
+  if (!allSegs.length) {
+    cont.innerHTML = "<div class='empty-state'>Sin datos suficientes para calcular.</div>";
+    return;
+  }
+
+  const enNaveSegs = allSegs.filter(s => s.estado === "en_nave");
+  const transitoSegs = allSegs.filter(s => s.estado === "transito");
+  const totalNaveMin = enNaveSegs.reduce((s, x) => s + x.durMin, 0);
+  const totalTransitoMin = transitoSegs.reduce((s, x) => s + x.durMin, 0);
+  const viajes = enNaveSegs.length;
+  const mediaNaveSeg = viajes ? Math.round(totalNaveMin / viajes) : 0;
+
+  // Tasa media €/min ponderada por minutos usados
+  const totalMin = allSegs.reduce((s, x) => s + x.durMin, 0);
+  const totalCosteOps = allSegs.reduce((s, x) => s + x.coste, 0);
+  const tasaMedia = totalMin > 0 ? totalCosteOps / totalMin : 8.68;
+
+  // Time by nave
+  const naveStats = {};
+  enNaveSegs.forEach(s => {
+    if (!naveStats[s.nave]) naveStats[s.nave] = { sum: 0, n: 0 };
+    naveStats[s.nave].sum += s.durMin;
+    naveStats[s.nave].n++;
+  });
+
+  // Time by muelle
+  const muelleStats = {};
+  enNaveSegs.filter(s => s.muelle).forEach(s => {
+    if (!muelleStats[s.muelle]) muelleStats[s.muelle] = { sum: 0, n: 0 };
+    muelleStats[s.muelle].sum += s.durMin;
+    muelleStats[s.muelle].n++;
+  });
+  const muellesArr = Object.entries(muelleStats)
+    .map(([k, v]) => ({ muelle: k, avg: Math.round(v.sum / v.n), n: v.n }))
+    .sort((a, b) => a.avg - b.avg);
+  const masRapido = muellesArr[0] || null;
+  const masLento = muellesArr[muellesArr.length - 1] || null;
+
+  // Costs
+  const costePorLanz = { 1: 0, 2: 0, 3: 0, 4: 0 };
+  allSegs.forEach(s => { costePorLanz[s.numero] += s.coste; });
+
+  const navesCosteSorted = Object.entries(
+    enNaveSegs.reduce((acc, s) => { acc[s.nave] = (acc[s.nave] || 0) + s.coste; return acc; }, {})
+  ).sort((a, b) => b[1] - a[1]);
+
+  const topEsperas = enNaveSegs.slice().sort((a, b) => b.coste - a.coste).slice(0, 5);
+
+  // ── HTML ────────────────────────────────────────────────────────
+
+  let html = "<div class='informe-metricas' style='margin-top:0'>" +
+    "<div class='metric-card'><div class='metric-value'>" + viajes + "</div><div class='metric-label'>Viajes a nave</div></div>" +
+    "<div class='metric-card'><div class='metric-value'>" + formatDuracion(mediaNaveSeg) + "</div><div class='metric-label'>Tiempo medio por visita</div></div>" +
+    "<div class='metric-card'><div class='metric-value'>" + formatDuracion(totalNaveMin) + "</div><div class='metric-label'>Total en nave</div></div>" +
+    "<div class='metric-card'><div class='metric-value'>" + formatDuracion(totalTransitoMin) + "</div><div class='metric-label'>Total en transito</div></div>" +
+  "</div>";
+
+  // Nave time
+  const naveFilasHtml = NAVES_PANEL.filter(n => naveStats[n.id]).map(n => {
+    const s = naveStats[n.id];
+    return filaResumen(n.nombre, formatDuracion(Math.round(s.sum / s.n)) + " · " + s.n + " vis.");
+  }).join("") || "<div class='empty-state' style='padding:12px'>Sin datos</div>";
+
+  // Muelle time + fastest/slowest + savings
+  let muelleHtml = "";
+  const plazaMuelles = ["M6","M7","M8","M18","M19","M20"].filter(m => muelleStats[m]);
+  const mercaMuelles = ["M2","M4"].filter(m => muelleStats[m]);
+  if (plazaMuelles.length) {
+    muelleHtml += "<div style='font-size:11px;color:#9CA3AF;margin-bottom:6px;text-transform:uppercase;letter-spacing:.06em'>Plaza</div>";
+    plazaMuelles.forEach(m => {
+      const s = muelleStats[m];
+      muelleHtml += filaResumen(m, formatDuracion(Math.round(s.sum / s.n)) + " · " + s.n + " vis.");
+    });
+  }
+  if (mercaMuelles.length) {
+    muelleHtml += "<div style='font-size:11px;color:#9CA3AF;margin:" + (plazaMuelles.length ? "10px" : "0") + " 0 6px;text-transform:uppercase;letter-spacing:.06em'>Merca</div>";
+    mercaMuelles.forEach(m => {
+      const s = muelleStats[m];
+      muelleHtml += filaResumen(m, formatDuracion(Math.round(s.sum / s.n)) + " · " + s.n + " vis.");
+    });
+  }
+  if (masRapido && masLento && masRapido.muelle !== masLento.muelle) {
+    const diffMin = masLento.avg - masRapido.avg;
+    const ahorroVisita = diffMin * tasaMedia;
+    const ahorroTotal = ahorroVisita * masRapido.n;
+    muelleHtml += "<div style='margin-top:12px;padding-top:10px;border-top:1px solid rgba(128,128,128,.2)'>" +
+      "<div style='font-size:12px;color:#1D9E75;margin-bottom:4px'>▲ Mas rapido: <strong>" + esc(masRapido.muelle) + "</strong> · " + formatDuracion(masRapido.avg) + " media</div>" +
+      "<div style='font-size:12px;color:#D41F3A;margin-bottom:8px'>▼ Mas lento: <strong>" + esc(masLento.muelle) + "</strong> · " + formatDuracion(masLento.avg) + " media</div>" +
+      "<div style='font-size:12px;background:rgba(29,158,117,.1);border-radius:6px;padding:8px'>" +
+      "Diferencia: <strong>" + formatDuracion(diffMin) + "</strong> por visita · " +
+      "Ahorro estimado en " + masRapido.muelle + ": <strong style='color:#1D9E75'>" + formatEuro(ahorroTotal) + "</strong> " +
+      "(" + masRapido.n + " vis. × " + formatEuro(ahorroVisita) + ")" +
+      "</div></div>";
+  }
+  if (!muelleHtml) muelleHtml = "<div class='empty-state' style='padding:12px'>Sin datos de muelle</div>";
+
+  html += "<div class='informe-grid' style='margin-top:12px'>" +
+    "<div class='informe-card'><div class='informe-card-title'>Tiempo medio por nave</div>" + naveFilasHtml + "</div>" +
+    "<div class='informe-card'><div class='informe-card-title'>Tiempo medio por muelle</div>" + muelleHtml + "</div>" +
+  "</div>";
+
+  // Financial summary (no monthly total, only operation costs)
+  const lanzCosteHtml = [1,2,3,4].filter(n => costePorLanz[n] > 0).map(n =>
+    "<div class='metric-card' style='flex:1;min-width:140px'>" +
+    "<div class='metric-value' style='font-size:18px'>" + formatEuro(costePorLanz[n]) + "</div>" +
+    "<div class='metric-label'>Lanzadera " + n + "</div>" +
+    "</div>"
+  ).join("") || "<div class='empty-state' style='padding:12px'>Sin actividad</div>";
+
+  const naveCosteHtml = navesCosteSorted.map(([nave, coste]) =>
+    filaResumen(NAVE_NOMBRE[nave] || nave, formatEuro(coste))
+  ).join("") || "<div class='empty-state' style='padding:12px'>Sin datos</div>";
+
+  const topHtml = topEsperas.length
+    ? "<div class='tabla-scroll'><table class='tabla-inf'><thead><tr>" +
+      "<th>Lanzadera</th><th>Nave</th><th>Muelle</th><th>Duracion</th><th>Coste</th>" +
+      "</tr></thead><tbody>" +
+      topEsperas.map(s =>
+        "<tr><td>L" + s.numero + "</td><td>" + esc(NAVE_NOMBRE[s.nave] || s.nave || "—") + "</td>" +
+        "<td>" + esc(s.muelle || "—") + "</td>" +
+        "<td>" + formatDuracion(s.durMin) + "</td>" +
+        "<td><strong>" + formatEuro(s.coste) + "</strong></td></tr>"
+      ).join("") + "</tbody></table></div>"
+    : "<div class='empty-state' style='padding:12px'>Sin datos</div>";
+
+  html += "<div class='informe-card' style='margin-top:12px'>" +
+    "<div class='informe-card-title'>Costes de operacion</div>" +
+    "<div class='informe-metricas' style='margin-top:8px;margin-bottom:12px'>" + lanzCosteHtml + "</div>" +
+    "<div class='informe-grid'>" +
+    "<div class='informe-card'><div class='informe-card-title'>Coste por nave</div>" + naveCosteHtml + "</div>" +
+    "<div class='informe-card'><div class='informe-card-title'>Esperas mas caras</div>" + topHtml + "</div>" +
+    "</div></div>";
+
+  // Detail per lanzadera
+  [1, 2, 3, 4].forEach(n => {
+    const segsN = allSegs.filter(s => s.numero === n).sort((a, b) => a.startMs - b.startMs);
+    if (!segsN.length) return;
+    const totalCosteN = segsN.reduce((acc, s) => acc + s.coste, 0);
+    html += "<div class='informe-card' style='margin-top:12px'>" +
+      "<div class='informe-card-title'>Lanzadera " + n + " &mdash; coste hoy: " + formatEuro(totalCosteN) + "</div>" +
+      "<div class='tabla-scroll'><table class='tabla-inf'><thead><tr>" +
+      "<th>Entrada</th><th>Estado</th><th>Nave</th><th>Muelle</th><th>Accion</th><th>Duracion</th><th>Coste</th>" +
+      "</tr></thead><tbody>" +
+      segsN.map(s => {
+        const d = new Date(s.startMs);
+        const hora = String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0");
+        const nave = s.estado === "transito"
+          ? ("→ " + (NAVE_NOMBRE[s.destino] || s.destino || NAVE_NOMBRE[s.nave] || s.nave || "?"))
+          : (NAVE_NOMBRE[s.nave] || s.nave || "—");
+        const accion = s.accion ? (ACCION_LABEL[s.accion] || s.accion) : (s.estado === "transito" ? "Transito" : "—");
+        return "<tr>" +
+          "<td>" + hora + "</td>" +
+          "<td>" + esc(s.estado === "en_nave" ? "En nave" : "Transito") + "</td>" +
+          "<td>" + esc(nave) + "</td>" +
+          "<td>" + esc(s.muelle || "—") + "</td>" +
+          "<td>" + esc(accion) + "</td>" +
+          "<td>" + formatDuracion(s.durMin) + "</td>" +
+          "<td>" + formatEuro(s.coste) + "</td>" +
+          "</tr>";
+      }).join("") +
+      "</tbody></table></div></div>";
+  });
+
+  cont.innerHTML = html;
 }
 
 // ─── LINEA DE TIEMPO (GANTT) DE LANZADERAS ───────────────────────────
