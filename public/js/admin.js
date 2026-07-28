@@ -80,7 +80,7 @@ let informeData = [];
 
 // Version de la app. SUBIR este numero al publicar cambios importantes:
 // las pestanas abiertas se recargaran solas para coger la version nueva.
-const APP_VERSION = 36;
+const APP_VERSION = 37;
 let _chatSel = 1;
 function vigilarVersion() {
   db.collection("config").doc("app").onSnapshot(d => {
@@ -923,6 +923,7 @@ async function enviarInformeDiarioCostes(esAuto) {
 
   const asunto = "Informe de costes Lanzaderas — " + datos.fechaFmt + " — " + formatEuro(datos.costeTotal);
   let html = datos.html; // fallback tabla
+  let imageBase64 = null;
 
   try {
     await _cargarHtml2Canvas();
@@ -937,7 +938,6 @@ async function enviarInformeDiarioCostes(esAuto) {
     clone.innerHTML = el.innerHTML;
     document.body.appendChild(clone);
 
-    let imageBase64 = null;
     try {
       const canvas = await window.html2canvas(clone, {
         scale: 1.5,
