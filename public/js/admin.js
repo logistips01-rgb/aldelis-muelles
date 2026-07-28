@@ -228,6 +228,7 @@ auth.onAuthStateChanged(user => {
     autoRefreshInterval = setInterval(() => {
       actualizarReloj();
       cargarReservas(); cargarLanzaderas(); cargarCargas(); cargarMerca();
+      autoEnviarCostesAlFinalDelDia();
     }, 60000);
   } else {
     document.getElementById("login-screen").style.display     = "flex";
@@ -297,6 +298,11 @@ function iniciarListeners() {
       _msgBeepInit = true;
     }, e => console.error("mensajes:", e)));
 
+  _unsubs.push(db.collection("config").doc("costes").onSnapshot(d => {
+    _costesEmailsCache = (d.exists && Array.isArray(d.data().emails)) ? d.data().emails : [];
+    renderCostesEmails();
+  }, () => {}));
+
   _unsubs.push(db.collection("incidencias")
     .where("creada", ">=", Ts.fromMillis(dayStart)).where("creada", "<", Ts.fromMillis(dayEnd))
     .onSnapshot(s => {
@@ -323,12 +329,15 @@ function cerrarSesion() {
 const SOLO_LANZADERAS = ["transfriorza@transfriorza.es"];
 const BIZERBA_USERS   = ["mlorente@aldelis.com", "jpina@aldelis.com"];
 const CONFIG_USERS    = ["mlorente@aldelis.com"];
+const COSTES_USERS    = ["mlorente@aldelis.com"];
 function aplicarRol(user) {
   const email = (user.email || "").toLowerCase();
   const bizBtn = document.getElementById("btn-vista-bizerba");
   if (bizBtn) bizBtn.style.display = BIZERBA_USERS.includes(email) ? "" : "none";
   const cfgBtn = document.getElementById("btn-vista-config");
   if (cfgBtn) cfgBtn.style.display = CONFIG_USERS.includes(email) ? "" : "none";
+  const costBtn = document.getElementById("btn-vista-costes");
+  if (costBtn) costBtn.style.display = COSTES_USERS.includes(email) ? "" : "none";
   const soloLanz = SOLO_LANZADERAS.includes(email);
   if (!soloLanz) return;
   ["rejilla", "lista", "informes", "cargas", "merca"].forEach(v => {
@@ -341,7 +350,7 @@ function aplicarRol(user) {
 }
 
 function switchVista(vista) {
-  ["rejilla", "lista", "informes", "lanzaderas", "cargas", "merca", "bizerba", "config"].forEach(v => {
+  ["rejilla", "lista", "informes", "lanzaderas", "cargas", "merca", "bizerba", "config", "costes"].forEach(v => {
     document.getElementById("vista-" + v).style.display = vista === v ? "block" : "none";
     document.getElementById("btn-vista-" + v).classList.toggle("active", vista === v);
   });
@@ -350,6 +359,7 @@ function switchVista(vista) {
   if (vista === "merca")      cargarMerca();
   if (vista === "bizerba")    cargarBizerba();
   if (vista === "config")     cargarConfig();
+  if (vista === "costes")     cargarCostes();
 }
 
 const MUELLES_CARGA = ["M1", "M2", "M3", "M4", "M5"];
@@ -420,12 +430,19 @@ function cargarLanzaderas() {
   });
 
   renderGanttLanz(segs, trans, finMarks);
-  cargarHistorialDiario();
 }
 
-// ─── HISTORIAL DIARIO DE LANZADERAS ─────────────────────────────────
+// ─── COSTES / HISTORIAL DIARIO DE LANZADERAS ────────────────────────
+let _costesEmailsCache = [];
+
+function cargarCostes() {
+  cargarHistorialDiario();
+  renderCostesEmails();
+  actualizarUltimoEnvio();
+}
+
 function cargarHistorialDiario() {
-  const cont = document.getElementById("lz-historial");
+  const cont = document.getElementById("costes-historial");
   if (!cont) return;
 
   const fecha = document.getElementById("fecha-dashboard").value;
@@ -625,6 +642,136 @@ function cargarHistorialDiario() {
   });
 
   cont.innerHTML = html;
+}
+
+function renderCostesEmails() {
+  const div = document.getElementById("costes-emails-lista");
+  if (!div) return;
+  if (!_costesEmailsCache.length) {
+    div.innerHTML = "<p style='font-size:13px;color:#9CA3AF'>Sin destinatarios configurados.</p>";
+    return;
+  }
+  div.innerHTML = _costesEmailsCache.map((email, i) =>
+    "<div style='display:flex;align-items:center;gap:8px;margin-bottom:6px'>" +
+    "<span style='flex:1;font-size:14px'>" + esc(email) + "</span>" +
+    "<button class='btn-reject' style='padding:4px 10px;font-size:12px;cursor:pointer' onclick='eliminarEmailCostes(" + i + ")'>Eliminar</button>" +
+    "</div>"
+  ).join("");
+}
+
+function actualizarUltimoEnvio() {
+  const el = document.getElementById("costes-ultimo-envio");
+  if (!el) return;
+  const hoy = new Date().toISOString().split("T")[0];
+  const enviado = localStorage.getItem("costesEnviados_" + hoy);
+  el.textContent = enviado ? "Informe de hoy enviado a las " + enviado : "Informe de hoy pendiente de envio (se enviara a las 20:00 si el panel esta abierto).";
+}
+
+async function agregarEmailCostes() {
+  const inp = document.getElementById("costes-email-nuevo");
+  const email = (inp.value || "").trim().toLowerCase();
+  if (!email || !email.includes("@")) { alert("Introduce un email valido."); return; }
+  if (_costesEmailsCache.includes(email)) { alert("Ese email ya esta en la lista."); return; }
+  const nuevos = [..._costesEmailsCache, email];
+  try {
+    await db.collection("config").doc("costes").set({ emails: nuevos }, { merge: true });
+    inp.value = "";
+  } catch(e) { alert("Error al guardar: " + e.message); }
+}
+
+async function eliminarEmailCostes(idx) {
+  if (!confirm("Eliminar este destinatario?")) return;
+  const nuevos = _costesEmailsCache.filter((_, i) => i !== idx);
+  try {
+    await db.collection("config").doc("costes").set({ emails: nuevos }, { merge: true });
+  } catch(e) { alert("Error al guardar: " + e.message); }
+}
+
+function construirCuerpoInformeCostes() {
+  const fecha = document.getElementById("fecha-dashboard").value;
+  const logs = (window._logs || []).slice();
+  if (!logs.length) return null;
+
+  const MAX_DUR = 480;
+  const dayEnd = new Date(fecha + "T00:00:00").getTime() + 86400000;
+  const byL = { 1: [], 2: [], 3: [], 4: [] };
+  logs.forEach(l => { if (byL[l.numero]) byL[l.numero].push(l); });
+
+  const allSegs = [];
+  [1, 2, 3, 4].forEach(n => {
+    const arr = byL[n].sort((a, b) => a.desde.toMillis() - b.desde.toMillis());
+    for (let i = 0; i < arr.length; i++) {
+      const ev = arr[i];
+      if (ev.estado === "fuera") continue;
+      const startMs = ev.desde.toMillis();
+      const nextMs = i + 1 < arr.length ? arr[i + 1].desde.toMillis() : (esHoy ? Date.now() : dayEnd);
+      const durMin = Math.round((nextMs - startMs) / 60000);
+      if (durMin < 0 || durMin > MAX_DUR) continue;
+      allSegs.push({ numero: n, estado: ev.estado, nave: ev.nave || null, muelle: ev.muelle || null, durMin, coste: durMin * (LANZ_COSTE_MIN[n] || 0) });
+    }
+  });
+
+  if (!allSegs.length) return null;
+
+  const costePorLanz = { 1: 0, 2: 0, 3: 0, 4: 0 };
+  allSegs.forEach(s => { costePorLanz[s.numero] += s.coste; });
+  const costeTotal = allSegs.reduce((s, x) => s + x.coste, 0);
+  const topEsperas = allSegs.filter(s => s.estado === "en_nave").sort((a, b) => b.coste - a.coste).slice(0, 5);
+
+  const fechaFmt = fecha.split("-").reverse().join("/");
+  let cuerpo = "INFORME DE COSTES DE OPERACION — Aldelis Lanzaderas — " + fechaFmt + "\n\n";
+  cuerpo += "COSTES DEL DIA (coste de operacion, no contrato):\n";
+  [1, 2, 3, 4].forEach(n => {
+    if (costePorLanz[n] > 0) cuerpo += "  Lanzadera " + n + ": " + formatEuro(costePorLanz[n]) + "\n";
+  });
+  cuerpo += "  TOTAL OPERACIONES: " + formatEuro(costeTotal) + "\n\n";
+
+  if (topEsperas.length) {
+    cuerpo += "ESPERAS MAS CARAS DEL DIA:\n";
+    topEsperas.forEach(s => {
+      const lugar = (NAVE_NOMBRE[s.nave] || s.nave || "?") + (s.muelle ? " " + s.muelle : "");
+      cuerpo += "  L" + s.numero + " - " + lugar + " - " + formatDuracion(s.durMin) + " - " + formatEuro(s.coste) + "\n";
+    });
+    cuerpo += "\n";
+  }
+
+  cuerpo += "Ver panel: https://aldelis-muelles.web.app/admin.html\n\nAldelis — Gestion de muelles";
+  return { fechaFmt, costeTotal, cuerpo };
+}
+
+async function enviarInformeDiarioCostes(esAuto) {
+  const emails = _costesEmailsCache;
+  if (!emails.length) {
+    if (!esAuto) alert("No hay destinatarios configurados en la pestana Costes.");
+    return;
+  }
+  const datos = construirCuerpoInformeCostes();
+  if (!datos) {
+    if (!esAuto) alert("Sin datos de lanzaderas para hoy.");
+    return;
+  }
+  const asunto = "Informe de costes Lanzaderas — " + datos.fechaFmt + " — " + formatEuro(datos.costeTotal);
+  try {
+    await Promise.all(emails.map(to => enviarEmailMS(to, asunto, datos.cuerpo)));
+    const hora = new Date().getHours().toString().padStart(2,"0") + ":" + new Date().getMinutes().toString().padStart(2,"0");
+    const hoy = new Date().toISOString().split("T")[0];
+    localStorage.setItem("costesEnviados_" + hoy, hora);
+    actualizarUltimoEnvio();
+    if (!esAuto) alert("Informe enviado a " + emails.length + " destinatario(s).");
+  } catch(e) {
+    if (!esAuto) alert("Error al enviar: " + e.message);
+  }
+}
+
+function autoEnviarCostesAlFinalDelDia() {
+  if (!COSTES_USERS.includes(((auth.currentUser || {}).email || "").toLowerCase())) return;
+  if (!esHoy) return;
+  const ahora = new Date();
+  if (ahora.getHours() < 20) return;
+  const hoy = ahora.toISOString().split("T")[0];
+  if (localStorage.getItem("costesEnviados_" + hoy)) return;
+  localStorage.setItem("costesEnviados_" + hoy, "auto");
+  enviarInformeDiarioCostes(true);
 }
 
 // ─── LINEA DE TIEMPO (GANTT) DE LANZADERAS ───────────────────────────

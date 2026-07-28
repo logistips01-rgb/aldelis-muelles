@@ -40,6 +40,7 @@
         <button class="tab-view" id="btn-vista-merca" onclick="switchVista('merca')">Merca</button>
         <button class="tab-view" id="btn-vista-bizerba" onclick="switchVista('bizerba')" style="display:none">Bizerba</button>
         <button class="tab-view" id="btn-vista-config" onclick="switchVista('config')" style="display:none">Config</button>
+        <button class="tab-view" id="btn-vista-costes" onclick="switchVista('costes')" style="display:none">Costes</button>
         <input type="date" id="fecha-dashboard" onchange="cambioFecha()">
         <button class="btn-ghost" style="width:auto;padding:6px 14px;" onclick="cerrarSesion()">Cerrar sesion</button>
       </div>
@@ -157,9 +158,6 @@
         </div>
       </div>
 
-      <div class="section-title" style="margin-top:24px">Historial del dia</div>
-      <div id="lz-historial"></div>
-
       <div class="section-title" style="margin-top:24px">Informe de lanzaderas</div>
       <div class="informe-range">
         <label>Desde</label><input type="date" id="lz-desde">
@@ -193,6 +191,29 @@
         <button class="btn-informe" onclick="abrirMercaModal()">+ Registrar descarga</button>
       </div>
       <div class="grid-card"><div class="grid-scroll"><table class="rejilla-table" id="rejilla-merca"></table></div></div>
+    </div>
+
+    <div id="vista-costes" class="reservas-wrap" style="display:none">
+      <div class="informe-header">
+        <div class="section-title" style="margin-bottom:0">Costes de operacion diarios</div>
+        <button class="btn-informe" onclick="enviarInformeDiarioCostes(false)">Enviar informe por correo</button>
+      </div>
+      <div id="costes-historial" style="margin-top:12px"></div>
+
+      <div class="informe-card" style="margin-top:24px">
+        <div class="informe-card-title">Envio automatico del informe diario</div>
+        <p style="font-size:13px;color:#6B7280;margin-bottom:12px">
+          El informe se envia automaticamente a las 20:00 si el panel esta abierto.
+          Los costes que aparecen son del dia en curso (coste de operacion, no el coste fijo mensual del contrato).
+        </p>
+        <div id="costes-emails-lista"></div>
+        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+          <input type="email" id="costes-email-nuevo" placeholder="email@ejemplo.com"
+            style="flex:1;min-width:200px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
+          <button class="btn-informe" onclick="agregarEmailCostes()">Agregar</button>
+        </div>
+        <div id="costes-ultimo-envio" style="font-size:12px;color:#9CA3AF;margin-top:10px"></div>
+      </div>
     </div>
 
     <div id="vista-config" class="reservas-wrap" style="display:none">
