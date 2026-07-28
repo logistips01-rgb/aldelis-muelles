@@ -80,7 +80,7 @@ let informeData = [];
 
 // Version de la app. SUBIR este numero al publicar cambios importantes:
 // las pestanas abiertas se recargaran solas para coger la version nueva.
-const APP_VERSION = 31;
+const APP_VERSION = 32;
 let _chatSel = 1;
 function vigilarVersion() {
   db.collection("config").doc("app").onSnapshot(d => {
@@ -673,7 +673,7 @@ function actualizarUltimoEnvio() {
   if (!el) return;
   const hoy = new Date().toISOString().split("T")[0];
   const enviado = localStorage.getItem("costesEnviados_" + hoy);
-  el.textContent = enviado ? "Informe de hoy enviado a las " + enviado : "Informe de hoy pendiente de envio (se enviara a las 20:00 si el panel esta abierto).";
+  el.textContent = enviado ? "Informe de hoy enviado a las " + enviado : "Informe de hoy pendiente de envio (se enviara a las 23:59 si el panel esta abierto).";
 }
 
 async function agregarEmailCostes() {
@@ -932,7 +932,7 @@ function autoEnviarCostesAlFinalDelDia() {
   if (!COSTES_USERS.includes(((auth.currentUser || {}).email || "").toLowerCase())) return;
   if (!esHoy) return;
   const ahora = new Date();
-  if (ahora.getHours() < 20) return;
+  if (ahora.getHours() < 23 || ahora.getMinutes() < 59) return;
   const hoy = ahora.toISOString().split("T")[0];
   if (localStorage.getItem("costesEnviados_" + hoy)) return;
   localStorage.setItem("costesEnviados_" + hoy, "auto");
