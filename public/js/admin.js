@@ -80,7 +80,7 @@ let informeData = [];
 
 // Version de la app. SUBIR este numero al publicar cambios importantes:
 // las pestanas abiertas se recargaran solas para coger la version nueva.
-const APP_VERSION = 32;
+const APP_VERSION = 33;
 let _chatSel = 1;
 function vigilarVersion() {
   db.collection("config").doc("app").onSnapshot(d => {
@@ -555,14 +555,14 @@ function cargarHistorialDiario() {
   const plazaMuelles = ["M6","M7","M8","M18","M19","M20"].filter(m => muelleStats[m]);
   const mercaMuelles = ["M2","M4"].filter(m => muelleStats[m]);
   if (plazaMuelles.length) {
-    muelleHtml += "<div style='font-size:11px;color:#9CA3AF;margin-bottom:6px;text-transform:uppercase;letter-spacing:.06em'>Plaza</div>";
+    muelleHtml += "<div class='costes-subhead'>Plaza</div>";
     plazaMuelles.forEach(m => {
       const s = muelleStats[m];
       muelleHtml += filaResumen(m, formatDuracion(Math.round(s.sum / s.n)) + " · " + s.n + " vis.");
     });
   }
   if (mercaMuelles.length) {
-    muelleHtml += "<div style='font-size:11px;color:#9CA3AF;margin:" + (plazaMuelles.length ? "10px" : "0") + " 0 6px;text-transform:uppercase;letter-spacing:.06em'>Merca</div>";
+    muelleHtml += "<div class='costes-subhead' style='margin-top:" + (plazaMuelles.length ? "10px" : "0") + "'>Merca</div>";
     mercaMuelles.forEach(m => {
       const s = muelleStats[m];
       muelleHtml += filaResumen(m, formatDuracion(Math.round(s.sum / s.n)) + " · " + s.n + " vis.");
@@ -575,7 +575,7 @@ function cargarHistorialDiario() {
     muelleHtml += "<div style='margin-top:12px;padding-top:10px;border-top:1px solid rgba(128,128,128,.2)'>" +
       "<div style='font-size:12px;color:#1D9E75;margin-bottom:4px'>▲ Mas rapido: <strong>" + esc(masRapido.muelle) + "</strong> · " + formatDuracion(masRapido.avg) + " media</div>" +
       "<div style='font-size:12px;color:#D41F3A;margin-bottom:8px'>▼ Mas lento: <strong>" + esc(masLento.muelle) + "</strong> · " + formatDuracion(masLento.avg) + " media</div>" +
-      "<div style='font-size:12px;background:rgba(29,158,117,.1);border-radius:6px;padding:8px'>" +
+      "<div style='font-size:12px;background:rgba(29,158,117,.1);border-radius:6px;padding:8px' class='costes-ahorro'>" +
       "Diferencia: <strong>" + formatDuracion(diffMin) + "</strong> por visita · " +
       "Ahorro estimado en " + masRapido.muelle + ": <strong style='color:#1D9E75'>" + formatEuro(ahorroTotal) + "</strong> " +
       "(" + masRapido.n + " vis. × " + formatEuro(ahorroVisita) + ")" +

@@ -548,8 +548,10 @@ body.dark .gantt-head-track { border-bottom-color: #2D2D32; }
 body.dark .gantt-tick { color: #5A6070; border-left-color: #2D2D32; }
 body.dark .gantt-resumen { background: #1B1B1F; box-shadow: 0 1px 4px rgba(0,0,0,0.4); }
 body.dark .resumen-value { color: #E8E8EA; }
-body.dark .resumen-label { color: #888F9B; }
+body.dark .resumen-label { color: #B0B9C8; }
 body.dark .resumen-row { border-bottom-color: #2D2D32; }
+body.dark .costes-subhead { color: #7A8494; }
+body.dark .costes-ahorro { color: #D4DBE6; }
 body.dark .gantt-res-tit { color: #E8E8EA; }
 body.dark .gantt-res-n { color: #E8E8EA; }
 body.dark .gantt-res-desde { color: #5A6070; }
