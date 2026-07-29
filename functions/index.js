@@ -106,13 +106,10 @@ exports.enviarEmail = functions.https.onCall(async (request) => {
   }
 });
 
-// ── Función programada: informe diario a las 23:59 (hora Madrid) ────────────
+// ── Lógica compartida del informe ───────────────────────────────────────────
 
-exports.enviarInformeDiario = functions.pubsub
-  .schedule("59 23 * * *")
-  .timeZone("Europe/Madrid")
-  .onRun(async () => {
-    console.log("Iniciando envio automatico informe diario...");
+async function generarYEnviarInforme(label) {
+    console.log("Iniciando envio automatico informe diario (" + label + ")...");
     try {
 
       // Config
@@ -362,7 +359,19 @@ exports.enviarInformeDiario = functions.pubsub
       return null;
 
     } catch(e) {
-      console.error("Error en enviarInformeDiario:", e);
+      console.error("Error en generarYEnviarInforme:", e);
       return null;
     }
-  });
+}
+
+// ── Funciones programadas ────────────────────────────────────────────────────
+
+exports.enviarInformeDiario = functions.pubsub
+  .schedule("59 23 * * *")
+  .timeZone("Europe/Madrid")
+  .onRun(() => generarYEnviarInforme("23:59"));
+
+exports.enviarInformeMañana = functions.pubsub
+  .schedule("0 8 * * *")
+  .timeZone("Europe/Madrid")
+  .onRun(() => generarYEnviarInforme("08:00"));
