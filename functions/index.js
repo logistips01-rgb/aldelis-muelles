@@ -1,5 +1,6 @@
-const functions = require("firebase-functions");
-const admin     = require("firebase-admin");
+const functions  = require("firebase-functions");
+const { onSchedule } = require("firebase-functions/v2/scheduler");
+const admin      = require("firebase-admin");
 
 if (!admin.apps.length) admin.initializeApp();
 const db = admin.firestore();
@@ -366,12 +367,12 @@ async function generarYEnviarInforme(label) {
 
 // ── Funciones programadas ────────────────────────────────────────────────────
 
-exports.enviarInformeDiario = functions.pubsub
-  .schedule("59 23 * * *")
-  .timeZone("Europe/Madrid")
-  .onRun(() => generarYEnviarInforme("23:59"));
+exports.enviarInformeDiario = onSchedule(
+  { schedule: "59 23 * * *", timeZone: "Europe/Madrid" },
+  () => generarYEnviarInforme("23:59")
+);
 
-exports.enviarInformeMañana = functions.pubsub
-  .schedule("0 8 * * *")
-  .timeZone("Europe/Madrid")
-  .onRun(() => generarYEnviarInforme("08:00"));
+exports.enviarInformeMañana = onSchedule(
+  { schedule: "0 8 * * *", timeZone: "Europe/Madrid" },
+  () => generarYEnviarInforme("08:00")
+);
