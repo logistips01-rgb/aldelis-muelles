@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>Aldelis — Incidencia Bizerba</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: #F5F5F5;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 16px 40px;
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 24px;
+      width: 100%;
+      max-width: 420px;
+    }
+    .logo { font-size: 26px; font-weight: 600; color: #D41F3A; letter-spacing: -0.5px; }
+    .logo-sub { font-size: 13px; color: #6B7280; margin-top: 2px; }
+
+    .card {
+      background: #fff;
+      border-radius: 14px;
+      padding: 24px 20px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+      width: 100%;
+      max-width: 420px;
+    }
+
+    .card-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: #1A1A1A;
+      margin-bottom: 4px;
+    }
+    .card-desc {
+      font-size: 13px;
+      color: #6B7280;
+      margin-bottom: 20px;
+      line-height: 1.5;
+    }
+
+    .field { margin-bottom: 14px; }
+    .field label {
+      display: block;
+      font-size: 12px;
+      font-weight: 500;
+      color: #374151;
+      margin-bottom: 6px;
+    }
+    .field select, .field textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1.5px solid #E0E0E0;
+      border-radius: 8px;
+      font-size: 15px;
+      font-family: 'Inter', sans-serif;
+      color: #1A1A1A;
+      background: #fff;
+      outline: none;
+      transition: border-color .15s;
+      -webkit-appearance: none;
+    }
+    .field select:focus, .field textarea:focus { border-color: #D41F3A; }
+    .field textarea { resize: none; min-height: 90px; line-height: 1.5; }
+
+    .btn-enviar {
+      width: 100%;
+      background: #D41F3A;
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 14px;
+      font-size: 16px;
+      font-weight: 600;
+      font-family: 'Inter', sans-serif;
+      cursor: pointer;
+      margin-top: 4px;
+      transition: background .15s;
+    }
+    .btn-enviar:hover { background: #B8172F; }
+    .btn-enviar:disabled { background: #E0E0E0; color: #9CA3AF; cursor: not-allowed; }
+
+    /* Pantalla de confirmación */
+    #done-screen {
+      display: none;
+      text-align: center;
+      width: 100%;
+      max-width: 420px;
+    }
+    .done-card {
+      background: #fff;
+      border-radius: 14px;
+      padding: 36px 24px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    }
+    .done-icon { font-size: 52px; margin-bottom: 14px; }
+    .done-title { font-size: 20px; font-weight: 600; color: #1A1A1A; margin-bottom: 8px; }
+    .done-desc { font-size: 14px; color: #6B7280; line-height: 1.5; margin-bottom: 24px; }
+    .btn-nueva {
+      background: #F5F5F5;
+      color: #374151;
+      border: 1.5px solid #E0E0E0;
+      border-radius: 10px;
+      padding: 12px 24px;
+      font-size: 14px;
+      font-weight: 500;
+      font-family: 'Inter', sans-serif;
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .btn-nueva:hover { border-color: #9CA3AF; background: #fff; }
+
+    #error-msg {
+      display: none;
+      background: #FEE2E2;
+      border: 1px solid #FCA5A5;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 13px;
+      color: #B91C1C;
+      margin-bottom: 14px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div class="logo">Aldelis</div>
+    <div class="logo-sub">Incidencia Bizerba</div>
+  </div>
+
+  <!-- Formulario -->
+  <div class="card" id="form-screen">
+    <div class="card-title">Reportar avería</div>
+    <div class="card-desc">Indica tu línea y describe brevemente el problema. Un técnico lo atenderá.</div>
+
+    <div id="error-msg"></div>
+
+    <div class="field">
+      <label>Línea <span style="color:#D41F3A">*</span></label>
+      <select id="sel-linea">
+        <option value="">Selecciona tu línea</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label>¿Qué ocurre? <span style="color:#D41F3A">*</span></label>
+      <textarea id="txt-averia" placeholder="Describe la avería o el problema..."></textarea>
+    </div>
+
+    <button class="btn-enviar" id="btn-enviar" onclick="enviarIncidencia()">Avisar al técnico</button>
+  </div>
+
+  <!-- Confirmación -->
+  <div id="done-screen">
+    <div class="done-card">
+      <div class="done-icon">✅</div>
+      <div class="done-title">Aviso enviado</div>
+      <div class="done-desc" id="done-desc">El técnico recibirá la incidencia en su móvil y se pondrá en marcha.</div>
+      <button class="btn-nueva" onclick="nuevaIncidencia()">Reportar otra avería</button>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-check-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="js/firebase-config-compat.js"></script>
+  <script>
+    // Poblar selector de líneas (0–16)
+    const sel = document.getElementById("sel-linea");
+    for (let i = 0; i <= 16; i++) {
+      const opt = document.createElement("option");
+      opt.value = i;
+      opt.textContent = i === 0 ? "Línea 0 (General)" : "Línea " + i;
+      sel.appendChild(opt);
+    }
+
+    async function enviarIncidencia() {
+      const linea  = document.getElementById("sel-linea").value;
+      const averia = document.getElementById("txt-averia").value.trim();
+      const errEl  = document.getElementById("error-msg");
+      errEl.style.display = "none";
+
+      if (linea === "") { errEl.textContent = "Selecciona tu línea."; errEl.style.display = "block"; return; }
+      if (!averia)      { errEl.textContent = "Describe la avería.";  errEl.style.display = "block"; return; }
+
+      const btn = document.getElementById("btn-enviar");
+      btn.disabled = true;
+      btn.textContent = "Enviando...";
+
+      try {
+        const db = firebase.firestore();
+        await db.collection("incidencias").add({
+          linea:        Number(linea),
+          averia:       averia,
+          estado:       "abierta",
+          tecnico:      null,
+          observaciones: "",
+          creada:       firebase.firestore.Timestamp.now(),
+          aceptada:     null,
+          resuelta:     null
+        });
+
+        document.getElementById("done-desc").textContent =
+          "Línea " + linea + ": \"" + averia + "\". El técnico lo atenderá en breve.";
+        document.getElementById("form-screen").style.display = "none";
+        document.getElementById("done-screen").style.display = "block";
+      } catch(e) {
+        console.error(e);
+        errEl.textContent = "Error al enviar. Inténtalo de nuevo.";
+        errEl.style.display = "block";
+        btn.disabled = false;
+        btn.textContent = "Avisar al técnico";
+      }
+    }
+
+    function nuevaIncidencia() {
+      document.getElementById("sel-linea").value = "";
+      document.getElementById("txt-averia").value = "";
+      document.getElementById("error-msg").style.display = "none";
+      document.getElementById("btn-enviar").disabled = false;
+      document.getElementById("btn-enviar").textContent = "Avisar al técnico";
+      document.getElementById("form-screen").style.display = "block";
+      document.getElementById("done-screen").style.display = "none";
+    }
+  </script>
+</body>
+</html>
