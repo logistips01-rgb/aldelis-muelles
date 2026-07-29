@@ -1510,7 +1510,7 @@ function cargarBizerba() {
         estLbl = “Tecnico “ + (i.tecnico || “?”) + “ · lleva “ + (enCurso != null ? formatDuracion(enCurso) : “—“);
       }
       const obs = i.observaciones
-        ? “<div class='reserva-detalle' style='font-style:italic'>”” + esc(i.observaciones) + “”</div>” : “”;
+        ? “<div class='reserva-detalle' style='font-style:italic'>\”” + esc(i.observaciones) + “\”</div>” : “”;
       const btn = i.estado === “abierta”
         ? “”
         : “<button class='btn-accion btn-completar' onclick=\”resolverIncidencia('” + i.id + “')\”>Resuelta</button>”;
