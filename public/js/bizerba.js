@@ -4,6 +4,7 @@
 
   if (!tecnico || tecnico < 1 || tecnico > 6) {
     document.getElementById("error-screen").style.display = "block";
+    document.getElementById("error-screen").innerHTML += "<p style='margin-top:12px;font-size:12px;color:#aaa'>Debug: t=" + params.get("t") + " / tecnico=" + tecnico + "</p>";
     document.getElementById("main").style.display = "none";
     return;
   }
