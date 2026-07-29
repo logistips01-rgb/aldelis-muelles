@@ -1,5 +1,6 @@
 const functions  = require("firebase-functions");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
+const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const admin      = require("firebase-admin");
 
 if (!admin.apps.length) admin.initializeApp();
@@ -562,28 +563,27 @@ exports.enviarInformeBizerba = onSchedule(
 
 // ── Notificación push al chat de lanzaderas ─────────────────────────────────
 
-exports.notifChat = functions.firestore
-  .document("mensajes/{msgId}")
-  .onCreate(async (snap) => {
-    const msg = snap.data();
-    const tokensSnap = await db.collection("push_tokens").get();
-    if (tokensSnap.empty) return null;
+exports.notifChat = onDocumentCreated("mensajes/{msgId}", async (event) => {
+  const msg = event.data ? event.data.data() : null;
+  if (!msg) return;
 
-    const tokens = [];
-    tokensSnap.forEach(d => tokens.push(d.id));
+  const tokensSnap = await db.collection("push_tokens").get();
+  if (tokensSnap.empty) return;
 
-    const sender = msg.autor || "Lanzadera";
-    const text   = msg.texto || "";
+  const tokens = [];
+  tokensSnap.forEach(d => tokens.push(d.id));
 
-    const chunks = [];
-    for (let i = 0; i < tokens.length; i += 500) chunks.push(tokens.slice(i, i + 500));
+  const sender = msg.autor || "Lanzadera";
+  const text   = msg.texto || "";
 
-    for (const chunk of chunks) {
-      await admin.messaging().sendEachForMulticast({
-        tokens: chunk,
-        notification: { title: sender, body: text.length > 120 ? text.slice(0, 117) + "…" : text },
-        webpush: { fcmOptions: { link: "/" } }
-      });
-    }
-    return null;
-  });
+  const chunks = [];
+  for (let i = 0; i < tokens.length; i += 500) chunks.push(tokens.slice(i, i + 500));
+
+  for (const chunk of chunks) {
+    await admin.messaging().sendEachForMulticast({
+      tokens: chunk,
+      notification: { title: sender, body: text.length > 120 ? text.slice(0, 117) + "…" : text },
+      webpush: { fcmOptions: { link: "/" } }
+    });
+  }
+});
