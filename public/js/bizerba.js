@@ -1,6 +1,6 @@
 (function () {
   const params = new URLSearchParams(location.search);
-  const tecnico = parseInt(params.get("l"), 10);
+  const tecnico = parseInt(params.get("t"), 10);
 
   if (!tecnico || tecnico < 1 || tecnico > 6) {
     document.getElementById("error-screen").style.display = "block";
