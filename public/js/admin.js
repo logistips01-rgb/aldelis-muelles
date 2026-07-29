@@ -80,7 +80,7 @@ let informeData = [];
 
 // Version de la app. SUBIR este numero al publicar cambios importantes:
 // las pestanas abiertas se recargaran solas para coger la version nueva.
-const APP_VERSION = 40;
+const APP_VERSION = 41;
 let _chatSel = 1;
 function vigilarVersion() {
   // Listener unificado de config/app: version + tiempoMaxLanz + diasLaborables
@@ -1485,40 +1485,51 @@ function cargarBizerba() {
   const media = resps.length ? Math.round(resps.reduce((a, b) => a + b, 0) / resps.length) : null;
   document.getElementById("biz-resp").textContent = media != null ? formatDuracion(media) : "—";
 
-  // Incidencias activas (sin coger + en curso + esperando repuesto), por antiguedad
-  const activas = abiertas.concat(aceptadas, repuesto).sort((a, b) => (a.creada ? a.creada.toMillis() : 0) - (b.creada ? b.creada.toMillis() : 0));
-  const cont = document.getElementById("biz-activas");
+  // Incidencias activas — prioritarias primero, luego por antigüedad
+  const activas = abiertas.concat(aceptadas, repuesto).sort((a, b) => {
+    if (a.prioritaria && !b.prioritaria) return -1;
+    if (!a.prioritaria && b.prioritaria) return 1;
+    return (a.creada ? a.creada.toMillis() : 0) - (b.creada ? b.creada.toMillis() : 0);
+  });
+  const cont = document.getElementById(“biz-activas”);
   if (!activas.length) {
-    cont.innerHTML = "<div class='empty-state'>No hay incidencias activas.</div>";
+    cont.innerHTML = “<div class='empty-state'>No hay incidencias activas.</div>”;
   } else {
     cont.innerHTML = activas.map(i => {
       const espera  = i.creada ? difMin(i.creada, firebase.firestore.Timestamp.now()) : null;
       const enCurso = i.aceptada ? difMin(i.aceptada, firebase.firestore.Timestamp.now()) : null;
       let color, estLbl, pill;
-      if (i.estado === "abierta") {
-        color = "#D41F3A"; pill = "Abierta";
-        estLbl = "Sin coger · espera " + (espera != null ? formatDuracion(espera) : "—");
-      } else if (i.estado === "repuesto") {
-        color = "#E08A00"; pill = "Falta repuesto";
-        estLbl = "Tecnico " + (i.tecnico || "?") + " · esperando repuesto";
+      if (i.estado === “abierta”) {
+        color = “#D41F3A”; pill = “Abierta”;
+        estLbl = “Sin coger · espera “ + (espera != null ? formatDuracion(espera) : “—“);
+      } else if (i.estado === “repuesto”) {
+        color = “#E08A00”; pill = “Falta repuesto”;
+        estLbl = “Tecnico “ + (i.tecnico || “?”) + “ · esperando repuesto”;
       } else {
-        color = "#1D9E75"; pill = "En curso";
-        estLbl = "Tecnico " + (i.tecnico || "?") + " · lleva " + (enCurso != null ? formatDuracion(enCurso) : "—");
+        color = “#1D9E75”; pill = “En curso”;
+        estLbl = “Tecnico “ + (i.tecnico || “?”) + “ · lleva “ + (enCurso != null ? formatDuracion(enCurso) : “—“);
       }
       const obs = i.observaciones
-        ? "<div class='reserva-detalle' style='font-style:italic'>“" + esc(i.observaciones) + "”</div>" : "";
-      const btn = i.estado === "abierta"
-        ? ""
-        : "<button class='btn-accion btn-completar' onclick=\"resolverIncidencia('" + i.id + "')\">Resuelta</button>";
-      return "<div class='reserva-item'>" +
-        "<div class='reserva-hora' style='color:" + color + "'>Linea " + i.linea + "</div>" +
-        "<div class='reserva-info'>" +
-        "<div class='reserva-empresa'>" + esc(i.averia || "Sin detalle") + "</div>" +
-        "<div class='reserva-detalle'>" + estLbl + "</div>" + obs + "</div>" +
-        "<div style='display:flex;flex-direction:column;gap:6px;align-items:flex-end'>" +
-        "<span class='estado-pill' style='background:" + color + ";color:#fff'>" + pill + "</span>" +
-        btn + "</div></div>";
-    }).join("");
+        ? “<div class='reserva-detalle' style='font-style:italic'>”” + esc(i.observaciones) + “”</div>” : “”;
+      const btn = i.estado === “abierta”
+        ? “”
+        : “<button class='btn-accion btn-completar' onclick=\”resolverIncidencia('” + i.id + “')\”>Resuelta</button>”;
+      const prioLbl = i.prioritaria
+        ? “<span style='font-size:11px;font-weight:700;color:#fff;background:#D41F3A;border-radius:4px;padding:2px 7px;letter-spacing:.04em'>&#9888; PRIORITARIA</span>”
+        : “”;
+      const prioBtn = i.prioritaria
+        ? “<button class='btn-accion' style='font-size:11px;padding:4px 10px;background:#f5f5f5;color:#9CA3AF;border:1px solid #E0E0E0' onclick=\”togglePrioritaria('” + i.id + “',false)\”>Quitar prioridad</button>”
+        : “<button class='btn-accion' style='font-size:11px;padding:4px 10px;background:#FEF3C7;color:#92400E;border:1px solid #FCD34D' onclick=\”togglePrioritaria('” + i.id + “',true)\”>&#9888; Prioritaria</button>”;
+      return “<div class='reserva-item'” + (i.prioritaria ? “ style='border-left:3px solid #D41F3A'” : “”) + “>” +
+        “<div class='reserva-hora' style='color:” + color + “'>Linea “ + i.linea + “</div>” +
+        “<div class='reserva-info'>” +
+        (i.prioritaria ? “<div style='margin-bottom:4px'>” + prioLbl + “</div>” : “”) +
+        “<div class='reserva-empresa'>” + esc(i.averia || “Sin detalle”) + “</div>” +
+        “<div class='reserva-detalle'>” + estLbl + “</div>” + obs + “</div>” +
+        “<div style='display:flex;flex-direction:column;gap:6px;align-items:flex-end'>” +
+        “<span class='estado-pill' style='background:” + color + “;color:#fff'>” + pill + “</span>” +
+        prioBtn + btn + “</div></div>”;
+    }).join(“”);
   }
 
   // Historial del dia
@@ -1543,6 +1554,12 @@ function cargarBizerba() {
           "<td>" + (tReso != null ? formatDuracion(tReso) : "—") + "</td></tr>";
       }).join("") + "</tbody></table></div>";
   }
+}
+
+async function togglePrioritaria(id, valor) {
+  try {
+    await db.collection("incidencias").doc(id).update({ prioritaria: valor });
+  } catch(e) { console.error(e); }
 }
 
 async function resolverIncidencia(id) {

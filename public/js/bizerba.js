@@ -95,10 +95,14 @@
       activaCont.innerHTML = "<div class='empty'>No tienes ninguna incidencia activa.</div>";
     }
 
-    // Pendientes
+    // Pendientes — prioritarias primero, luego por antigüedad
     const pendientes = incs
       .filter(i => i.estado === "abierta")
-      .sort((a, b) => (a.creada ? a.creada.toMillis() : 0) - (b.creada ? b.creada.toMillis() : 0));
+      .sort((a, b) => {
+        if (a.prioritaria && !b.prioritaria) return -1;
+        if (!a.prioritaria && b.prioritaria) return 1;
+        return (a.creada ? a.creada.toMillis() : 0) - (b.creada ? b.creada.toMillis() : 0);
+      });
 
     const pendCont = document.getElementById("pendientes-cont");
     if (!pendientes.length) {
@@ -106,7 +110,8 @@
     } else {
       pendCont.innerHTML = pendientes.map(i => {
         const espera = i.creada ? difMin(i.creada, ahora) : null;
-        return "<div class='card'>" +
+        return "<div class='card'" + (i.prioritaria ? " style='border-left:3px solid #D41F3A'" : "") + ">" +
+          (i.prioritaria ? "<div style='font-size:11px;font-weight:700;color:#D41F3A;margin-bottom:6px;letter-spacing:.04em'>&#9888; PRIORITARIA</div>" : "") +
           "<div class='inc-linea'>Línea " + i.linea + "</div>" +
           "<div class='inc-averia'>" + esc(i.averia || "Sin detalle") + "</div>" +
           "<div class='inc-meta'>Abierta a las " + tsHora(i.creada) +
