@@ -80,18 +80,29 @@ let informeData = [];
 
 // Version de la app. SUBIR este numero al publicar cambios importantes:
 // las pestanas abiertas se recargaran solas para coger la version nueva.
-const APP_VERSION = 38;
+const APP_VERSION = 39;
 let _chatSel = 1;
 function vigilarVersion() {
+  // Listener unificado de config/app: version + tiempoMaxLanz + diasLaborables
   db.collection("config").doc("app").onSnapshot(d => {
-    const v = d.exists ? (d.data().version || 0) : 0;
+    if (!d.exists) return;
+    const data = d.data();
+    const v = data.version || 0;
     if (v > APP_VERSION) {
       location.reload();
     } else if (v < APP_VERSION) {
-      // Este cliente es el mas nuevo: publica su version para que los demas se actualicen.
       db.collection("config").doc("app").set({ version: APP_VERSION }, { merge: true }).catch(() => {});
     }
-  }, e => {});
+    if (typeof data.tiempoMaxLanz === "number") _tiempoMaxLanz = data.tiempoMaxLanz;
+    if (typeof data.diasLaborables === "number" && data.diasLaborables > 0) {
+      _diasLaborables = data.diasLaborables;
+      recalcLanzCosteMin();
+    }
+    const elT = document.getElementById("cfg-tiempo-max");
+    if (elT) elT.value = _tiempoMaxLanz;
+    const elD = document.getElementById("cfg-dias-lab");
+    if (elD) elD.value = _diasLaborables;
+  }, () => {});
 }
 
 // Resaltado de la franja "en curso" (solo si el dia mostrado es hoy)
@@ -286,7 +297,9 @@ function iniciarListeners() {
       cargarMerca();
     }, e => console.error("merca:", e)));
 
-  _unsubs.push(db.collection("mensajes").orderBy("ts", "desc").limit(100)
+  _unsubs.push(db.collection("mensajes")
+    .where("ts", ">=", Ts.fromMillis(dayStart))
+    .orderBy("ts", "desc").limit(100)
     .onSnapshot(s => {
       const arr = []; s.forEach(d => arr.push(d.data())); arr.reverse();
       window._mensajes = arr; renderChat();
@@ -2220,20 +2233,7 @@ function cargarConfigListeners() {
     renderCfgAlertas();
   }, () => {});
 
-  db.collection("config").doc("app").onSnapshot(d => {
-    if (d.exists) {
-      const data = d.data();
-      if (typeof data.tiempoMaxLanz === "number") _tiempoMaxLanz = data.tiempoMaxLanz;
-      if (typeof data.diasLaborables === "number" && data.diasLaborables > 0) {
-        _diasLaborables = data.diasLaborables;
-        recalcLanzCosteMin();
-      }
-    }
-    const elT = document.getElementById("cfg-tiempo-max");
-    if (elT) elT.value = _tiempoMaxLanz;
-    const elD = document.getElementById("cfg-dias-lab");
-    if (elD) elD.value = _diasLaborables;
-  }, () => {});
+  // config/app ya está escuchado en vigilarVersion() — no duplicar
 
   db.collection("config").doc("destinos").onSnapshot(d => {
     if (d.exists && Array.isArray(d.data().lista)) {
