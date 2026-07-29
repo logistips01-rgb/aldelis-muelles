@@ -559,3 +559,31 @@ exports.enviarInformeBizerba = onSchedule(
   { schedule: "59 23 * * *", timeZone: "Europe/Madrid" },
   () => generarYEnviarInformeBizerba()
 );
+
+// ── Notificación push al chat de lanzaderas ─────────────────────────────────
+
+exports.notifChat = functions.firestore
+  .document("mensajes/{msgId}")
+  .onCreate(async (snap) => {
+    const msg = snap.data();
+    const tokensSnap = await db.collection("push_tokens").get();
+    if (tokensSnap.empty) return null;
+
+    const tokens = [];
+    tokensSnap.forEach(d => tokens.push(d.id));
+
+    const sender = msg.autor || "Lanzadera";
+    const text   = msg.texto || "";
+
+    const chunks = [];
+    for (let i = 0; i < tokens.length; i += 500) chunks.push(tokens.slice(i, i + 500));
+
+    for (const chunk of chunks) {
+      await admin.messaging().sendEachForMulticast({
+        tokens: chunk,
+        notification: { title: sender, body: text.length > 120 ? text.slice(0, 117) + "…" : text },
+        webpush: { fcmOptions: { link: "/" } }
+      });
+    }
+    return null;
+  });
