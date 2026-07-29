@@ -306,7 +306,7 @@ async function generarYEnviarInforme(label) {
       ).join("");
 
       const html =
-        "<!DOCTYPE html><html><body style='margin:0;padding:16px;background:#f0f0f0;font-family:Arial,Helvetica,sans-serif'>" +
+        "<!DOCTYPE html><html><body style='margin:0;padding:16px;background:#f0f0f0;font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,Helvetica,Arial,sans-serif'>" +
         "<div style='max-width:700px;margin:0 auto'>" +
 
         "<div style='background:#D41F3A;border-radius:8px;padding:20px 22px;margin-bottom:12px'>" +
