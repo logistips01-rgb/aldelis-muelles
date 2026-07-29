@@ -373,6 +373,6 @@ exports.enviarInformeDiario = onSchedule(
 );
 
 exports.enviarInformeManana = onSchedule(
-  { schedule: "0 8 * * *", timeZone: "Europe/Madrid" },
-  () => generarYEnviarInforme("08:00")
+  { schedule: "30 8 * * *", timeZone: "Europe/Madrid" },
+  () => generarYEnviarInforme("08:30")
 );
