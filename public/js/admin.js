@@ -928,7 +928,22 @@ async function enviarInformeDiarioCostes(esAuto) {
   const emails = _costesEmailsCache;
   if (!emails.length) return;
 
-  // Asegura que el historial está renderizado (lee de window._logs)
+  // Lectura fresca de logs del día justo antes de construir el informe
+  try {
+    const fecha = document.getElementById("fecha-dashboard").value;
+    const dayStart = new Date(fecha + "T00:00:00").getTime();
+    const dayEnd   = dayStart + 86400000;
+    const Ts = firebase.firestore.Timestamp;
+    const snap = await db.collection("lanzaderas_log")
+      .where("desde", ">=", Ts.fromMillis(dayStart))
+      .where("desde", "<",  Ts.fromMillis(dayEnd))
+      .get();
+    window._logs = [];
+    snap.forEach(d => window._logs.push(d.data()));
+  } catch(e) {
+    console.warn("No se pudo refrescar logs antes del informe:", e);
+  }
+
   cargarHistorialDiario();
 
   const datos = construirCuerpoInformeCostes();
