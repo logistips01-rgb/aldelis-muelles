@@ -345,6 +345,7 @@ function cerrarSesion() {
 
 // Usuarios que solo ven la vista de Lanzaderas (gerente de lanzaderas)
 const SOLO_LANZADERAS = ["transfriorza@transfriorza.es"];
+const SOLO_BIZERBA    = [];
 const BIZERBA_USERS   = ["mlorente@aldelis.com", "jpina@aldelis.com"];
 const CONFIG_USERS    = ["mlorente@aldelis.com"];
 const COSTES_USERS    = ["mlorente@aldelis.com"];
@@ -357,14 +358,27 @@ function aplicarRol(user) {
   const costBtn = document.getElementById("btn-vista-costes");
   if (costBtn) costBtn.style.display = COSTES_USERS.includes(email) ? "" : "none";
   const soloLanz = SOLO_LANZADERAS.includes(email);
-  if (!soloLanz) return;
-  ["rejilla", "lista", "informes", "cargas", "merca"].forEach(v => {
-    const b = document.getElementById("btn-vista-" + v);
-    if (b) b.style.display = "none";
-  });
-  const mr = document.querySelector(".metrics-row");
-  if (mr) mr.style.display = "none";
-  switchVista("lanzaderas");
+  if (soloLanz) {
+    ["rejilla", "lista", "informes", "cargas", "merca"].forEach(v => {
+      const b = document.getElementById("btn-vista-" + v);
+      if (b) b.style.display = "none";
+    });
+    const mr = document.querySelector(".metrics-row");
+    if (mr) mr.style.display = "none";
+    switchVista("lanzaderas");
+    return;
+  }
+  const soloBiz = SOLO_BIZERBA.includes(email);
+  if (soloBiz) {
+    ["rejilla", "lista", "informes", "lanzaderas", "cargas", "merca", "costes", "config"].forEach(v => {
+      const b = document.getElementById("btn-vista-" + v);
+      if (b) b.style.display = "none";
+    });
+    const mr = document.querySelector(".metrics-row");
+    if (mr) mr.style.display = "none";
+    switchVista("bizerba");
+    return;
+  }
 }
 
 function switchVista(vista) {
