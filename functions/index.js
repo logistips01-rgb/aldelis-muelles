@@ -376,3 +376,186 @@ exports.enviarInformeManana = onSchedule(
   { schedule: "30 8 * * *", timeZone: "Europe/Madrid" },
   () => generarYEnviarInforme("08:30")
 );
+
+// ── Informe diario Bizerba ───────────────────────────────────────────────────
+
+async function generarYEnviarInformeBizerba() {
+  console.log("Iniciando informe diario Bizerba...");
+  try {
+    const [bizSnap] = await Promise.all([
+      db.collection("config").doc("bizerba").get()
+    ]);
+
+    const emails = (bizSnap.exists && Array.isArray(bizSnap.data().emails))
+      ? bizSnap.data().emails : [];
+    if (!emails.length) { console.log("Sin destinatarios Bizerba."); return null; }
+
+    // Rango del día en hora Madrid
+    const fechaStr = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Madrid" });
+    const [y, m, d] = fechaStr.split("-").map(Number);
+    const tsStart = admin.firestore.Timestamp.fromDate(
+      new Date(Date.UTC(y, m - 1, d, 0, 0, 0) - (new Date(fechaStr + "T00:00:00+02:00").getTime() - new Date(fechaStr + "T00:00:00Z").getTime()))
+    );
+    const tsEnd = admin.firestore.Timestamp.fromDate(
+      new Date(tsStart.toDate().getTime() + 86400000)
+    );
+
+    const snap = await db.collection("incidencias")
+      .where("creada", ">=", tsStart)
+      .where("creada", "<", tsEnd)
+      .orderBy("creada")
+      .get();
+
+    const fechaFmt = d.toString().padStart(2,"0") + "/" + m.toString().padStart(2,"0") + "/" + y;
+    const CARD = "border-radius:8px;border:1px solid #e8e8e8;background:#fff";
+
+    const incs = [];
+    snap.forEach(doc => incs.push({ id: doc.id, ...doc.data() }));
+
+    const total     = incs.length;
+    const resueltas = incs.filter(i => i.estado === "resuelta");
+    const sinResolver = incs.filter(i => i.estado !== "resuelta");
+    const conRepuesto = incs.filter(i => i.estado === "repuesto");
+
+    // Tiempos de respuesta (creada → aceptada)
+    const tResps = incs.filter(i => i.aceptada && i.creada)
+      .map(i => (i.aceptada.toMillis() - i.creada.toMillis()) / 60000);
+    const mediaResp = tResps.length ? Math.round(tResps.reduce((a,b) => a+b,0) / tResps.length) : null;
+
+    // Tiempos de resolución (aceptada → resuelta)
+    const tResos = resueltas.filter(i => i.aceptada && i.resuelta)
+      .map(i => (i.resuelta.toMillis() - i.aceptada.toMillis()) / 60000);
+    const mediaReso = tResos.length ? Math.round(tResos.reduce((a,b) => a+b,0) / tResos.length) : null;
+
+    // Stats por técnico
+    const porTecnico = {};
+    incs.filter(i => i.tecnico).forEach(i => {
+      if (!porTecnico[i.tecnico]) porTecnico[i.tecnico] = { total: 0, resueltas: 0, tResps: [], tResos: [] };
+      porTecnico[i.tecnico].total++;
+      if (i.estado === "resuelta") porTecnico[i.tecnico].resueltas++;
+      if (i.aceptada && i.creada) porTecnico[i.tecnico].tResps.push((i.aceptada.toMillis() - i.creada.toMillis()) / 60000);
+      if (i.resuelta && i.aceptada) porTecnico[i.tecnico].tResos.push((i.resuelta.toMillis() - i.aceptada.toMillis()) / 60000);
+    });
+
+    // Stats por línea
+    const porLinea = {};
+    incs.forEach(i => {
+      if (!porLinea[i.linea]) porLinea[i.linea] = 0;
+      porLinea[i.linea]++;
+    });
+    const lineasOrdenadas = Object.entries(porLinea).sort((a,b) => b[1] - a[1]);
+
+    function mCard(val, label) {
+      return "<td style='padding:5px'><div style='" + CARD + ";padding:14px 8px;text-align:center'>" +
+        "<div style='font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px'>" + label + "</div>" +
+        "<div style='font-size:18px;font-weight:700;color:#1A1A1A'>" + val + "</div>" +
+        "</div></td>";
+    }
+
+    function dataRow(label, value) {
+      return "<tr><td style='padding:6px 0;color:#555;font-size:13px;border-bottom:1px solid #f0f0f0'>" + label + "</td>" +
+        "<td style='padding:6px 0;font-weight:600;text-align:right;font-size:13px;color:#1A1A1A;border-bottom:1px solid #f0f0f0'>" + value + "</td></tr>";
+    }
+
+    const metricRow =
+      "<table width='100%' cellpadding='0' cellspacing='0'><tr>" +
+      mCard(total + "", "Total") +
+      mCard(resueltas.length + "", "Resueltas") +
+      mCard(sinResolver.length + "", "Sin resolver") +
+      mCard(conRepuesto.length + "", "Falta repuesto") +
+      "</tr></table>";
+
+    const tiemposRow =
+      "<table width='100%' cellpadding='0' cellspacing='0'><tr>" +
+      mCard(mediaResp != null ? formatDur(mediaResp) : "—", "T. medio respuesta") +
+      mCard(mediaReso != null ? formatDur(mediaReso) : "—", "T. medio resolución") +
+      "</tr></table>";
+
+    // Tabla por técnico
+    const tecnicoRows = Object.entries(porTecnico).sort((a,b) => b[1].total - a[1].total).map(([t, s]) => {
+      const mR = s.tResps.length ? Math.round(s.tResps.reduce((a,b)=>a+b,0)/s.tResps.length) : null;
+      const mO = s.tResos.length ? Math.round(s.tResos.reduce((a,b)=>a+b,0)/s.tResos.length) : null;
+      return dataRow("Técnico " + t, s.resueltas + "/" + s.total + " · resp: " + (mR != null ? formatDur(mR) : "—") + " · reso: " + (mO != null ? formatDur(mO) : "—"));
+    }).join("") || "<tr><td colspan='2' style='color:#bbb;font-size:13px;padding:8px 0'>Sin datos</td></tr>";
+
+    // Tabla por línea
+    const lineaRows = lineasOrdenadas.slice(0, 10).map(([l, n]) =>
+      dataRow("Línea " + l, n + " incidencia" + (n > 1 ? "s" : ""))
+    ).join("") || "<tr><td colspan='2' style='color:#bbb;font-size:13px;padding:8px 0'>Sin datos</td></tr>";
+
+    // Incidencias sin resolver
+    const sinResolverRows = sinResolver.length ? sinResolver.map(i => {
+      const espera = i.creada ? Math.round((Date.now() - i.creada.toMillis()) / 60000) : null;
+      const estadoLbl = { abierta: "Sin coger", aceptada: "En curso", repuesto: "Falta repuesto" }[i.estado] || i.estado;
+      return "<tr>" +
+        "<td style='padding:5px 8px;font-size:12px;border-bottom:1px solid #f5f5f5'>L" + i.linea + "</td>" +
+        "<td style='padding:5px 8px;font-size:12px;border-bottom:1px solid #f5f5f5'>" + esc(i.averia || "—") + "</td>" +
+        "<td style='padding:5px 8px;font-size:12px;border-bottom:1px solid #f5f5f5'>" + estadoLbl + "</td>" +
+        "<td style='padding:5px 8px;font-size:12px;border-bottom:1px solid #f5f5f5'>" + (i.tecnico ? "T" + i.tecnico : "—") + "</td>" +
+        "<td style='padding:5px 8px;font-size:12px;border-bottom:1px solid #f5f5f5;color:#D41F3A;font-weight:600'>" + (espera != null ? formatDur(espera) : "—") + "</td>" +
+        "</tr>";
+    }).join("") : "<tr><td colspan='5' style='padding:8px;color:#1D9E75;font-size:13px;text-align:center'>Todas resueltas ✓</td></tr>";
+
+    const html =
+      "<!DOCTYPE html><html><body style='margin:0;padding:16px;background:#f0f0f0;font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,Helvetica,Arial,sans-serif'>" +
+      "<div style='max-width:700px;margin:0 auto'>" +
+
+      "<div style='background:#1A1A1A;border-radius:8px;padding:20px 22px;margin-bottom:12px'>" +
+      "<div style='color:#fff;font-size:20px;font-weight:700;letter-spacing:-.5px'>Aldelis</div>" +
+      "<div style='color:rgba(255,255,255,.7);font-size:12px;margin-top:2px'>Informe de incidencias Bizerba &middot; " + fechaFmt + "</div>" +
+      "</div>" +
+
+      metricRow +
+      "<div style='height:8px'></div>" +
+      tiemposRow +
+
+      "<div style='height:10px'></div>" +
+      "<table width='100%' cellpadding='0' cellspacing='0'><tr>" +
+      "<td width='49%' valign='top' style='" + CARD + ";padding:14px'>" +
+      "<div style='font-size:12px;font-weight:700;color:#1A1A1A;margin-bottom:10px'>Por técnico</div>" +
+      "<table width='100%' cellpadding='0' cellspacing='0'>" + tecnicoRows + "</table></td>" +
+      "<td width='2%'></td>" +
+      "<td width='49%' valign='top' style='" + CARD + ";padding:14px'>" +
+      "<div style='font-size:12px;font-weight:700;color:#1A1A1A;margin-bottom:10px'>Líneas con más incidencias</div>" +
+      "<table width='100%' cellpadding='0' cellspacing='0'>" + lineaRows + "</table></td>" +
+      "</tr></table>" +
+
+      "<div style='height:10px'></div>" +
+      "<div style='" + CARD + ";padding:14px'>" +
+      "<div style='font-size:12px;font-weight:700;color:#1A1A1A;margin-bottom:10px'>Incidencias sin resolver al cierre</div>" +
+      "<table width='100%' cellpadding='0' cellspacing='0'>" +
+      "<tr style='background:#f5f5f5'>" +
+      "<th style='padding:5px 8px;text-align:left;font-size:11px;color:#888;font-weight:600'>Línea</th>" +
+      "<th style='padding:5px 8px;text-align:left;font-size:11px;color:#888;font-weight:600'>Avería</th>" +
+      "<th style='padding:5px 8px;text-align:left;font-size:11px;color:#888;font-weight:600'>Estado</th>" +
+      "<th style='padding:5px 8px;text-align:left;font-size:11px;color:#888;font-weight:600'>Técnico</th>" +
+      "<th style='padding:5px 8px;text-align:left;font-size:11px;color:#888;font-weight:600'>T. abierta</th>" +
+      "</tr>" +
+      sinResolverRows +
+      "</table></div>" +
+
+      "<div style='height:14px'></div>" +
+      "<div style='text-align:center;font-size:11px;color:#aaa'>Informe de incidencias de etiquetado Bizerba &middot; " + fechaFmt + "</div>" +
+      "</div></body></html>";
+
+    const asunto = "Informe Bizerba — " + fechaFmt + " — " + total + " incidencias (" + resueltas.length + " resueltas)";
+    const cuerpo = "Informe Bizerba " + fechaFmt + " — Total: " + total + " incidencias, " + resueltas.length + " resueltas, " + sinResolver.length + " sin resolver.";
+
+    const token = await obtenerTokenMS();
+    for (const email of emails) {
+      await enviarConGraph(token, email, asunto, html, cuerpo, null);
+    }
+
+    console.log("Informe Bizerba enviado a", emails.length, "destinatarios.");
+    return null;
+
+  } catch(e) {
+    console.error("Error en generarYEnviarInformeBizerba:", e);
+    return null;
+  }
+}
+
+exports.enviarInformeBizerba = onSchedule(
+  { schedule: "59 23 * * *", timeZone: "Europe/Madrid" },
+  () => generarYEnviarInformeBizerba()
+);

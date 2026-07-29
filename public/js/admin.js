@@ -80,7 +80,7 @@ let informeData = [];
 
 // Version de la app. SUBIR este numero al publicar cambios importantes:
 // las pestanas abiertas se recargaran solas para coger la version nueva.
-const APP_VERSION = 39;
+const APP_VERSION = 40;
 let _chatSel = 1;
 function vigilarVersion() {
   // Listener unificado de config/app: version + tiempoMaxLanz + diasLaborables
@@ -314,6 +314,11 @@ function iniciarListeners() {
   _unsubs.push(db.collection("config").doc("costes").onSnapshot(d => {
     _costesEmailsCache = (d.exists && Array.isArray(d.data().emails)) ? d.data().emails : [];
     renderCostesEmails();
+  }, () => {}));
+
+  _unsubs.push(db.collection("config").doc("bizerba").onSnapshot(d => {
+    _bizerbaEmailsCache = (d.exists && Array.isArray(d.data().emails)) ? d.data().emails : [];
+    renderBizerbaEmails();
   }, () => {}));
 
   _unsubs.push(db.collection("incidencias")
@@ -706,6 +711,44 @@ async function eliminarEmailCostes(idx) {
   const nuevos = _costesEmailsCache.filter((_, i) => i !== idx);
   try {
     await db.collection("config").doc("costes").set({ emails: nuevos }, { merge: true });
+  } catch(e) { alert("Error al guardar: " + e.message); }
+}
+
+// ─── EMAILS BIZERBA ──────────────────────────────────────────────────────────
+let _bizerbaEmailsCache = [];
+
+function renderBizerbaEmails() {
+  const div = document.getElementById("bizerba-emails-lista");
+  if (!div) return;
+  if (!_bizerbaEmailsCache.length) {
+    div.innerHTML = "<p style='font-size:13px;color:#9CA3AF'>Sin destinatarios configurados.</p>";
+    return;
+  }
+  div.innerHTML = _bizerbaEmailsCache.map((email, i) =>
+    "<div style='display:flex;align-items:center;gap:8px;margin-bottom:6px'>" +
+    "<span style='flex:1;font-size:14px'>" + esc(email) + "</span>" +
+    "<button onclick='eliminarEmailBizerba(" + i + ")' style='background:none;border:none;color:#9CA3AF;cursor:pointer;font-size:16px;padding:2px 6px'>&#x2715;</button>" +
+    "</div>"
+  ).join("");
+}
+
+async function agregarEmailBizerba() {
+  const inp = document.getElementById("bizerba-email-nuevo");
+  const email = (inp.value || "").trim().toLowerCase();
+  if (!email || !email.includes("@")) { alert("Introduce un email valido."); return; }
+  if (_bizerbaEmailsCache.includes(email)) { alert("Ese email ya esta en la lista."); return; }
+  const nuevos = [..._bizerbaEmailsCache, email];
+  try {
+    await db.collection("config").doc("bizerba").set({ emails: nuevos }, { merge: true });
+    inp.value = "";
+  } catch(e) { alert("Error al guardar: " + e.message); }
+}
+
+async function eliminarEmailBizerba(idx) {
+  if (!confirm("Eliminar este destinatario?")) return;
+  const nuevos = _bizerbaEmailsCache.filter((_, i) => i !== idx);
+  try {
+    await db.collection("config").doc("bizerba").set({ emails: nuevos }, { merge: true });
   } catch(e) { alert("Error al guardar: " + e.message); }
 }
 
