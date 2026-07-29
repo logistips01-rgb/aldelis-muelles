@@ -4,7 +4,6 @@
 
   if (!tecnico || tecnico < 1 || tecnico > 6) {
     document.getElementById("error-screen").style.display = "block";
-    document.getElementById("error-screen").innerHTML += "<p style='margin-top:12px;font-size:12px;color:#aaa'>Debug: t=" + params.get("t") + " / tecnico=" + tecnico + "</p>";
     document.getElementById("main").style.display = "none";
     return;
   }
@@ -15,8 +14,7 @@
 
   const db = firebase.firestore();
   let _timer = null;
-  let _activaId = null;
-  let _activaTs = null;
+  let _incidenciaActivaId = null;
 
   // Rango del día
   const hoy = new Date();
@@ -43,9 +41,13 @@
     return d.getHours().toString().padStart(2,"0") + ":" + d.getMinutes().toString().padStart(2,"0");
   }
 
-  function renderTimer() {
-    if (!_activaTs) return;
-    const mins = (Date.now() - _activaTs.toMillis()) / 60000;
+  function esc(s) {
+    return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  function renderTimer(activaTs) {
+    if (!activaTs) return;
+    const mins = (Date.now() - activaTs.toMillis()) / 60000;
     const el = document.getElementById("timer-val");
     if (el) el.textContent = formatDur(mins);
   }
@@ -53,10 +55,10 @@
   function render(incs) {
     const ahora = Ts.now();
 
-    // Stats del día para este técnico
-    const miasInc = incs.filter(i => i.tecnico === tecnico);
-    const resueltas = miasInc.filter(i => i.estado === "resuelta");
-    const tresp = miasInc.filter(i => i.aceptada && i.creada).map(i => difMin(i.creada, i.aceptada));
+    // Stats del día
+    const misIncs  = incs.filter(i => i.tecnico === tecnico);
+    const resueltas = misIncs.filter(i => i.estado === "resuelta");
+    const tresp = misIncs.filter(i => i.aceptada && i.creada).map(i => difMin(i.creada, i.aceptada));
     const treso = resueltas.filter(i => i.aceptada && i.resuelta).map(i => difMin(i.aceptada, i.resuelta));
     const mResp = tresp.length ? Math.round(tresp.reduce((a,b) => a+b, 0) / tresp.length) : null;
     const mReso = treso.length ? Math.round(treso.reduce((a,b) => a+b, 0) / treso.length) : null;
@@ -65,35 +67,35 @@
     document.getElementById("st-tresp").textContent = mResp != null ? formatDur(mResp) : "—";
     document.getElementById("st-treso").textContent = mReso != null ? formatDur(mReso) : "—";
 
-    // Incidencia activa (que este técnico tiene cogida)
+    // Incidencia activa
     const activa = incs.find(i => i.tecnico === tecnico && (i.estado === "aceptada" || i.estado === "repuesto"));
     const activaCont = document.getElementById("activa-cont");
 
     if (_timer) { clearInterval(_timer); _timer = null; }
 
     if (activa) {
-      _activaId = activa.id;
-      _activaTs = activa.aceptada;
+      _incidenciaActivaId = activa.id;
       const esRepuesto = activa.estado === "repuesto";
+      const activaTs   = activa.aceptada;
       activaCont.innerHTML =
         "<div class='activa-card" + (esRepuesto ? " repuesto" : "") + "'>" +
         "<div class='inc-linea'>Línea " + activa.linea + "</div>" +
         "<div class='inc-averia'>" + esc(activa.averia || "Sin detalle") + "</div>" +
         "<div class='timer' id='timer-val'>—</div>" +
         "<div class='timer-label'>" + (esRepuesto ? "Esperando repuesto desde " : "En curso desde ") + tsHora(activa.aceptada) + "</div>" +
+        (esRepuesto ? "<div class='inc-meta' style='margin-bottom:12px'>Repuesto: <strong>" + esc(activa.repuesto || "—") + "</strong></div>" : "") +
         "<div class='btn-row'>" +
-        (!esRepuesto ? "<button class='btn-repuesto' onclick=\"marcarRepuesto('" + activa.id + "')\">Falta repuesto</button>" : "") +
-        "<button class='btn-resuelta' onclick=\"marcarResuelta('" + activa.id + "')\">Marcar resuelta</button>" +
+        (!esRepuesto ? "<button class='btn-repuesto' onclick=\"abrirModalRepuesto('" + activa.id + "')\">Falta repuesto</button>" : "") +
+        "<button class='btn-resuelta' onclick=\"abrirModalResuelta('" + activa.id + "')\">Marcar resuelta</button>" +
         "</div></div>";
-      renderTimer();
-      _timer = setInterval(renderTimer, 30000);
+      renderTimer(activaTs);
+      _timer = setInterval(() => renderTimer(activaTs), 30000);
     } else {
-      _activaId = null;
-      _activaTs = null;
+      _incidenciaActivaId = null;
       activaCont.innerHTML = "<div class='empty'>No tienes ninguna incidencia activa.</div>";
     }
 
-    // Pendientes de coger (abiertas, sin técnico)
+    // Pendientes
     const pendientes = incs
       .filter(i => i.estado === "abierta")
       .sort((a, b) => (a.creada ? a.creada.toMillis() : 0) - (b.creada ? b.creada.toMillis() : 0));
@@ -116,11 +118,7 @@
     }
   }
 
-  function esc(s) {
-    return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  }
-
-  // Listener en tiempo real — solo incidencias de hoy
+  // Listener en tiempo real
   db.collection("incidencias")
     .where("creada", ">=", Ts.fromMillis(dayStart))
     .where("creada", "<",  Ts.fromMillis(dayEnd))
@@ -129,6 +127,8 @@
       snap.forEach(d => incs.push({ id: d.id, ...d.data() }));
       render(incs);
     }, e => console.error("bizerba:", e));
+
+  // ── Coger incidencia ────────────────────────────────────────────────────────
 
   window.cogerIncidencia = async function(id) {
     try {
@@ -140,18 +140,61 @@
     } catch(e) { alert("Error al coger la incidencia."); console.error(e); }
   };
 
-  window.marcarRepuesto = async function(id) {
+  // ── Modal repuesto ──────────────────────────────────────────────────────────
+
+  let _modalRepuestoId = null;
+
+  window.abrirModalRepuesto = function(id) {
+    _modalRepuestoId = id;
+    document.getElementById("modal-repuesto-txt").value = "";
+    document.getElementById("modal-repuesto-err").style.display = "none";
+    document.getElementById("modal-repuesto").classList.add("open");
+    setTimeout(() => document.getElementById("modal-repuesto-txt").focus(), 100);
+  };
+
+  window.confirmarRepuesto = async function() {
+    const txt = document.getElementById("modal-repuesto-txt").value.trim();
+    const err = document.getElementById("modal-repuesto-err");
+    if (!txt) { err.style.display = "block"; return; }
+    err.style.display = "none";
     try {
-      await db.collection("incidencias").doc(id).update({ estado: "repuesto" });
+      await db.collection("incidencias").doc(_modalRepuestoId).update({
+        estado:   "repuesto",
+        repuesto: txt
+      });
+      cerrarModal("modal-repuesto");
     } catch(e) { alert("Error al actualizar."); console.error(e); }
   };
 
-  window.marcarResuelta = async function(id) {
-    try {
-      await db.collection("incidencias").doc(id).update({
-        estado:   "resuelta",
-        resuelta: Ts.now()
-      });
-    } catch(e) { alert("Error al resolver la incidencia."); console.error(e); }
+  // ── Modal resuelta ──────────────────────────────────────────────────────────
+
+  let _modalResueltaId = null;
+
+  window.abrirModalResuelta = function(id) {
+    _modalResueltaId = id;
+    document.getElementById("modal-resuelta-txt").value = "";
+    document.getElementById("modal-resuelta-err").style.display = "none";
+    document.getElementById("modal-resuelta").classList.add("open");
+    setTimeout(() => document.getElementById("modal-resuelta-txt").focus(), 100);
   };
+
+  window.confirmarResuelta = async function() {
+    const txt = document.getElementById("modal-resuelta-txt").value.trim();
+    const err = document.getElementById("modal-resuelta-err");
+    if (!txt) { err.style.display = "block"; return; }
+    err.style.display = "none";
+    try {
+      await db.collection("incidencias").doc(_modalResueltaId).update({
+        estado:        "resuelta",
+        observaciones: txt,
+        resuelta:      Ts.now()
+      });
+      cerrarModal("modal-resuelta");
+    } catch(e) { alert("Error al resolver."); console.error(e); }
+  };
+
+  window.cerrarModal = function(id) {
+    document.getElementById(id).classList.remove("open");
+  };
+
 })();

@@ -167,6 +167,68 @@
     }
     #error-screen .logo { margin-bottom: 16px; }
     #error-screen p { color: #6B7280; font-size: 14px; }
+
+    /* Modal */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 100;
+      align-items: flex-end;
+      justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal-box {
+      background: #fff;
+      border-radius: 16px 16px 0 0;
+      padding: 24px 20px 32px;
+      width: 100%;
+      max-width: 480px;
+    }
+    .modal-title { font-size: 16px; font-weight: 600; color: #1A1A1A; margin-bottom: 6px; }
+    .modal-desc  { font-size: 13px; color: #6B7280; margin-bottom: 16px; line-height: 1.4; }
+    .modal-textarea {
+      width: 100%;
+      border: 1.5px solid #E0E0E0;
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 14px;
+      font-family: 'Inter', sans-serif;
+      color: #1A1A1A;
+      resize: none;
+      min-height: 80px;
+      outline: none;
+      margin-bottom: 14px;
+    }
+    .modal-textarea:focus { border-color: #D41F3A; }
+    .modal-err { font-size: 12px; color: #D41F3A; margin-bottom: 10px; display: none; }
+    .modal-btns { display: flex; gap: 8px; }
+    .modal-cancel {
+      flex: 1;
+      background: #fff;
+      border: 1.5px solid #E0E0E0;
+      border-radius: 8px;
+      padding: 11px;
+      font-size: 14px;
+      font-weight: 500;
+      font-family: 'Inter', sans-serif;
+      cursor: pointer;
+      color: #374151;
+    }
+    .modal-confirm {
+      flex: 2;
+      border: none;
+      border-radius: 8px;
+      padding: 11px;
+      font-size: 14px;
+      font-weight: 600;
+      font-family: 'Inter', sans-serif;
+      cursor: pointer;
+      color: #fff;
+    }
+    .modal-confirm.verde  { background: #1D9E75; }
+    .modal-confirm.naranja { background: #E08A00; }
   </style>
 </head>
 <body>
@@ -203,6 +265,34 @@
     <div class="section">
       <div class="section-title">Pendientes de coger</div>
       <div id="pendientes-cont"></div>
+    </div>
+  </div>
+
+  <!-- Modal repuesto -->
+  <div class="modal-overlay" id="modal-repuesto">
+    <div class="modal-box">
+      <div class="modal-title">Falta repuesto</div>
+      <div class="modal-desc">Indica qué repuesto necesitas para resolver la incidencia.</div>
+      <textarea class="modal-textarea" id="modal-repuesto-txt" placeholder="Ej: Correa transportadora línea 3..."></textarea>
+      <div class="modal-err" id="modal-repuesto-err">Indica el repuesto que falta.</div>
+      <div class="modal-btns">
+        <button class="modal-cancel" onclick="cerrarModal('modal-repuesto')">Cancelar</button>
+        <button class="modal-confirm naranja" onclick="confirmarRepuesto()">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal resuelta -->
+  <div class="modal-overlay" id="modal-resuelta">
+    <div class="modal-box">
+      <div class="modal-title">Marcar como resuelta</div>
+      <div class="modal-desc">Describe cómo se resolvió la incidencia.</div>
+      <textarea class="modal-textarea" id="modal-resuelta-txt" placeholder="Ej: Ajuste de sensor, sustitución de pieza..."></textarea>
+      <div class="modal-err" id="modal-resuelta-err">Describe cómo se resolvió.</div>
+      <div class="modal-btns">
+        <button class="modal-cancel" onclick="cerrarModal('modal-resuelta')">Cancelar</button>
+        <button class="modal-confirm verde" onclick="confirmarResuelta()">Marcar resuelta</button>
+      </div>
     </div>
   </div>
 
