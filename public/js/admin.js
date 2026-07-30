@@ -214,7 +214,7 @@ document.addEventListener("click", function(e) {
   if (bar) alert(bar.getAttribute("data-info"));
 });
 
-auth.onAuthStateChanged(user => {
+auth.onAuthStateChanged(async user => {
   if (user) {
     document.getElementById("login-screen").style.display     = "none";
     document.getElementById("dashboard-screen").style.display = "block";
@@ -229,13 +229,15 @@ auth.onAuthStateChanged(user => {
     document.getElementById("bz-desde").value         = hoy;
     document.getElementById("bz-hasta").value         = hoy;
     initDarkMode();
-    // El rol se calcula ANTES de suscribir listeners: cada usuario solo lee
-    // las colecciones de las secciones que puede ver (ahorro de lecturas).
-    _perms = calcularPermisos(user.email);
-    aplicarRol(user);
+    // Los permisos se cargan ANTES de suscribir listeners: cada usuario solo
+    // lee las colecciones de las secciones que puede ver (ahorro de lecturas).
+    const email     = (user.email || "").toLowerCase();
+    const secciones = await leerSeccionesUsuario(email);
+    _perms = calcularPermisos(email, secciones);
+    aplicarRol();
     iniciarListeners();
     vigilarVersion();
-    if (!_perms.soloBizerba) cargarConfigListeners();
+    if (_perms.lanzLog || _perms.config) cargarConfigListeners();
     _emisorActual = nombreEmisor(user.email);
     if (typeof initPush === "function") initPush("almacen");
     // Reloj local (mueve la linea de "ahora" y refresca el render, SIN leer de la BD)
@@ -370,71 +372,118 @@ function cerrarSesion() {
   auth.signOut();
 }
 
-// Usuarios que solo ven la vista de Lanzaderas (gerente de lanzaderas)
+// ─── PERMISOS ────────────────────────────────────────────────────────────────
+// Administradores: acceso total y unicos que pueden cambiar permisos. Esta
+// lista se replica en firestore.rules, asi que si cambia hay que cambiarla
+// en los dos sitios.
+const ADMINS = ["mlorente@aldelis.com"];
+
+// Secciones que se pueden conceder. El id coincide con el de la vista
+// (btn-vista-X / vista-X) salvo "chat", que es el chat con las lanzaderas.
+const SECCIONES = [
+  { id: "rejilla",    label: "Rejilla de muelles" },
+  { id: "lista",      label: "Lista de reservas" },
+  { id: "informes",   label: "Informes y exportacion" },
+  { id: "lanzaderas", label: "Lanzaderas" },
+  { id: "cargas",     label: "Cargas" },
+  { id: "merca",      label: "Descargas Merca" },
+  { id: "bizerba",    label: "Incidencias Bizerba" },
+  { id: "costes",     label: "Costes de lanzaderas" },
+  { id: "chat",       label: "Chat con lanzaderas" },
+  { id: "config",     label: "Configuracion" }
+];
+
+// Listas antiguas: se usan como valor por defecto mientras el usuario no
+// tenga documento en /permisos.
 const SOLO_LANZADERAS = ["transfriorza@transfriorza.es"];
 const SOLO_BIZERBA    = [];
 const BIZERBA_USERS   = ["mlorente@aldelis.com", "jpina@aldelis.com"];
 const CONFIG_USERS    = ["mlorente@aldelis.com"];
 const COSTES_USERS    = ["mlorente@aldelis.com"];
 
+function seccionesPorDefecto(email) {
+  if (ADMINS.includes(email))           return SECCIONES.map(s => s.id);
+  if (SOLO_LANZADERAS.includes(email))  return ["lanzaderas", "chat"];
+  if (SOLO_BIZERBA.includes(email))     return ["bizerba"];
+  const base = ["rejilla", "lista", "informes", "lanzaderas", "cargas", "merca", "chat"];
+  if (BIZERBA_USERS.includes(email)) base.push("bizerba");
+  if (COSTES_USERS.includes(email))  base.push("costes");
+  if (CONFIG_USERS.includes(email))  base.push("config");
+  return base;
+}
+
+// Lee las secciones del usuario: 1 lectura de /permisos/{email}. Si no existe
+// el documento se aplican los valores por defecto de las listas antiguas.
+async function leerSeccionesUsuario(email) {
+  if (ADMINS.includes(email)) return SECCIONES.map(s => s.id);
+  try {
+    const d = await db.collection("permisos").doc(email).get();
+    if (d.exists && Array.isArray(d.data().secciones)) return d.data().secciones;
+  } catch (e) {
+    console.warn("No se pudieron leer permisos, se aplican los por defecto:", e.message);
+  }
+  return seccionesPorDefecto(email);
+}
+
 // Permisos del usuario actual. Determina que listeners se suscriben, de forma
 // que nadie lea colecciones de secciones que no puede ver.
 let _perms = {};
-function calcularPermisos(emailRaw) {
-  const email      = (emailRaw || "").toLowerCase();
-  const soloLanz   = SOLO_LANZADERAS.includes(email);
-  const soloBiz    = SOLO_BIZERBA.includes(email);
-  const verBizerba = BIZERBA_USERS.includes(email) || soloBiz;
+function calcularPermisos(emailRaw, secciones) {
+  const email = (emailRaw || "").toLowerCase();
+  const s = id => secciones.includes(id);
   return {
-    email:          email,
-    soloLanzaderas: soloLanz,
-    soloBizerba:    soloBiz,
-    // Secciones
-    bizerba: verBizerba,
-    costes:  COSTES_USERS.includes(email) && !soloLanz && !soloBiz,
-    config:  CONFIG_USERS.includes(email) && !soloLanz && !soloBiz,
-    // Colecciones que necesita cada rol
-    reservas:  !soloLanz && !soloBiz,
-    lanzLog:   !soloBiz,
-    cargas:    !soloLanz && !soloBiz,
-    merca:     !soloLanz && !soloBiz,
-    mensajes:  !soloBiz,
-    incidencias: verBizerba
+    email:     email,
+    esAdmin:   ADMINS.includes(email),
+    secciones: secciones,
+    // Vistas visibles
+    ver: {
+      rejilla:    s("rejilla"),
+      lista:      s("lista"),
+      informes:   s("informes"),
+      lanzaderas: s("lanzaderas"),
+      cargas:     s("cargas"),
+      merca:      s("merca"),
+      bizerba:    s("bizerba"),
+      costes:     s("costes"),
+      config:     s("config")
+    },
+    // Colecciones a las que hay que suscribirse
+    reservas:    s("rejilla") || s("lista") || s("informes"),
+    lanzLog:     s("lanzaderas") || s("costes") || s("cargas") || s("merca"),
+    cargas:      s("cargas"),
+    merca:       s("merca"),
+    mensajes:    s("chat"),
+    incidencias: s("bizerba"),
+    costes:      s("costes"),
+    bizerba:     s("bizerba"),
+    config:      s("config")
   };
 }
-function aplicarRol(user) {
-  const email = (user.email || "").toLowerCase();
-  const bizBtn = document.getElementById("btn-vista-bizerba");
-  if (bizBtn) bizBtn.style.display = BIZERBA_USERS.includes(email) ? "" : "none";
-  const cfgBtn = document.getElementById("btn-vista-config");
-  if (cfgBtn) cfgBtn.style.display = CONFIG_USERS.includes(email) ? "" : "none";
-  const costBtn = document.getElementById("btn-vista-costes");
-  if (costBtn) costBtn.style.display = COSTES_USERS.includes(email) ? "" : "none";
-  const soloLanz = SOLO_LANZADERAS.includes(email);
-  if (soloLanz) {
-    ["rejilla", "lista", "informes", "cargas", "merca"].forEach(v => {
-      const b = document.getElementById("btn-vista-" + v);
-      if (b) b.style.display = "none";
-    });
-    const mr = document.querySelector(".metrics-row");
-    if (mr) mr.style.display = "none";
-    switchVista("lanzaderas");
-    return;
-  }
-  const soloBiz = SOLO_BIZERBA.includes(email);
-  if (soloBiz) {
-    ["rejilla", "lista", "informes", "lanzaderas", "cargas", "merca", "costes", "config"].forEach(v => {
-      const b = document.getElementById("btn-vista-" + v);
-      if (b) b.style.display = "none";
-    });
-    const mr = document.querySelector(".metrics-row");
-    if (mr) mr.style.display = "none";
-    switchVista("bizerba");
-    return;
-  }
+
+function aplicarRol() {
+  // Mostrar solo las pestanas permitidas
+  Object.keys(_perms.ver).forEach(v => {
+    const b = document.getElementById("btn-vista-" + v);
+    if (b) b.style.display = _perms.ver[v] ? "" : "none";
+  });
+
+  // Las metricas de arriba son de reservas
+  const mr = document.querySelector(".metrics-row");
+  if (mr) mr.style.display = _perms.ver.rejilla ? "" : "none";
+
+  // El chat solo si tiene permiso
+  const fab = document.getElementById("chat-fab");
+  if (fab && !_perms.mensajes) fab.style.display = "none";
+
+  // Abrir la primera vista disponible
+  const orden = ["rejilla", "lista", "lanzaderas", "bizerba", "cargas", "merca", "informes", "costes", "config"];
+  const primera = orden.find(v => _perms.ver[v]);
+  if (primera) switchVista(primera);
 }
 
 function switchVista(vista) {
+  // No permitir entrar en una vista sin permiso
+  if (_perms.ver && _perms.ver[vista] === false) return;
   ["rejilla", "lista", "informes", "lanzaderas", "cargas", "merca", "bizerba", "config", "costes"].forEach(v => {
     document.getElementById("vista-" + v).style.display = vista === v ? "block" : "none";
     document.getElementById("btn-vista-" + v).classList.toggle("active", vista === v);
@@ -1125,7 +1174,7 @@ async function enviarInformeDiarioCostes(esAuto) {
 }
 
 function autoEnviarCostesAlFinalDelDia() {
-  if (!COSTES_USERS.includes(((auth.currentUser || {}).email || "").toLowerCase())) return;
+  if (!_perms.costes) return;
   if (!esHoy) return;
   const ahora = new Date();
   if (ahora.getHours() < 23 || ahora.getMinutes() < 59) return;
@@ -2365,7 +2414,7 @@ async function accionReserva(accion) {
   } catch(e) { console.error(e); alert("Error al actualizar. Intentalo de nuevo."); }
 }
 
-// ─── PANEL DE CONFIGURACION (solo CONFIG_USERS) ───────────────────────────────
+// ─── PANEL DE CONFIGURACION (solo con permiso "config") ──────────────────────
 
 function cargarConfigListeners() {
   db.collection("config").doc("alertas").onSnapshot(d => {
@@ -2398,6 +2447,129 @@ function cargarConfig() {
   if (elT) elT.value = _tiempoMaxLanz;
   const elD = document.getElementById("cfg-dias-lab");
   if (elD) elD.value = _diasLaborables;
+  cargarPermisosUsuarios();
+}
+
+// ─── GESTION DE PERMISOS ─────────────────────────────────────────────────────
+// Los permisos viven en la coleccion /permisos, un documento por usuario con
+// el email como id. Solo se leen al abrir la pestana Config (N lecturas, con
+// N = numero de usuarios), no en cada carga del panel.
+
+let _permisosUsuarios = [];
+
+function msgPermisos(texto, color) {
+  const p = document.getElementById("cfg-permisos-msg");
+  if (!p) return;
+  p.textContent = texto;
+  p.style.color = color;
+  p.style.display = texto ? "block" : "none";
+  if (texto) setTimeout(() => { p.style.display = "none"; }, 4000);
+}
+
+async function cargarPermisosUsuarios() {
+  const div = document.getElementById("cfg-permisos-lista");
+  if (!div) return;
+  if (!_perms.esAdmin) {
+    div.innerHTML = "<p style='font-size:13px;color:#9CA3AF'>Solo un administrador puede gestionar permisos.</p>";
+    return;
+  }
+  div.innerHTML = "<p style='font-size:13px;color:#9CA3AF'>Cargando usuarios...</p>";
+  try {
+    const snap = await db.collection("permisos").get();
+    _permisosUsuarios = [];
+    snap.forEach(d => _permisosUsuarios.push({
+      email: d.id,
+      secciones: Array.isArray(d.data().secciones) ? d.data().secciones : []
+    }));
+    _permisosUsuarios.sort((a, b) => a.email.localeCompare(b.email));
+    renderPermisosUsuarios();
+  } catch (e) {
+    div.innerHTML = "<p style='font-size:13px;color:#D41F3A'>No se pudieron cargar los permisos: " + esc(e.message) + "</p>";
+  }
+}
+
+function renderPermisosUsuarios() {
+  const div = document.getElementById("cfg-permisos-lista");
+  if (!div) return;
+
+  const adminsHtml = ADMINS.map(a =>
+    "<div style='display:flex;align-items:center;gap:8px;padding:10px 12px;background:rgba(29,158,117,.08);border-radius:8px;margin-bottom:8px'>" +
+    "<span style='flex:1;font-size:14px;font-weight:600'>" + esc(a) + "</span>" +
+    "<span style='font-size:12px;color:#1D9E75;font-weight:600'>Administrador &middot; acceso total</span>" +
+    "</div>"
+  ).join("");
+
+  if (!_permisosUsuarios.length) {
+    div.innerHTML = adminsHtml +
+      "<p style='font-size:13px;color:#9CA3AF;margin-top:8px'>No hay otros usuarios configurados. " +
+      "Los que no aparezcan aqui usan los permisos por defecto del codigo.</p>";
+    return;
+  }
+
+  div.innerHTML = adminsHtml + _permisosUsuarios.map((u, idx) => {
+    const checks = SECCIONES.map(s =>
+      "<label style='display:inline-flex;align-items:center;gap:5px;font-size:13px;margin:0 12px 6px 0;cursor:pointer'>" +
+      "<input type='checkbox'" + (u.secciones.includes(s.id) ? " checked" : "") +
+      " onchange=\"togglePermiso(" + idx + ",'" + s.id + "',this.checked)\">" +
+      esc(s.label) + "</label>"
+    ).join("");
+    return "<div style='border:1px solid #E5E7EB;border-radius:8px;padding:12px;margin-bottom:10px'>" +
+      "<div style='display:flex;align-items:center;gap:8px;margin-bottom:10px'>" +
+      "<span style='flex:1;font-size:14px;font-weight:600'>" + esc(u.email) + "</span>" +
+      "<span style='font-size:12px;color:#6B7280'>" + u.secciones.length + " de " + SECCIONES.length + " secciones</span>" +
+      "<button class='btn-reject' style='padding:4px 10px;font-size:12px;cursor:pointer' onclick='eliminarUsuarioPermisos(" + idx + ")'>Eliminar</button>" +
+      "</div><div>" + checks + "</div></div>";
+  }).join("");
+}
+
+async function togglePermiso(idx, seccion, activo) {
+  const u = _permisosUsuarios[idx];
+  if (!u) return;
+  const nuevas = activo
+    ? [...new Set([...u.secciones, seccion])]
+    : u.secciones.filter(s => s !== seccion);
+  try {
+    await db.collection("permisos").doc(u.email).set({ secciones: nuevas }, { merge: true });
+    u.secciones = nuevas;
+    renderPermisosUsuarios();
+    msgPermisos("Permisos de " + u.email + " actualizados.", "#1D9E75");
+  } catch (e) {
+    msgPermisos("Error al guardar: " + e.message, "#D41F3A");
+    renderPermisosUsuarios();
+  }
+}
+
+async function agregarUsuarioPermisos() {
+  const inp   = document.getElementById("cfg-permiso-email");
+  const email = (inp.value || "").trim().toLowerCase();
+  if (!email || !email.includes("@")) { msgPermisos("Introduce un email valido.", "#D41F3A"); return; }
+  if (ADMINS.includes(email)) { msgPermisos("Ese usuario ya es administrador.", "#D41F3A"); return; }
+  if (_permisosUsuarios.some(u => u.email === email)) { msgPermisos("Ese usuario ya esta en la lista.", "#D41F3A"); return; }
+  try {
+    // Se crea sin ninguna seccion: hay que marcar lo que puede ver.
+    await db.collection("permisos").doc(email).set({ secciones: [] });
+    _permisosUsuarios.push({ email: email, secciones: [] });
+    _permisosUsuarios.sort((a, b) => a.email.localeCompare(b.email));
+    inp.value = "";
+    renderPermisosUsuarios();
+    msgPermisos("Usuario agregado. Marca las secciones que puede ver.", "#1D9E75");
+  } catch (e) {
+    msgPermisos("Error al agregar: " + e.message, "#D41F3A");
+  }
+}
+
+async function eliminarUsuarioPermisos(idx) {
+  const u = _permisosUsuarios[idx];
+  if (!u) return;
+  if (!confirm("Eliminar los permisos de " + u.email + "?\n\nPasara a usar los permisos por defecto del codigo, no se le borra la cuenta.")) return;
+  try {
+    await db.collection("permisos").doc(u.email).delete();
+    _permisosUsuarios.splice(idx, 1);
+    renderPermisosUsuarios();
+    msgPermisos("Permisos eliminados.", "#1D9E75");
+  } catch (e) {
+    msgPermisos("Error al eliminar: " + e.message, "#D41F3A");
+  }
 }
 
 function renderCfgAlertas() {

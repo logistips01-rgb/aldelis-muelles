@@ -2,10 +2,61 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Version de la app (interruptor de auto-actualizacion).
+    // ── Permisos ──────────────────────────────────────────────────────────
+    // Administradores con acceso total. Esta lista se replica en admin.js
+    // (constante ADMINS); si cambia hay que cambiarla en los dos sitios.
+    function esAdmin() {
+      return request.auth != null
+        && request.auth.token.email in ['mlorente@aldelis.com'];
+    }
+
+    // Secciones concedidas al usuario que hace la peticion. Cuesta 1 lectura
+    // por peticion (se cachea dentro de la misma), no 1 por documento.
+    function miDocPermisos() {
+      return /databases/$(database)/documents/permisos/$(request.auth.token.email);
+    }
+
+    // Refuerzo progresivo: mientras un usuario no tenga documento en /permisos
+    // conserva el acceso que tenia antes (estar autenticado). En cuanto se le
+    // crea el documento desde el panel, pasa a aplicarse de forma estricta.
+    // Asi se puede desplegar sin dejar a nadie fuera de golpe.
+    function sinDocPermisos() {
+      return request.auth != null && !exists(miDocPermisos());
+    }
+    function permitido(seccion) {
+      return request.auth != null && (
+        esAdmin() || sinDocPermisos() || (
+          get(miDocPermisos()).data.secciones is list
+          && seccion in get(miDocPermisos()).data.secciones
+        )
+      );
+    }
+
+    // Un usuario puede leer su propio documento de permisos (lo necesita el
+    // panel al arrancar). Escribir y listar, solo los administradores.
+    match /permisos/{email} {
+      allow get:    if esAdmin() || (request.auth != null && request.auth.token.email == email);
+      allow list:   if esAdmin();
+      allow write:  if esAdmin();
+    }
+
+    // Ajustes. Lectura abierta porque las paginas publicas (lanzadera,
+    // bizerba, reserva) necesitan config/app y config/destinos sin estar
+    // autenticadas. La escritura se limita a quien tiene la seccion
+    // correspondiente: antes bastaba estar autenticado.
+    // Nota: en Firestore los match que solapan se combinan con OR, asi que
+    // un usuario con "config" puede escribir tambien costes y bizerba.
+    match /config/bizerba {
+      allow read:  if true;
+      allow write: if permitido('bizerba');
+    }
+    match /config/costes {
+      allow read:  if true;
+      allow write: if permitido('costes');
+    }
     match /config/{id} {
-      allow read: if true;
-      allow write: if request.auth != null;
+      allow read:  if true;
+      allow write: if permitido('config');
     }
 
     // Chat almacen <-> lanzaderas
@@ -41,8 +92,10 @@ service cloud.firestore {
     }
 
     // Historico de movimientos (para informes). Solo se anade, no se edita.
+    // Lo necesitan las vistas de lanzaderas, costes, cargas y merca.
     match /lanzaderas_log/{id} {
-      allow read: if request.auth != null;
+      allow read: if permitido('lanzaderas') || permitido('costes')
+                  || permitido('cargas') || permitido('merca');
       allow create: if validLanzadera();
     }
 
@@ -62,9 +115,9 @@ service cloud.firestore {
     // Cargas (registro al momento en muelles de carga M1-M5).
     // Lectura solo almacen (incluye DNI). Crear: transportista o almacen.
     match /cargas/{id} {
-      allow read: if request.auth != null;
+      allow read: if permitido('cargas');
       allow create: if validCarga();
-      allow update, delete: if request.auth != null;
+      allow update, delete: if permitido('cargas');
     }
 
     function validCarga() {
@@ -85,9 +138,9 @@ service cloud.firestore {
 
     // Descargas de proveedores en Merca (otro almacen). Registro al momento.
     match /descargas_merca/{id} {
-      allow read: if request.auth != null;
+      allow read: if permitido('merca');
       allow create: if validMerca();
-      allow update, delete: if request.auth != null;
+      allow update, delete: if permitido('merca');
     }
 
     function validMerca() {

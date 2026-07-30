@@ -264,6 +264,21 @@
           <button class="btn-informe" onclick="agregarDestino()">Agregar</button>
         </div>
       </div>
+
+      <div class="informe-card" style="margin-top:16px">
+        <div class="informe-card-title">Permisos de usuario</div>
+        <p style="font-size:13px;color:#6B7280;margin-bottom:12px">
+          Marca que secciones puede ver cada usuario. Los cambios se aplican la proxima vez que el usuario entre.
+          Cada usuario solo lee de la base de datos las secciones que tiene marcadas.
+        </p>
+        <div id="cfg-permisos-lista"></div>
+        <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;align-items:center">
+          <input type="email" id="cfg-permiso-email" placeholder="usuario@aldelis.com"
+            style="flex:1;min-width:220px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
+          <button class="btn-informe" onclick="agregarUsuarioPermisos()">Agregar usuario</button>
+        </div>
+        <p id="cfg-permisos-msg" style="font-size:13px;margin-top:10px;display:none"></p>
+      </div>
     </div>
 
     <div id="vista-bizerba" class="reservas-wrap" style="display:none">
