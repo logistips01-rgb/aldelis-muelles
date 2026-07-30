@@ -275,7 +275,11 @@ function ensureChatLanz() {
   if (_chatUnsub) { _chatUnsub(); _chatUnsub = null; }
   _chatNum = sel.numero; _chatMsgs = [];
   _beepInit = false; _beepMaxTs = 0;
+  // Solo mensajes del dia y maximo 100: evita releer todo el historico en cada reconexion
+  const _hoy0 = new Date(); _hoy0.setHours(0, 0, 0, 0);
   _chatUnsub = db.collection("mensajes").where("lanzadera", "==", sel.numero)
+    .where("ts", ">=", firebase.firestore.Timestamp.fromDate(_hoy0))
+    .orderBy("ts", "desc").limit(100)
     .onSnapshot(s => {
       const a = []; s.forEach(d => a.push(d.data()));
       a.sort((x, y) => (x.ts ? x.ts.toMillis() : 0) - (y.ts ? y.ts.toMillis() : 0));
