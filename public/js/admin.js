@@ -229,10 +229,13 @@ auth.onAuthStateChanged(user => {
     document.getElementById("bz-desde").value         = hoy;
     document.getElementById("bz-hasta").value         = hoy;
     initDarkMode();
+    // El rol se calcula ANTES de suscribir listeners: cada usuario solo lee
+    // las colecciones de las secciones que puede ver (ahorro de lecturas).
+    _perms = calcularPermisos(user.email);
+    aplicarRol(user);
     iniciarListeners();
     vigilarVersion();
-    cargarConfigListeners();
-    aplicarRol(user);
+    if (!_perms.soloBizerba) cargarConfigListeners();
     _emisorActual = nombreEmisor(user.email);
     if (typeof initPush === "function") initPush("almacen");
     // Reloj local (mueve la linea de "ahora" y refresca el render, SIN leer de la BD)
@@ -270,63 +273,87 @@ function iniciarListeners() {
   const dayEnd = dayStart + 86400000;
   const Ts = firebase.firestore.Timestamp;
 
-  _unsubs.push(db.collection("reservas").where("fecha", "==", fecha)
-    .onSnapshot(s => {
-      window._reservas = []; s.forEach(d => window._reservas.push({ id: d.id, ...d.data() }));
-      cargarReservas();
-    }, e => console.error("reservas:", e)));
+  // Arrays base: si un rol no se suscribe a una coleccion, su vista queda vacia
+  // en lugar de romperse.
+  window._reservas    = window._reservas    || [];
+  window._logs        = window._logs        || [];
+  window._cargas      = window._cargas      || [];
+  window._merca       = window._merca       || [];
+  window._incidencias = window._incidencias || [];
 
-  _unsubs.push(db.collection("lanzaderas_log")
-    .where("desde", ">=", Ts.fromMillis(dayStart)).where("desde", "<", Ts.fromMillis(dayEnd))
-    .onSnapshot(s => {
-      window._logs = []; s.forEach(d => window._logs.push(d.data()));
-      cargarLanzaderas(); cargarReservas(); cargarCargas(); cargarMerca();
-    }, e => console.error("lanzaderas_log:", e)));
+  if (_perms.reservas) {
+    _unsubs.push(db.collection("reservas").where("fecha", "==", fecha)
+      .onSnapshot(s => {
+        window._reservas = []; s.forEach(d => window._reservas.push({ id: d.id, ...d.data() }));
+        cargarReservas();
+      }, e => console.error("reservas:", e)));
+  }
 
-  _unsubs.push(db.collection("cargas")
-    .where("inicio", ">=", Ts.fromMillis(dayStart)).where("inicio", "<", Ts.fromMillis(dayEnd))
-    .onSnapshot(s => {
-      window._cargas = []; s.forEach(d => window._cargas.push({ id: d.id, ...d.data() }));
-      cargarCargas();
-    }, e => console.error("cargas:", e)));
+  if (_perms.lanzLog) {
+    _unsubs.push(db.collection("lanzaderas_log")
+      .where("desde", ">=", Ts.fromMillis(dayStart)).where("desde", "<", Ts.fromMillis(dayEnd))
+      .onSnapshot(s => {
+        window._logs = []; s.forEach(d => window._logs.push(d.data()));
+        cargarLanzaderas(); cargarReservas(); cargarCargas(); cargarMerca();
+      }, e => console.error("lanzaderas_log:", e)));
+  }
 
-  _unsubs.push(db.collection("descargas_merca")
-    .where("inicio", ">=", Ts.fromMillis(dayStart)).where("inicio", "<", Ts.fromMillis(dayEnd))
-    .onSnapshot(s => {
-      window._merca = []; s.forEach(d => window._merca.push({ id: d.id, ...d.data() }));
-      cargarMerca();
-    }, e => console.error("merca:", e)));
+  if (_perms.cargas) {
+    _unsubs.push(db.collection("cargas")
+      .where("inicio", ">=", Ts.fromMillis(dayStart)).where("inicio", "<", Ts.fromMillis(dayEnd))
+      .onSnapshot(s => {
+        window._cargas = []; s.forEach(d => window._cargas.push({ id: d.id, ...d.data() }));
+        cargarCargas();
+      }, e => console.error("cargas:", e)));
+  }
 
-  _unsubs.push(db.collection("mensajes")
-    .where("ts", ">=", Ts.fromMillis(dayStart))
-    .orderBy("ts", "desc").limit(100)
-    .onSnapshot(s => {
-      const arr = []; s.forEach(d => arr.push(d.data())); arr.reverse();
-      window._mensajes = arr; renderChat();
-      // Aviso sonoro al recibir un mensaje nuevo de una lanzadera
-      let maxLanz = 0;
-      arr.forEach(m => { if (m.de === "lanzadera" && m.ts) maxLanz = Math.max(maxLanz, m.ts.toMillis()); });
-      if (_msgBeepInit && maxLanz > _msgBeepMaxTs) beep();
-      _msgBeepMaxTs = Math.max(_msgBeepMaxTs, maxLanz);
-      _msgBeepInit = true;
-    }, e => console.error("mensajes:", e)));
+  if (_perms.merca) {
+    _unsubs.push(db.collection("descargas_merca")
+      .where("inicio", ">=", Ts.fromMillis(dayStart)).where("inicio", "<", Ts.fromMillis(dayEnd))
+      .onSnapshot(s => {
+        window._merca = []; s.forEach(d => window._merca.push({ id: d.id, ...d.data() }));
+        cargarMerca();
+      }, e => console.error("merca:", e)));
+  }
 
-  _unsubs.push(db.collection("config").doc("costes").onSnapshot(d => {
-    _costesEmailsCache = (d.exists && Array.isArray(d.data().emails)) ? d.data().emails : [];
-    renderCostesEmails();
-  }, () => {}));
+  if (_perms.mensajes) {
+    _unsubs.push(db.collection("mensajes")
+      .where("ts", ">=", Ts.fromMillis(dayStart))
+      .orderBy("ts", "desc").limit(100)
+      .onSnapshot(s => {
+        const arr = []; s.forEach(d => arr.push(d.data())); arr.reverse();
+        window._mensajes = arr; renderChat();
+        // Aviso sonoro al recibir un mensaje nuevo de una lanzadera
+        let maxLanz = 0;
+        arr.forEach(m => { if (m.de === "lanzadera" && m.ts) maxLanz = Math.max(maxLanz, m.ts.toMillis()); });
+        if (_msgBeepInit && maxLanz > _msgBeepMaxTs) beep();
+        _msgBeepMaxTs = Math.max(_msgBeepMaxTs, maxLanz);
+        _msgBeepInit = true;
+      }, e => console.error("mensajes:", e)));
+  }
 
-  _unsubs.push(db.collection("config").doc("bizerba").onSnapshot(d => {
-    _bizerbaEmailsCache = (d.exists && Array.isArray(d.data().emails)) ? d.data().emails : [];
-    renderBizerbaEmails();
-  }, () => {}));
+  if (_perms.costes) {
+    _unsubs.push(db.collection("config").doc("costes").onSnapshot(d => {
+      _costesEmailsCache = (d.exists && Array.isArray(d.data().emails)) ? d.data().emails : [];
+      renderCostesEmails();
+    }, () => {}));
+  }
 
-  _unsubs.push(db.collection("incidencias")
-    .where("creada", ">=", Ts.fromMillis(dayStart)).where("creada", "<", Ts.fromMillis(dayEnd))
-    .onSnapshot(s => {
-      window._incidencias = []; s.forEach(d => window._incidencias.push({ id: d.id, ...d.data() }));
-      cargarBizerba();
-    }, e => console.error("incidencias:", e)));
+  if (_perms.bizerba) {
+    _unsubs.push(db.collection("config").doc("bizerba").onSnapshot(d => {
+      _bizerbaEmailsCache = (d.exists && Array.isArray(d.data().emails)) ? d.data().emails : [];
+      renderBizerbaEmails();
+    }, () => {}));
+  }
+
+  if (_perms.incidencias) {
+    _unsubs.push(db.collection("incidencias")
+      .where("creada", ">=", Ts.fromMillis(dayStart)).where("creada", "<", Ts.fromMillis(dayEnd))
+      .onSnapshot(s => {
+        window._incidencias = []; s.forEach(d => window._incidencias.push({ id: d.id, ...d.data() }));
+        cargarBizerba();
+      }, e => console.error("incidencias:", e)));
+  }
 }
 
 function iniciarSesion() {
@@ -349,6 +376,32 @@ const SOLO_BIZERBA    = [];
 const BIZERBA_USERS   = ["mlorente@aldelis.com", "jpina@aldelis.com"];
 const CONFIG_USERS    = ["mlorente@aldelis.com"];
 const COSTES_USERS    = ["mlorente@aldelis.com"];
+
+// Permisos del usuario actual. Determina que listeners se suscriben, de forma
+// que nadie lea colecciones de secciones que no puede ver.
+let _perms = {};
+function calcularPermisos(emailRaw) {
+  const email      = (emailRaw || "").toLowerCase();
+  const soloLanz   = SOLO_LANZADERAS.includes(email);
+  const soloBiz    = SOLO_BIZERBA.includes(email);
+  const verBizerba = BIZERBA_USERS.includes(email) || soloBiz;
+  return {
+    email:          email,
+    soloLanzaderas: soloLanz,
+    soloBizerba:    soloBiz,
+    // Secciones
+    bizerba: verBizerba,
+    costes:  COSTES_USERS.includes(email) && !soloLanz && !soloBiz,
+    config:  CONFIG_USERS.includes(email) && !soloLanz && !soloBiz,
+    // Colecciones que necesita cada rol
+    reservas:  !soloLanz && !soloBiz,
+    lanzLog:   !soloBiz,
+    cargas:    !soloLanz && !soloBiz,
+    merca:     !soloLanz && !soloBiz,
+    mensajes:  !soloBiz,
+    incidencias: verBizerba
+  };
+}
 function aplicarRol(user) {
   const email = (user.email || "").toLowerCase();
   const bizBtn = document.getElementById("btn-vista-bizerba");
