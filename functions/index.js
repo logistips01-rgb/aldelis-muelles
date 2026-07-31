@@ -621,25 +621,55 @@ exports.enviarInformeBizerba = onSchedule(
 
 exports.notifChat = onDocumentCreated("mensajes/{msgId}", async (event) => {
   const msg = event.data ? event.data.data() : null;
-  if (!msg) return;
+  if (!msg || !msg.texto) return;
 
-  const tokensSnap = await db.collection("push_tokens").get();
-  if (tokensSnap.empty) return;
+  // Se avisa solo al lado que NO ha escrito, y en el caso del conductor solo al
+  // de su lanzadera. Antes se leia la coleccion entera y se enviaba a todos:
+  // el conductor de la 3 recibia los mensajes de la 1 y el almacen los suyos.
+  let query;
+  let titulo;
+  if (msg.de === "almacen") {
+    if (!msg.lanzadera) return;
+    query  = db.collection("push_tokens")
+               .where("rol", "==", "lanzadera")
+               .where("lanzadera", "==", msg.lanzadera);
+    titulo = "Almacen" + (msg.emisor ? " · " + msg.emisor : "");
+  } else {
+    query  = db.collection("push_tokens").where("rol", "==", "almacen");
+    titulo = "Lanzadera " + (msg.lanzadera || "?");
+  }
+
+  const snap = await query.get();
+  if (snap.empty) return;
 
   const tokens = [];
-  tokensSnap.forEach(d => tokens.push(d.id));
+  snap.forEach(d => { if (d.data().token) tokens.push(d.data().token); });
+  if (!tokens.length) return;
 
-  const sender = msg.autor || "Lanzadera";
-  const text   = msg.texto || "";
+  const cuerpo = msg.texto.length > 120 ? msg.texto.slice(0, 117) + "…" : msg.texto;
+  const destino = msg.de === "almacen" ? "/lanzadera.html" : "/admin.html";
 
-  const chunks = [];
-  for (let i = 0; i < tokens.length; i += 500) chunks.push(tokens.slice(i, i + 500));
-
-  for (const chunk of chunks) {
-    await admin.messaging().sendEachForMulticast({
-      tokens: chunk,
-      notification: { title: sender, body: text.length > 120 ? text.slice(0, 117) + "…" : text },
-      webpush: { fcmOptions: { link: "/" } }
+  const caducados = [];
+  for (let i = 0; i < tokens.length; i += 500) {
+    const lote = tokens.slice(i, i + 500);
+    const res = await admin.messaging().sendEachForMulticast({
+      tokens: lote,
+      notification: { title: titulo, body: cuerpo },
+      webpush: { fcmOptions: { link: destino } }
+    });
+    res.responses.forEach((r, idx) => {
+      const code = r.error && r.error.code;
+      if (code === "messaging/registration-token-not-registered" ||
+          code === "messaging/invalid-registration-token") {
+        caducados.push(lote[idx]);
+      }
     });
   }
+
+  // Los tokens que ya no valen se borran: si no, la coleccion crece sin limite
+  // y cada mensaje del chat cuesta mas lecturas.
+  for (const t of caducados) {
+    try { await db.collection("push_tokens").doc(t).delete(); } catch (e) {}
+  }
+  if (caducados.length) console.log("Tokens caducados eliminados:", caducados.length);
 });
