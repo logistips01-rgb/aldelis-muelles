@@ -23,14 +23,20 @@ function initDarkMode() {
 }
 
 // Envio de email via Firebase Function (body = texto plano, html = HTML opcional)
-async function enviarEmailMS(to, subject, body, html, imageBase64) {
-  if (!to) return;
+// Llama a la Cloud Function de correo. El navegador solo indica QUE ha pasado;
+// el destinatario y el texto los resuelve la funcion en el servidor, para que
+// desde aqui no se pueda enviar correo arbitrario en nombre de Aldelis.
+async function llamarEnviarEmail(payload) {
   try {
     const enviarEmail = firebase.functions().httpsCallable("enviarEmail", { timeout: 60000 });
-    await enviarEmail({ to, subject, body, html: html || null, imageBase64: imageBase64 || null });
-    console.log("Email OK a " + to);
+    const res = await enviarEmail(payload);
+    const d = res && res.data;
+    if (d && d.ok) { console.log("Email OK:", payload.tipo); return true; }
+    console.warn("Email rechazado (" + payload.tipo + "):", d && d.error);
+    return false;
   } catch(e) {
     console.error("Error email:", e);
+    return false;
   }
 }
 
@@ -1108,7 +1114,7 @@ async function enviarInformeDiarioCostes(esAuto) {
   const datos = construirCuerpoInformeCostes();
   if (!datos) return;
 
-  const asunto = "Informe de costes Lanzaderas — " + datos.fechaFmt + " — " + formatEuro(datos.costeTotal);
+  // El asunto lo compone la Cloud Function a partir de fechaFmt y costeTotal.
   let html = datos.html; // fallback tabla
   let imageBase64 = null;
 
@@ -1159,7 +1165,16 @@ async function enviarInformeDiarioCostes(esAuto) {
   }
 
   try {
-    await Promise.all(emails.map(to => enviarEmailMS(to, asunto, datos.cuerpo, html, imageBase64)));
+    // Los destinatarios salen de config/costes en el servidor. El pantallazo
+    // solo se puede generar aqui, asi que la imagen y el html si van desde el
+    // cliente; el envio exige login y permiso de costes.
+    await llamarEnviarEmail({
+      tipo:        "informe_costes",
+      fechaFmt:    datos.fechaFmt,
+      costeTotal:  datos.costeTotal,
+      html:        html || null,
+      imageBase64: imageBase64 || null
+    });
     const hora = new Date().getHours().toString().padStart(2,"0") + ":" + new Date().getMinutes().toString().padStart(2,"0");
     const hoy = new Date().toISOString().split("T")[0];
     localStorage.setItem("costesEnviados_" + hoy, hora);
@@ -1315,13 +1330,8 @@ function revisarAlertas(segs, trans, finMarks) {
     const id = "lanz" + a.n;
     if (!_alertasEmailEnviadas.has(id) && a.el >= _tiempoMaxLanz && a.el <= _tiempoMaxLanz + 60) {
       _alertasEmailEnviadas.add(id);
-      const asunto = "ALERTA Aldelis — Lanzadera " + a.n + " lleva mas de hora y media en " + a.lbl;
-      const cuerpo =
-        "ALERTA de Aldelis Muelles\n\n" +
-        "La Lanzadera " + a.n + " lleva mas de hora y media parada en " + a.lbl + ".\n\n" +
-        "Revisa el panel:\nhttps://aldelis-muelles.web.app/admin.html\n\n" +
-        "Aldelis — Gestion de muelles";
-      ADMINS_ALERTA.forEach(to => enviarEmailMS(to, asunto, cuerpo));
+      // Los destinatarios salen de config/alertas en el servidor.
+      llamarEnviarEmail({ tipo: "alerta_lanzadera", numero: a.n, lugar: a.lbl, minutos: a.el });
     } else if (!_alertasEmailEnviadas.has(id) && a.el > 150) {
       // Registro viejo / salida sin registrar: marcar como notificado para no
       // mandar correo, pero seguir mostrando el banner en pantalla.
@@ -2369,44 +2379,41 @@ function switchTab(tab) {
 
 async function accionReserva(accion) {
   if (!reservaActual) return;
-  let datos = {}, emailTo = reservaActual.email, emailSubject = "", emailBody = "";
+  let datos = {};
+  // Los estados que avisan al transportista. El texto lo redacta la Cloud
+  // Function leyendo la reserva ya actualizada, no se manda desde aqui.
+  let avisar = false;
 
   if (accion === "confirmar") {
     const muelle = document.getElementById("muelle-confirmar").value;
     const nota   = document.getElementById("nota-confirmar").value.trim();
     datos = { estado: "confirmada", muelle, nota_almacen: nota };
-    emailSubject = "Reserva confirmada en Aldelis — " + reservaActual.codigo;
-    emailBody = "Hola " + reservaActual.empresa + ",\n\nTu reserva ha sido CONFIRMADA.\n\n" +
-      "Muelle asignado: " + muelle + "\nFranja: " + reservaActual.franja + "\nFecha: " + reservaActual.fecha +
-      (nota ? "\n\nNota del almacen: " + nota : "") +
-      "\n\nPresentate en el muelle " + muelle + " a las " + reservaActual.franja.split(" - ")[0] + ".\n\nAldelis — Gestion de muelles";
+    avisar = true;
   }
   if (accion === "reasignar") {
     const muelle = document.getElementById("muelle-reasignar").value;
     const franja = document.getElementById("franja-reasignar").value;
     const motivo = document.getElementById("motivo-reasignar").value.trim();
     datos = { estado: "reasignada", muelle, franja, motivo };
-    emailSubject = "Reserva reasignada en Aldelis — " + reservaActual.codigo;
-    emailBody = "Hola " + reservaActual.empresa + ",\n\nTu reserva ha sido MODIFICADA.\n\nNueva franja: " + franja +
-      "\nMuelle: " + muelle + (motivo ? "\nMotivo: " + motivo : "") +
-      "\n\nAldelis — Gestion de muelles";
+    avisar = true;
   }
   if (accion === "rechazar") {
     const motivo  = document.getElementById("motivo-rechazar").value;
     const mensaje = document.getElementById("mensaje-rechazar").value.trim();
     if (!motivo) { alert("Selecciona un motivo."); return; }
     datos = { estado: "rechazada", motivo, nota_almacen: mensaje, muelle: null };
-    emailSubject = "Reserva no aceptada en Aldelis — " + reservaActual.codigo;
-    emailBody = "Hola " + reservaActual.empresa + ",\n\nTu reserva NO ha sido aceptada.\n\nMotivo: " + motivo +
-      (mensaje ? "\n" + mensaje : "") +
-      "\n\nPuedes realizar una nueva reserva en:\nhttps://aldelis-muelles.web.app\n\nAldelis — Gestion de muelles";
+    avisar = true;
   }
   if (accion === "en-curso")  { datos = { estado: "en_curso",  inicio_descarga: firebase.firestore.Timestamp.now() }; }
   if (accion === "completar") { datos = { estado: "completada", fin_descarga:    firebase.firestore.Timestamp.now() }; }
 
   try {
+    // Primero se guarda: la funcion lee el documento ya actualizado para saber
+    // que aviso mandar y con que datos.
     await db.collection("reservas").doc(reservaActual.id).update(datos);
-    if (emailTo && emailSubject) await enviarEmailMS(emailTo, emailSubject, emailBody);
+    if (avisar && reservaActual.email) {
+      await llamarEnviarEmail({ tipo: "reserva_estado", reservaId: reservaActual.id });
+    }
     cerrarModal();
     cargarReservas();
   } catch(e) { console.error(e); alert("Error al actualizar. Intentalo de nuevo."); }

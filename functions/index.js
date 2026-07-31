@@ -124,13 +124,67 @@ function dentroDeLimite(v, max) {
   return v == null || (typeof v === "string" && v.length <= max);
 }
 
+// Administradores de la aplicacion. Duplicado en public/js/admin.js (ADMINS) y
+// en firestore.rules (esAdmin): si cambia, cambiarlo en los tres sitios.
+const ADMINS_APP = ["mlorente@aldelis.com"];
+
+// Destinatarios de los avisos de nueva reserva. Se pueden pasar a
+// config/reservas.emails; si ese documento no existe se usan estos.
+const AVISO_RESERVAS_DEFECTO = ["mlorente@aldelis.com", "garita@aldelis.com"];
+
+async function emailsDeConfig(docId, porDefecto) {
+  try {
+    const d = await db.collection("config").doc(docId).get();
+    const l = (d.exists && Array.isArray(d.data().emails)) ? d.data().emails : null;
+    if (l && l.length) return l.filter(destinatarioValido);
+  } catch (e) {
+    console.warn("emailsDeConfig", docId, e.message);
+  }
+  return (porDefecto || []).filter(destinatarioValido);
+}
+
+// Mismo criterio que firestore.rules, incluido el refuerzo progresivo: si el
+// usuario no tiene documento en /permisos conserva el acceso anterior.
+async function puedeSeccion(email, seccion) {
+  if (!email) return false;
+  if (ADMINS_APP.includes(email)) return true;
+  try {
+    const d = await db.collection("permisos").doc(email).get();
+    if (!d.exists) return true;
+    const s = d.data().secciones;
+    return Array.isArray(s) && s.includes(seccion);
+  } catch (e) {
+    console.warn("puedeSeccion", e.message);
+    return false;
+  }
+}
+
+const SECCION_LABEL = { seco: "Almacen Seco", frio: "Almacen Frio", lavadero: "Lavadero" };
+const FIRMA = "\n\nAldelis — Gestion de muelles";
+
+// Envia a una lista y devuelve cuantos han salido bien.
+async function enviarALista(destinatarios, asunto, cuerpo, html, imagen) {
+  if (!destinatarios.length) return 0;
+  const token = await obtenerTokenMS();
+  let enviados = 0;
+  for (const to of destinatarios) {
+    try {
+      const st = await enviarConGraph(token, to, asunto, html, cuerpo, imagen);
+      if (st === 200 || st === 202) enviados++;
+    } catch (e) {
+      console.error("Error enviando a", to, e.message);
+    }
+  }
+  return enviados;
+}
+
 exports.enviarEmail = functions.https.onCall(async (request, context) => {
   // Compatible con las dos generaciones: en v2 los datos y el contexto vienen
   // en el primer argumento; en v1 los datos son el primero y el contexto el
   // segundo. Asi la comprobacion no depende de cual este desplegada.
-  const esV2  = !!(request && typeof request === "object" && request.data !== undefined);
-  const data  = esV2 ? request.data : request;
-  const ctx   = esV2 ? request : (context || {});
+  const esV2 = !!(request && typeof request === "object" && request.data !== undefined);
+  const data = esV2 ? request.data : request;
+  const ctx  = esV2 ? request : (context || {});
 
   // App Check obligatorio. Para las funciones callable esto NO se puede activar
   // desde la consola de Firebase, hay que comprobarlo aqui.
@@ -138,44 +192,176 @@ exports.enviarEmail = functions.https.onCall(async (request, context) => {
     console.warn("enviarEmail rechazado: sin App Check");
     return { ok: false, error: "No autorizado" };
   }
+  if (!data || typeof data !== "object") return { ok: false, error: "Faltan datos" };
 
-  if (!data || typeof data !== "object") {
-    return { ok: false, error: "Faltan datos" };
-  }
+  const tipo         = data.tipo;
+  const emailUsuario = (ctx.auth && ctx.auth.token && ctx.auth.token.email || "").toLowerCase();
+  const conLogin     = !!emailUsuario;
 
-  const to          = data.to;
-  const subject     = data.subject;
-  const body        = data.body;
-  const html        = data.html;
-  const imageBase64 = data.imageBase64 || null;
-
-  if (!destinatarioValido(to)) {
-    console.warn("enviarEmail rechazado: destinatario no valido");
-    return { ok: false, error: "Destinatario no valido" };
-  }
-  if (!subject || !dentroDeLimite(subject, LIMITES.subject)) {
-    return { ok: false, error: "Asunto no valido" };
-  }
-  if (!body && !html) {
-    return { ok: false, error: "Faltan datos" };
-  }
-  if (!dentroDeLimite(body, LIMITES.body) || !dentroDeLimite(html, LIMITES.html)) {
-    return { ok: false, error: "Contenido demasiado largo" };
-  }
-  if (imageBase64 != null &&
-      (typeof imageBase64 !== "string" || imageBase64.length > LIMITES.imagen)) {
-    return { ok: false, error: "Imagen no valida" };
-  }
-
-  // Trazabilidad: quien lo pide y a quien va. Sin volcar el contenido.
-  console.log("enviarEmail:", to, "| asunto:", String(subject).substring(0, 60),
-              "| usuario:", (ctx.auth && ctx.auth.token && ctx.auth.token.email) || "sin login");
+  console.log("enviarEmail tipo:", tipo, "| usuario:", emailUsuario || "sin login");
 
   try {
-    const token  = await obtenerTokenMS();
-    const status = await enviarConGraph(token, to, subject, html, body, imageBase64);
-    return (status === 202 || status === 200) ? { ok: true } : { ok: false, error: "Graph status " + status };
-  } catch(e) {
+    // ── Nueva reserva: confirmacion al transportista y aviso al almacen ─────
+    // Publico (lo pide el formulario sin login), pero el destinatario sale del
+    // documento y el texto se redacta aqui.
+    if (tipo === "reserva_nueva") {
+      const id = data.reservaId;
+      if (typeof id !== "string" || !id || id.length > 60) return { ok: false, error: "Reserva no valida" };
+
+      const ref  = db.collection("reservas").doc(id);
+      const snap = await ref.get();
+      if (!snap.exists) return { ok: false, error: "Reserva no encontrada" };
+      const r = snap.data();
+
+      if (r.estado !== "pendiente") return { ok: false, error: "Estado no valido" };
+      if (r.aviso_enviado)          return { ok: false, error: "Aviso ya enviado" };
+
+      // Solo recien creada: evita que alguien reenvie avisos de reservas viejas.
+      const creada = r.created_at && r.created_at.toMillis ? r.created_at.toMillis() : 0;
+      if (!creada || Date.now() - creada > 15 * 60 * 1000) {
+        return { ok: false, error: "Fuera de plazo" };
+      }
+
+      // Se marca antes de enviar: si alguien repite la llamada, ya no pasa.
+      await ref.update({ aviso_enviado: true });
+
+      const seccion = SECCION_LABEL[r.seccion] || r.seccion || "—";
+
+      if (destinatarioValido(r.email)) {
+        await enviarALista([r.email],
+          "Reserva recibida en Aldelis — " + r.codigo,
+          "Hola " + (r.empresa || "") + ",\n\n" +
+          "Tu solicitud de reserva ha sido recibida correctamente.\n\n" +
+          "Codigo de seguimiento: " + r.codigo + "\n" +
+          "Fecha: " + r.fecha + "\n" +
+          "Franja: " + r.franja + "\n" +
+          "Seccion: " + seccion + "\n\n" +
+          "El equipo de Aldelis confirmara tu reserva en breve.\n\n" +
+          "Consulta el estado en:\nhttps://aldelis-muelles.web.app/consulta.html" + FIRMA,
+          null, null);
+      }
+
+      const avisos = await emailsDeConfig("reservas", AVISO_RESERVAS_DEFECTO);
+      await enviarALista(avisos,
+        "Nueva solicitud de descarga pendiente — " + r.codigo,
+        "Nueva solicitud de descarga recibida y pendiente de confirmacion.\n\n" +
+        "Codigo: " + r.codigo + "\n" +
+        "Empresa: " + (r.empresa || "—") + "\n" +
+        "Matricula: " + (r.matricula || "—") + "\n" +
+        "Fecha: " + r.fecha + "\n" +
+        "Franja: " + r.franja + "\n" +
+        "Seccion: " + (r.seccion || "—") + "\n" +
+        "Mercancia: " + (r.mercancia || "No indicada") + "\n" +
+        "Pales: " + (r.pales ? r.pales + " pales" : "No indicado") + "\n\n" +
+        "Accede al panel para confirmar, reasignar o rechazar:\n" +
+        "https://aldelis-muelles.web.app/admin.html" + FIRMA,
+        null, null);
+
+      return { ok: true };
+    }
+
+    // ── Cambio de estado de una reserva: avisa al transportista ─────────────
+    if (tipo === "reserva_estado") {
+      if (!conLogin) return { ok: false, error: "Requiere login" };
+
+      const id = data.reservaId;
+      if (typeof id !== "string" || !id || id.length > 60) return { ok: false, error: "Reserva no valida" };
+
+      const snap = await db.collection("reservas").doc(id).get();
+      if (!snap.exists) return { ok: false, error: "Reserva no encontrada" };
+      const r = snap.data();
+
+      if (!destinatarioValido(r.email)) return { ok: false, error: "La reserva no tiene email" };
+
+      let asunto, cuerpo;
+      if (r.estado === "confirmada") {
+        const hora = String(r.franja || "").split(" - ")[0];
+        asunto = "Reserva confirmada en Aldelis — " + r.codigo;
+        cuerpo = "Hola " + (r.empresa || "") + ",\n\nTu reserva ha sido CONFIRMADA.\n\n" +
+          "Muelle asignado: " + (r.muelle || "—") + "\nFranja: " + r.franja + "\nFecha: " + r.fecha +
+          (r.nota_almacen ? "\n\nNota del almacen: " + r.nota_almacen : "") +
+          "\n\nPresentate en el muelle " + (r.muelle || "—") + " a las " + hora + "." + FIRMA;
+      } else if (r.estado === "reasignada") {
+        asunto = "Reserva reasignada en Aldelis — " + r.codigo;
+        cuerpo = "Hola " + (r.empresa || "") + ",\n\nTu reserva ha sido MODIFICADA.\n\n" +
+          "Nueva franja: " + r.franja + "\nMuelle: " + (r.muelle || "—") +
+          (r.motivo ? "\nMotivo: " + r.motivo : "") + FIRMA;
+      } else if (r.estado === "rechazada") {
+        asunto = "Reserva no aceptada en Aldelis — " + r.codigo;
+        cuerpo = "Hola " + (r.empresa || "") + ",\n\nTu reserva NO ha sido aceptada.\n\n" +
+          "Motivo: " + (r.motivo || "—") +
+          (r.nota_almacen ? "\n" + r.nota_almacen : "") +
+          "\n\nPuedes realizar una nueva reserva en:\nhttps://aldelis-muelles.web.app" + FIRMA;
+      } else {
+        return { ok: false, error: "Estado sin aviso" };
+      }
+
+      await enviarALista([r.email], asunto, cuerpo, null, null);
+      return { ok: true };
+    }
+
+    // ── Alerta de lanzadera parada ──────────────────────────────────────────
+    if (tipo === "alerta_lanzadera") {
+      if (!conLogin) return { ok: false, error: "Requiere login" };
+
+      const numero  = Number(data.numero);
+      const minutos = Number(data.minutos);
+      const lugar   = typeof data.lugar === "string" ? data.lugar.substring(0, 60) : "";
+      if (!(numero >= 1 && numero <= 4)) return { ok: false, error: "Lanzadera no valida" };
+      if (!lugar) return { ok: false, error: "Falta el lugar" };
+
+      const destinatarios = await emailsDeConfig("alertas", []);
+      if (!destinatarios.length) return { ok: false, error: "Sin destinatarios" };
+
+      const enviados = await enviarALista(destinatarios,
+        "ALERTA Aldelis — Lanzadera " + numero + " lleva mas de hora y media en " + lugar,
+        "ALERTA de Aldelis Muelles\n\n" +
+        "La Lanzadera " + numero + " lleva " +
+        (minutos > 0 ? Math.round(minutos) + " minutos" : "mas de hora y media") +
+        " parada en " + lugar + ".\n\n" +
+        "Revisa el panel:\nhttps://aldelis-muelles.web.app/admin.html" + FIRMA,
+        null, null);
+
+      return { ok: enviados > 0 };
+    }
+
+    // ── Informe de costes enviado a mano desde el panel ─────────────────────
+    // El pantallazo solo se puede generar en el navegador, asi que la imagen y
+    // el html llegan del cliente. Los destinatarios NO: salen de config/costes,
+    // y hace falta login con permiso de costes.
+    if (tipo === "informe_costes") {
+      if (!conLogin) return { ok: false, error: "Requiere login" };
+      if (!(await puedeSeccion(emailUsuario, "costes"))) {
+        console.warn("informe_costes rechazado, sin permiso:", emailUsuario);
+        return { ok: false, error: "Sin permiso" };
+      }
+
+      const fechaFmt   = typeof data.fechaFmt === "string" ? data.fechaFmt.substring(0, 20) : "";
+      const costeTotal = Number(data.costeTotal);
+      const html       = data.html || null;
+      const imagen     = data.imageBase64 || null;
+
+      if (!fechaFmt) return { ok: false, error: "Falta la fecha" };
+      if (!dentroDeLimite(html, LIMITES.html)) return { ok: false, error: "Contenido demasiado largo" };
+      if (imagen != null && (typeof imagen !== "string" || imagen.length > LIMITES.imagen)) {
+        return { ok: false, error: "Imagen no valida" };
+      }
+
+      const destinatarios = await emailsDeConfig("costes", []);
+      if (!destinatarios.length) return { ok: false, error: "Sin destinatarios" };
+
+      const total  = isNaN(costeTotal) ? "" : " — " + formatEuro(costeTotal);
+      const asunto = "Informe de costes Lanzaderas — " + fechaFmt + total;
+      const cuerpo = "Informe de costes " + fechaFmt +
+        (isNaN(costeTotal) ? "" : " — Total operaciones: " + formatEuro(costeTotal));
+
+      const enviados = await enviarALista(destinatarios, asunto, cuerpo, html, imagen);
+      return { ok: enviados > 0, enviados: enviados };
+    }
+
+    return { ok: false, error: "Tipo no reconocido" };
+
+  } catch (e) {
     console.error("ERROR enviarEmail:", e.message);
     return { ok: false, error: e.message };
   }

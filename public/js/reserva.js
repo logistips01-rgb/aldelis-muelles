@@ -1,34 +1,14 @@
-// Envio de email via Firebase Function
-async function enviarEmailMS(to, subject, body) {
-  if (!to) return;
+// Avisa de una reserva recien creada. Solo se manda el id: el destinatario y
+// el texto los resuelve la Cloud Function leyendo el documento, para que desde
+// el navegador no se pueda enviar correo arbitrario en nombre de Aldelis.
+async function avisarReservaNueva(reservaId) {
   try {
     const enviarEmail = firebase.functions().httpsCallable("enviarEmail");
-    await enviarEmail({ to, subject, body });
-    console.log("Email enviado OK a " + to);
+    const res = await enviarEmail({ tipo: "reserva_nueva", reservaId: reservaId });
+    if (res && res.data && res.data.ok) console.log("Avisos de reserva enviados");
+    else console.warn("Avisos de reserva:", res && res.data && res.data.error);
   } catch(e) {
-    console.error("Error enviando email:", e);
-  }
-}
-
-async function enviarEmailAdminMS(datos) {
-  const admins = [
-    "mlorente@aldelis.com",
-    "garita@aldelis.com"
-  ];
-  const subject = "Nueva solicitud de descarga pendiente — " + datos.codigo;
-  const body = "Nueva solicitud de descarga recibida y pendiente de confirmacion.\n\n" +
-    "Codigo: " + datos.codigo + "\n" +
-    "Empresa: " + datos.empresa + "\n" +
-    "Matricula: " + datos.matricula + "\n" +
-    "Fecha: " + datos.fecha + "\n" +
-    "Franja: " + datos.franja + "\n" +
-    "Seccion: " + datos.seccion + "\n" +
-    "Mercancia: " + (datos.mercancia || "No indicada") + "\n" +
-    "Pales: " + (datos.pales ? datos.pales + " pales" : "No indicado") + "\n\n" +
-    "Accede al panel para confirmar, reasignar o rechazar:\nhttps://aldelis-muelles.web.app/admin.html";
-
-  for (const admin of admins) {
-    await enviarEmailMS(admin, subject, body);
+    console.error("Error enviando avisos de reserva:", e);
   }
 }
 
@@ -231,7 +211,7 @@ async function enviarReserva() {
   try {
     const codigo = generarCodigo();
 
-    await db.collection("reservas").add({
+    const ref = await db.collection("reservas").add({
       codigo,
       matricula:     reserva.matricula,
       empresa:       reserva.empresa,
@@ -254,34 +234,11 @@ async function enviarReserva() {
 
     reserva.codigo = codigo;
 
-    // Email al transportista
-    if (reserva.email) {
-      const secLabel = { seco: "Almacen Seco", frio: "Almacen Frio", lavadero: "Lavadero" };
-      await enviarEmailMS(reserva.email,
-        "Reserva recibida en Aldelis — " + codigo,
-        "Hola " + reserva.empresa + ",\n\n" +
-        "Tu solicitud de reserva ha sido recibida correctamente.\n\n" +
-        "Codigo de seguimiento: " + codigo + "\n" +
-        "Fecha: " + reserva.fecha + "\n" +
-        "Franja: " + reserva.franja + "\n" +
-        "Seccion: " + (secLabel[reserva.seccion] || reserva.seccion) + "\n\n" +
-        "El equipo de Aldelis confirmara tu reserva en breve.\n\n" +
-        "Consulta el estado en:\nhttps://aldelis-muelles.web.app/consulta.html\n\n" +
-        "Aldelis — Gestion de muelles"
-      );
-    }
-
-    // Email al equipo de almacen
-    await enviarEmailAdminMS({
-      codigo,
-      empresa:   reserva.empresa,
-      matricula: reserva.matricula,
-      fecha:     reserva.fecha,
-      franja:    reserva.franja,
-      seccion:   reserva.seccion,
-      mercancia: reserva.mercancia,
-      pales:     reserva.pales
-    });
+    // Un solo aviso: la funcion lee la reserva, redacta los dos correos
+    // (confirmacion al transportista y aviso al almacen) y saca las direcciones
+    // del propio documento y de config/reservas. Desde aqui no se puede elegir
+    // ni el destinatario ni el contenido.
+    await avisarReservaNueva(ref.id);
 
     document.getElementById("codigo-generado").textContent = codigo;
     document.querySelectorAll(".step").forEach(s => s.classList.remove("active"));

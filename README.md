@@ -117,11 +117,46 @@ Todas en `functions/index.js`, región `us-central1`, runtime Node 24.
 
 | Función | Tipo | Cuándo | Qué hace |
 |---|---|---|---|
-| `enviarEmail` | Callable | A demanda desde el cliente | Envía correo vía Microsoft Graph |
+| `enviarEmail` | Callable | A demanda desde el cliente | Envía los avisos por Microsoft Graph |
 | `enviarInformeDiario` | Programada | 23:59 Europe/Madrid | Informe de costes de lanzaderas |
 | `enviarInformeManana` | Programada | 08:30 Europe/Madrid | El mismo informe (para revisarlo por la mañana) |
 | `enviarInformeBizerba` | Programada | 23:59 Europe/Madrid | Informe de incidencias de etiquetado |
 | `notifChat` | Trigger Firestore | Al crear en `mensajes` | Notificación push del chat |
+
+### enviarEmail: el cliente no elige destinatario ni contenido
+
+Esta función **no acepta un destinatario ni un texto libres**. Recibe un `tipo`
+de aviso y los datos mínimos, y resuelve todo en el servidor. Antes aceptaba
+`to`, `subject` y `html` del cliente sin exigir nada, lo que la convertía en un
+relay abierto: cualquiera podía enviar correo desde `reservas@aldelis.com`.
+
+| `tipo` | Acceso | Datos | Destinatarios |
+|---|---|---|---|
+| `reserva_nueva` | Público | `reservaId` | El `email` del documento + `config/reservas` (por defecto mlorente y garita) |
+| `reserva_estado` | Login | `reservaId` | El `email` del documento |
+| `alerta_lanzadera` | Login | `numero`, `lugar`, `minutos` | `config/alertas` |
+| `informe_costes` | Login + sección `costes` | `fechaFmt`, `costeTotal`, `html`, `imageBase64` | `config/costes` |
+
+Reglas que aplica siempre:
+
+- **App Check obligatorio.** Para las funciones callable esto no se puede
+  activar desde la consola de Firebase (el panel solo enlaza documentación):
+  se comprueba en el código con `ctx.app`.
+- `reserva_nueva` solo funciona una vez por reserva (marca `aviso_enviado` en el
+  documento) y únicamente dentro de los 15 minutos siguientes a su creación, en
+  estado `pendiente`. Así nadie puede reenviar avisos en bucle ni resucitar
+  reservas viejas.
+- Los textos de los correos se redactan dentro de la función. Si hay que cambiar
+  la redacción de un aviso, se cambia ahí, no en el navegador.
+
+Hay pruebas en `functions/test-enviarEmail.js`, que interceptan las llamadas a
+Microsoft y usan el emulador de Firestore. No se despliegan (`test-*.js` está en
+el `ignore` de `firebase.json`):
+
+```bash
+firebase emulators:start --only firestore
+cd functions && FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 GCLOUD_PROJECT=aldelis-test node test-enviarEmail.js
+```
 
 El correo se envía con la **API de Microsoft Graph** desde `reservas@aldelis.com`
 mediante client credentials. El secreto se lee de `process.env.MS_SECRET`, que
