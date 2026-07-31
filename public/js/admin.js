@@ -1044,7 +1044,7 @@ function construirCuerpoInformeCostes() {
 
   // ── assemble ──────────────────────────────────────────────────────
   const html =
-    "<!DOCTYPE html><html><body style='margin:0;padding:0;background:#f0f0f0;font-family:Arial,Helvetica,sans-serif'>" +
+    "<!DOCTYPE html><html><body style='margin:0;padding:0;background:#f0f0f0;font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,Helvetica,Arial,sans-serif'>" +
     "<div style='max-width:700px;margin:0 auto;padding:16px 10px'>" +
 
     "<div style='background:#D41F3A;border-radius:8px;padding:20px 22px;margin-bottom:12px'>" +
@@ -1138,7 +1138,7 @@ async function enviarInformeDiarioCostes(esAuto) {
         const dataUrl = canvas.toDataURL('image/png');
         imageBase64 = dataUrl.replace(/^data:image\/png;base64,/, '');
         html =
-          "<!DOCTYPE html><html><body style='margin:0;padding:0;background:#f0f0f0;font-family:Arial,Helvetica,sans-serif'>" +
+          "<!DOCTYPE html><html><body style='margin:0;padding:0;background:#f0f0f0;font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,Helvetica,Arial,sans-serif'>" +
           "<table width='100%' cellpadding='0' cellspacing='0'><tr><td align='center'>" +
           "<table width='100%' cellpadding='0' cellspacing='0' style='max-width:100%'>" +
           "<tr><td style='background:#D41F3A;padding:18px 22px'>" +
