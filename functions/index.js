@@ -92,10 +92,56 @@ function horaMadrid(ms) {
 }
 
 // ── Función callable: enviar email desde el cliente ─────────────────────────
+//
+// PASO 1 de la correccion de seguridad. Esta funcion enviaba correo desde
+// reservas@aldelis.com con el destinatario, el asunto y el contenido que le
+// pasara quien la llamase, sin exigir App Check ni login: era un relay abierto
+// utilizable para spam y phishing con el dominio de la empresa.
+//
+// Aqui se cierra el acceso desde fuera de la web (App Check obligatorio) y se
+// acotan los campos. PENDIENTE (paso 2): que el cliente deje de decidir el
+// destinatario y el contenido, y que la funcion los resuelva en el servidor a
+// partir del tipo de aviso. Hasta entonces, alguien con la consola del
+// navegador abierta EN la propia web todavia puede elegir ambos.
 
-exports.enviarEmail = functions.https.onCall(async (request) => {
-  const data = request.data;
-  console.log("DATOS RECIBIDOS:", JSON.stringify(data).substring(0, 200));
+const LIMITES = {
+  to:      160,
+  subject: 200,
+  body:    20000,
+  html:    300000,
+  imagen:  5000000   // base64 del pantallazo del informe
+};
+
+// Una sola direccion: sin comas, puntos y coma, espacios ni saltos de linea,
+// que son la via para colar varios destinatarios o cabeceras.
+function destinatarioValido(to) {
+  return typeof to === "string"
+    && to.length > 0 && to.length <= LIMITES.to
+    && /^[^\s,;:<>()[\]\\]+@[^\s,;:<>()[\]\\]+\.[A-Za-z]{2,}$/.test(to);
+}
+
+function dentroDeLimite(v, max) {
+  return v == null || (typeof v === "string" && v.length <= max);
+}
+
+exports.enviarEmail = functions.https.onCall(async (request, context) => {
+  // Compatible con las dos generaciones: en v2 los datos y el contexto vienen
+  // en el primer argumento; en v1 los datos son el primero y el contexto el
+  // segundo. Asi la comprobacion no depende de cual este desplegada.
+  const esV2  = !!(request && typeof request === "object" && request.data !== undefined);
+  const data  = esV2 ? request.data : request;
+  const ctx   = esV2 ? request : (context || {});
+
+  // App Check obligatorio. Para las funciones callable esto NO se puede activar
+  // desde la consola de Firebase, hay que comprobarlo aqui.
+  if (!ctx.app) {
+    console.warn("enviarEmail rechazado: sin App Check");
+    return { ok: false, error: "No autorizado" };
+  }
+
+  if (!data || typeof data !== "object") {
+    return { ok: false, error: "Faltan datos" };
+  }
 
   const to          = data.to;
   const subject     = data.subject;
@@ -103,10 +149,27 @@ exports.enviarEmail = functions.https.onCall(async (request) => {
   const html        = data.html;
   const imageBase64 = data.imageBase64 || null;
 
-  if (!to || !subject || (!body && !html)) {
-    console.log("FALTAN DATOS", { to, subject });
+  if (!destinatarioValido(to)) {
+    console.warn("enviarEmail rechazado: destinatario no valido");
+    return { ok: false, error: "Destinatario no valido" };
+  }
+  if (!subject || !dentroDeLimite(subject, LIMITES.subject)) {
+    return { ok: false, error: "Asunto no valido" };
+  }
+  if (!body && !html) {
     return { ok: false, error: "Faltan datos" };
   }
+  if (!dentroDeLimite(body, LIMITES.body) || !dentroDeLimite(html, LIMITES.html)) {
+    return { ok: false, error: "Contenido demasiado largo" };
+  }
+  if (imageBase64 != null &&
+      (typeof imageBase64 !== "string" || imageBase64.length > LIMITES.imagen)) {
+    return { ok: false, error: "Imagen no valida" };
+  }
+
+  // Trazabilidad: quien lo pide y a quien va. Sin volcar el contenido.
+  console.log("enviarEmail:", to, "| asunto:", String(subject).substring(0, 60),
+              "| usuario:", (ctx.auth && ctx.auth.token && ctx.auth.token.email) || "sin login");
 
   try {
     const token  = await obtenerTokenMS();
