@@ -652,10 +652,21 @@ exports.notifChat = onDocumentCreated("mensajes/{msgId}", async (event) => {
   const caducados = [];
   for (let i = 0; i < tokens.length; i += 500) {
     const lote = tokens.slice(i, i + 500);
+    // Solo "data": el service worker construye el aviso. Si se enviara el
+    // bloque "notification" el navegador mostraria otro por su cuenta y
+    // saldrian dos, sin control sobre icono ni vibracion.
     const res = await admin.messaging().sendEachForMulticast({
       tokens: lote,
-      notification: { title: titulo, body: cuerpo },
-      webpush: { fcmOptions: { link: destino } }
+      data: {
+        title: titulo,
+        body:  cuerpo,
+        url:   destino,
+        tag:   "chat-" + (msg.lanzadera || "0")
+      },
+      webpush: {
+        headers: { Urgency: "high", TTL: "600" },
+        fcmOptions: { link: destino }
+      }
     });
     res.responses.forEach((r, idx) => {
       const code = r.error && r.error.code;
