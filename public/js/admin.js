@@ -1173,15 +1173,13 @@ async function enviarInformeDiarioCostes(esAuto) {
   }
 }
 
+// El envio automatico de las 23:59 lo hace la Cloud Function
+// (enviarInformeDiario), no el navegador. Antes lo hacian los dos: si el panel
+// estaba abierto llegaban dos correos con diseños distintos, y si estaba
+// cerrado solo el de la funcion. Ahora el navegador solo envia a mano con el
+// boton, que sigue mandando el pantallazo del panel.
 function autoEnviarCostesAlFinalDelDia() {
-  if (!_perms.costes) return;
-  if (!esHoy) return;
-  const ahora = new Date();
-  if (ahora.getHours() < 23 || ahora.getMinutes() < 59) return;
-  const hoy = ahora.toISOString().split("T")[0];
-  if (localStorage.getItem("costesEnviados_" + hoy)) return;
-  localStorage.setItem("costesEnviados_" + hoy, "auto");
-  enviarInformeDiarioCostes(true);
+  return;
 }
 
 // ─── LINEA DE TIEMPO (GANTT) DE LANZADERAS ───────────────────────────

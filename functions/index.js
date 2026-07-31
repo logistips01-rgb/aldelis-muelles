@@ -81,6 +81,16 @@ function esc(s) {
   return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+const ACCION_LABEL = { cargando: "Cargando", descargando: "Descargando", presente: "Presente" };
+
+// La funcion corre en UTC: hay que formatear la hora en zona Madrid o el
+// detalle por lanzadera saldria desfasado una o dos horas.
+function horaMadrid(ms) {
+  return new Date(ms).toLocaleTimeString("es-ES", {
+    timeZone: "Europe/Madrid", hour: "2-digit", minute: "2-digit", hour12: false
+  });
+}
+
 // ── Función callable: enviar email desde el cliente ─────────────────────────
 
 exports.enviarEmail = functions.https.onCall(async (request) => {
@@ -181,7 +191,13 @@ async function generarYEnviarInforme(label) {
           const nextMs  = i + 1 < arr.length ? arr[i + 1].desde.toMillis() : tsEnd.toDate().getTime();
           const durMin  = Math.round((nextMs - startMs) / 60000);
           if (durMin < 0 || durMin > MAX_DUR) continue;
-          allSegs.push({ numero: n, estado: ev.estado, nave: ev.nave || null, muelle: ev.muelle || null, durMin, coste: durMin * (LANZ_COSTE_MIN[n] || 0) });
+          allSegs.push({
+            numero: n, estado: ev.estado,
+            nave: ev.nave || null, muelle: ev.muelle || null,
+            accion: ev.accion || null, destino: ev.destino || null,
+            startMs: startMs, durMin: durMin,
+            coste: durMin * (LANZ_COSTE_MIN[n] || 0)
+          });
         }
       });
 
@@ -244,7 +260,7 @@ async function generarYEnviarInforme(label) {
       const metricRow =
         "<table width='100%' cellpadding='0' cellspacing='0'><tr>" +
         mCard(viajes + "", "Viajes a nave") +
-        mCard(formatDur(mediaNaveSeg), "T. medio visita") +
+        mCard(formatDur(mediaNaveSeg), "Tiempo medio por visita") +
         mCard(formatDur(totalNaveMin), "Total en nave") +
         mCard(formatDur(totalTransMin), "Total en transito") +
         "</tr></table>";
@@ -293,10 +309,10 @@ async function generarYEnviarInforme(label) {
       ).join("") || "<tr><td colspan='2' style='color:#bbb;font-size:13px;padding:8px 0'>Sin datos</td></tr>";
 
       const esperasTh = "<tr style='background:#f5f5f5'>" +
-        "<th style='padding:5px 8px;text-align:left;font-size:11px;color:#888;font-weight:600'>Lanz.</th>" +
+        "<th style='padding:5px 8px;text-align:left;font-size:11px;color:#888;font-weight:600'>Lanzadera</th>" +
         "<th style='padding:5px 8px;text-align:left;font-size:11px;color:#888;font-weight:600'>Nave</th>" +
         "<th style='padding:5px 8px;text-align:left;font-size:11px;color:#888;font-weight:600'>Muelle</th>" +
-        "<th style='padding:5px 8px;text-align:left;font-size:11px;color:#888;font-weight:600'>Dur.</th>" +
+        "<th style='padding:5px 8px;text-align:left;font-size:11px;color:#888;font-weight:600'>Duracion</th>" +
         "<th style='padding:5px 8px;text-align:right;font-size:11px;color:#888;font-weight:600'>Coste</th></tr>";
       const esperasTr = topEsperas.map(s =>
         "<tr><td style='padding:5px 8px;font-size:12px;border-bottom:1px solid #f5f5f5'>L" + s.numero + "</td>" +
@@ -306,9 +322,47 @@ async function generarYEnviarInforme(label) {
         "<td style='padding:5px 8px;font-size:12px;font-weight:700;color:#D41F3A;text-align:right;border-bottom:1px solid #f5f5f5'>" + formatEuro(s.coste) + "</td></tr>"
       ).join("");
 
+      // Detalle por lanzadera: misma tabla que muestra el panel
+      const TH = "padding:5px 8px;text-align:left;font-size:11px;color:#888;font-weight:600";
+      const TD = "padding:5px 8px;font-size:12px;border-bottom:1px solid #f5f5f5";
+
+      const detalleLanz = [1, 2, 3, 4].map(n => {
+        const segsN = allSegs.filter(s => s.numero === n).sort((a, b) => a.startMs - b.startMs);
+        if (!segsN.length) return "";
+        const totalN = segsN.reduce((acc, s) => acc + s.coste, 0);
+        const filas = segsN.map(s => {
+          const nave = s.estado === "transito"
+            ? ("&rarr; " + esc(NAVE_NOMBRE[s.destino] || s.destino || NAVE_NOMBRE[s.nave] || s.nave || "?"))
+            : esc(NAVE_NOMBRE[s.nave] || s.nave || "—");
+          const accion = s.accion
+            ? (ACCION_LABEL[s.accion] || s.accion)
+            : (s.estado === "transito" ? "Transito" : "—");
+          return "<tr>" +
+            "<td style='" + TD + "'>" + horaMadrid(s.startMs) + "</td>" +
+            "<td style='" + TD + "'>" + (s.estado === "en_nave" ? "En nave" : "Transito") + "</td>" +
+            "<td style='" + TD + "'>" + nave + "</td>" +
+            "<td style='" + TD + "'>" + esc(s.muelle || "—") + "</td>" +
+            "<td style='" + TD + "'>" + esc(accion) + "</td>" +
+            "<td style='" + TD + "'>" + formatDur(s.durMin) + "</td>" +
+            "<td style='" + TD + ";text-align:right'>" + formatEuro(s.coste) + "</td>" +
+            "</tr>";
+        }).join("");
+        return "<div style='height:10px'></div>" +
+          "<div style='" + CARD + ";padding:14px'>" +
+          "<div style='font-size:12px;font-weight:700;color:#1A1A1A;margin-bottom:10px'>" +
+          "Lanzadera " + n + " &mdash; coste hoy: " + formatEuro(totalN) + "</div>" +
+          "<table width='100%' cellpadding='0' cellspacing='0'>" +
+          "<tr style='background:#f5f5f5'>" +
+          "<th style='" + TH + "'>Entrada</th><th style='" + TH + "'>Estado</th>" +
+          "<th style='" + TH + "'>Nave</th><th style='" + TH + "'>Muelle</th>" +
+          "<th style='" + TH + "'>Accion</th><th style='" + TH + "'>Duracion</th>" +
+          "<th style='" + TH + ";text-align:right'>Coste</th></tr>" +
+          filas + "</table></div>";
+      }).join("");
+
       const html =
         "<!DOCTYPE html><html><body style='margin:0;padding:16px;background:#f0f0f0;font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,Helvetica,Arial,sans-serif'>" +
-        "<div style='max-width:700px;margin:0 auto'>" +
+        "<div style='max-width:900px;margin:0 auto'>" +
 
         "<div style='background:#D41F3A;border-radius:8px;padding:20px 22px;margin-bottom:12px'>" +
         "<div style='color:#fff;font-size:20px;font-weight:700;letter-spacing:-.5px'>Aldelis</div>" +
@@ -328,13 +382,12 @@ async function generarYEnviarInforme(label) {
         "<table width='100%' cellpadding='0' cellspacing='0'>" + muelleRows + "</table></td>" +
         "</tr></table>" +
 
+        // Costes de operacion: las dos tarjetas van dentro, como en el panel
         "<div style='height:10px'></div>" +
         "<div style='" + CARD + ";padding:14px'>" +
         "<div style='font-size:12px;font-weight:700;color:#1A1A1A;margin-bottom:10px'>Costes de operacion</div>" +
         "<table width='100%' cellpadding='0' cellspacing='0'><tr>" + lanzCards + "</tr></table>" +
-        "</div>" +
-
-        "<div style='height:10px'></div>" +
+        "<div style='height:12px'></div>" +
         "<table width='100%' cellpadding='0' cellspacing='0'><tr>" +
         "<td width='35%' valign='top' style='" + CARD + ";padding:14px'>" +
         "<div style='font-size:12px;font-weight:700;color:#1A1A1A;margin-bottom:10px'>Coste por nave</div>" +
@@ -344,6 +397,9 @@ async function generarYEnviarInforme(label) {
         "<div style='font-size:12px;font-weight:700;color:#1A1A1A;margin-bottom:10px'>Esperas mas caras</div>" +
         "<table width='100%' cellpadding='0' cellspacing='0'>" + esperasTh + esperasTr + "</table></td>" +
         "</tr></table>" +
+        "</div>" +
+
+        detalleLanz +
 
         "<div style='height:14px'></div>" +
         "<div style='text-align:center;font-size:11px;color:#aaa'>Costes de operacion del dia, no importe fijo del contrato &middot; " + diasLaborables + " dias laborables configurados</div>" +
