@@ -53,6 +53,7 @@ despliega; se conserva solo como referencia.
 | `bizerba.html?t=N` | QR, sin login | Técnicos de Bizerba (N = 1..6) |
 | `incidencia.html` | QR, sin login | Operarios de línea que reportan averías |
 | `carga.html` | QR, sin login | Choferes que registran su entrada a muelle (M1-M5) |
+| `merca.html` | QR, sin login | Proveedores que descargan en Merca (M2 y M4) |
 
 Las páginas sin login están protegidas por **App Check (reCAPTCHA v3)**: solo
 se aceptan peticiones que vengan del dominio real de la aplicación. Se decidió
