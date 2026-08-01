@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>Aldelis — Registro de carga</title>
+  <link rel="icon" href="/icon-512.png">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: #F5F5F5;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 16px 40px;
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 24px;
+      width: 100%;
+      max-width: 420px;
+    }
+    .logo { font-size: 26px; font-weight: 600; color: #D41F3A; letter-spacing: -0.5px; }
+    .logo-sub { font-size: 13px; color: #6B7280; margin-top: 2px; }
+
+    .card {
+      background: #fff;
+      border-radius: 14px;
+      padding: 24px 20px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+      width: 100%;
+      max-width: 420px;
+    }
+    .card-title { font-size: 18px; font-weight: 600; color: #1A1A1A; margin-bottom: 4px; }
+    .card-desc  { font-size: 13px; color: #6B7280; margin-bottom: 20px; line-height: 1.5; }
+
+    .field { margin-bottom: 14px; }
+    .field label {
+      display: block;
+      font-size: 12px;
+      font-weight: 500;
+      color: #374151;
+      margin-bottom: 6px;
+    }
+    .req { color: #D41F3A; }
+    .field input, .field select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1.5px solid #E0E0E0;
+      border-radius: 8px;
+      font-size: 15px;
+      font-family: 'Inter', sans-serif;
+      color: #1A1A1A;
+      background: #fff;
+      outline: none;
+      transition: border-color .15s;
+      -webkit-appearance: none;
+    }
+    .field input:focus, .field select:focus { border-color: #D41F3A; }
+    .field input::placeholder { color: #C4C4C4; }
+    .hint { font-size: 11px; color: #9CA3AF; margin-top: 4px; }
+
+    .muelle-fijo {
+      background: #1A1A1A;
+      color: #fff;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 15px;
+      font-weight: 600;
+      text-align: center;
+      letter-spacing: .02em;
+    }
+
+    .btn-enviar {
+      width: 100%;
+      background: #D41F3A;
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 14px;
+      font-size: 16px;
+      font-weight: 600;
+      font-family: 'Inter', sans-serif;
+      cursor: pointer;
+      margin-top: 6px;
+      transition: background .15s;
+    }
+    .btn-enviar:hover { background: #B8172F; }
+    .btn-enviar:disabled { background: #E0E0E0; color: #9CA3AF; cursor: not-allowed; }
+
+    #done-screen { display: none; text-align: center; width: 100%; max-width: 420px; }
+    .done-card {
+      background: #fff;
+      border-radius: 14px;
+      padding: 36px 24px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    }
+    .done-icon  { font-size: 52px; margin-bottom: 14px; }
+    .done-title { font-size: 20px; font-weight: 600; color: #1A1A1A; margin-bottom: 8px; }
+    .done-desc  { font-size: 14px; color: #6B7280; line-height: 1.5; margin-bottom: 24px; }
+    .done-datos {
+      background: #F5F5F5;
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 13px;
+      color: #374151;
+      text-align: left;
+      margin-bottom: 20px;
+      line-height: 1.7;
+    }
+    .btn-nueva {
+      background: #F5F5F5;
+      color: #374151;
+      border: 1.5px solid #E0E0E0;
+      border-radius: 10px;
+      padding: 12px 24px;
+      font-size: 14px;
+      font-weight: 500;
+      font-family: 'Inter', sans-serif;
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .btn-nueva:hover { border-color: #9CA3AF; background: #fff; }
+
+    #error-msg {
+      display: none;
+      background: #FEE2E2;
+      border: 1px solid #FCA5A5;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 13px;
+      color: #B91C1C;
+      margin-bottom: 14px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div class="logo">Aldelis</div>
+    <div class="logo-sub">Registro de carga</div>
+  </div>
+
+  <div class="card" id="form-card">
+    <div class="card-title">Registrar entrada a muelle</div>
+    <div class="card-desc">Rellena los datos antes de empezar a cargar. El almacen vera tu camion en el muelle.</div>
+
+    <div id="error-msg"></div>
+
+    <div class="field">
+      <label>Muelle <span class="req">*</span></label>
+      <div id="muelle-fijo" class="muelle-fijo" style="display:none"></div>
+      <select id="muelle"><option value="">Selecciona el muelle</option></select>
+    </div>
+
+    <div class="field">
+      <label>Matricula tractora <span class="req">*</span></label>
+      <input type="text" id="tractora" placeholder="1234ABC" autocapitalize="characters" maxlength="20">
+    </div>
+
+    <div class="field">
+      <label>Matricula remolque</label>
+      <input type="text" id="semi" placeholder="R1234BCD" autocapitalize="characters" maxlength="20">
+    </div>
+
+    <div class="field">
+      <label>Nombre del chofer</label>
+      <input type="text" id="chofer" placeholder="Nombre y apellidos" maxlength="120">
+    </div>
+
+    <div class="field">
+      <label>DNI</label>
+      <input type="text" id="dni" placeholder="12345678A" autocapitalize="characters" maxlength="20">
+    </div>
+
+    <div class="field">
+      <label>Destino</label>
+      <input type="text" id="destino" placeholder="Ej: Mercamadrid" maxlength="120">
+      <div class="hint">Los campos marcados con * son obligatorios.</div>
+    </div>
+
+    <button class="btn-enviar" id="btn-enviar" onclick="registrarCarga()">Registrar carga</button>
+  </div>
+
+  <div id="done-screen">
+    <div class="done-card">
+      <div class="done-icon">&#9989;</div>
+      <div class="done-title">Carga registrada</div>
+      <div class="done-desc">El almacen ya ve tu camion en el muelle.</div>
+      <div class="done-datos" id="done-datos"></div>
+      <button class="btn-nueva" onclick="location.reload()">Registrar otra</button>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-check-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="js/firebase-config-compat.js"></script>
+  <script>
+  (function () {
+    // Muelles de carga. Tienen que coincidir con MUELLES_CARGA de admin.js y
+    // con la lista que valida firestore.rules (validCarga).
+    var MUELLES = ["M1", "M2", "M3", "M4", "M5"];
+
+    // El QR puede llevar el muelle fijado (?m=M3). Si viene y es valido, no se
+    // pregunta: el conductor solo rellena la matricula.
+    var params = new URLSearchParams(location.search);
+    var muelleQR = (params.get("m") || "").toUpperCase();
+    var muelleFijo = MUELLES.indexOf(muelleQR) !== -1 ? muelleQR : null;
+
+    var sel = document.getElementById("muelle");
+    if (muelleFijo) {
+      sel.style.display = "none";
+      var div = document.getElementById("muelle-fijo");
+      div.textContent = "Muelle " + muelleFijo.replace("M", "");
+      div.style.display = "block";
+    } else {
+      MUELLES.forEach(function (m) {
+        var o = document.createElement("option");
+        o.value = m;
+        o.textContent = "Muelle " + m.replace("M", "");
+        sel.appendChild(o);
+      });
+    }
+
+    function error(msg) {
+      var e = document.getElementById("error-msg");
+      e.textContent = msg;
+      e.style.display = "block";
+      window.scrollTo(0, 0);
+    }
+
+    window.registrarCarga = async function () {
+      var muelle   = muelleFijo || sel.value;
+      var tractora = document.getElementById("tractora").value.trim().toUpperCase();
+      var semi     = document.getElementById("semi").value.trim().toUpperCase();
+      var chofer   = document.getElementById("chofer").value.trim();
+      var dni      = document.getElementById("dni").value.trim().toUpperCase();
+      var destino  = document.getElementById("destino").value.trim();
+
+      if (!muelle)   { error("Selecciona el muelle."); return; }
+      if (!tractora) { error("Falta la matricula de la tractora."); return; }
+
+      var btn = document.getElementById("btn-enviar");
+      btn.disabled = true;
+      btn.textContent = "Registrando...";
+      document.getElementById("error-msg").style.display = "none";
+
+      try {
+        // Los campos tienen que ser exactamente los que admite validCarga() en
+        // firestore.rules: si se añade o quita alguno, la escritura se deniega.
+        await db.collection("cargas").add({
+          matricula_tractora: tractora,
+          matricula_semi:     semi,
+          chofer:             chofer,
+          dni:                dni,
+          destino:            destino,
+          muelle:             muelle,
+          estado:             "cargando",
+          inicio:             firebase.firestore.Timestamp.now(),
+          fin:                null,
+          created_at:         firebase.firestore.Timestamp.now()
+        });
+
+        document.getElementById("done-datos").innerHTML =
+          "<b>Muelle:</b> " + muelle.replace("M", "Muelle ") + "<br>" +
+          "<b>Tractora:</b> " + tractora +
+          (semi    ? "<br><b>Remolque:</b> " + semi : "") +
+          (chofer  ? "<br><b>Chofer:</b> " + chofer : "") +
+          (destino ? "<br><b>Destino:</b> " + destino : "");
+
+        document.getElementById("form-card").style.display = "none";
+        document.getElementById("done-screen").style.display = "block";
+        window.scrollTo(0, 0);
+      } catch (e) {
+        console.error(e);
+        error("No se pudo registrar la carga. Avisa al almacen.");
+        btn.disabled = false;
+        btn.textContent = "Registrar carga";
+      }
+    };
+  })();
+  </script>
+</body>
+</html>

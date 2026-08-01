@@ -52,6 +52,7 @@ despliega; se conserva solo como referencia.
 | `lanzadera.html` | QR, sin login | Conductores de lanzadera (1-4) |
 | `bizerba.html?t=N` | QR, sin login | Técnicos de Bizerba (N = 1..6) |
 | `incidencia.html` | QR, sin login | Operarios de línea que reportan averías |
+| `carga.html` | QR, sin login | Choferes que registran su entrada a muelle (M1-M5) |
 
 Las páginas sin login están protegidas por **App Check (reCAPTCHA v3)**: solo
 se aceptan peticiones que vengan del dominio real de la aplicación. Se decidió
@@ -271,6 +272,15 @@ conviene tenerlo presente al añadir código nuevo:
 
 - **No uses comillas tipográficas** (`"` `"`) en los `.js`. Un copiar-pegar desde
   un documento ya rompió el login con `SyntaxError: Invalid or unexpected token`.
+- **Si creas una página nueva, cométela.** `bizerba.html` y `carga.html` se
+  perdieron por trabajar en local sin subirlas: al desplegar desde una copia
+  limpia, Hosting sustituye el contenido de `public/` y los QR impresos que
+  apuntaban a ellas empezaron a dar 404. Hay carteles plastificados en la nave
+  con esas URL, así que un fichero que falte se traduce en gente que no puede
+  trabajar.
+- Los formularios públicos escriben con los campos **exactos** que valida
+  `firestore.rules` (`hasOnly`). Añadir un campo de más hace que la escritura se
+  deniegue sin error visible para el usuario.
 - `firebase.txt` es un resto del alta del proyecto en Firebase; no se usa.
 - Las reglas dejan `mensajes`, `incidencias` y `reservas` con lectura pública
   porque las páginas sin login las necesitan. Es una consecuencia asumida de que
