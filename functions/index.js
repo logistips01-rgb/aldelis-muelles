@@ -91,6 +91,32 @@ function horaMadrid(ms) {
   });
 }
 
+// ── Correccion de la fuente para Outlook ────────────────────────────────────
+// Outlook de escritorio usa el motor de Word, que NO hereda font-family del
+// <body> dentro de las celdas de tabla: cada <td> cae a Times New Roman. Hay
+// que repetir la familia en cada elemento con texto. En lugar de escribirla 55
+// veces a mano, se inyecta al final sobre el HTML ya construido: alli donde hay
+// font-size hay texto.
+// Sin comillas alrededor de Segoe UI a proposito: los estilos van dentro de
+// atributos style='...' delimitados por comilla simple, y una comilla aqui
+// cerraria el atributo y se perderia el resto de propiedades. En CSS un nombre
+// de familia con espacios es valido sin comillas.
+const FONT = "font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;";
+
+function forzarFuente(html) {
+  return html.replace(/font-size:/g, FONT + "font-size:");
+}
+
+// Cabecera comun de los correos. color-scheme le dice al cliente que el diseño
+// es para fondo claro, para que el modo oscuro no invierta las tarjetas blancas
+// ni lave el rojo de la cabecera.
+const HEAD_EMAIL =
+  "<!DOCTYPE html><html><head><meta charset='utf-8'>" +
+  "<meta name='color-scheme' content='light only'>" +
+  "<meta name='supported-color-schemes' content='light only'>" +
+  "<style>:root{color-scheme:light only;supported-color-schemes:light only}</style>" +
+  "</head>";
+
 // ── Función callable: enviar email desde el cliente ─────────────────────────
 //
 // PASO 1 de la correccion de seguridad. Esta funcion enviaba correo desde
@@ -490,7 +516,7 @@ async function generarYEnviarInforme(label) {
       const topEsperas  = enNaveSegs.slice().sort((a, b) => b.coste - a.coste).slice(0, 8);
 
       const fechaFmt = d.toString().padStart(2,"0") + "/" + m.toString().padStart(2,"0") + "/" + y;
-      const CARD = "border-radius:8px;border:1px solid #e8e8e8;background:#fff";
+      const CARD = "border-radius:8px;border:1px solid #e8e8e8;background:#ffffff;background-color:#ffffff;color:#1A1A1A";
 
       // ── Construir HTML ───────────────────────────────────────────────────
 
@@ -609,8 +635,8 @@ async function generarYEnviarInforme(label) {
           filas + "</table></div>";
       }).join("");
 
-      const html =
-        "<!DOCTYPE html><html><body style='margin:0;padding:16px;background:#f0f0f0;font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,Helvetica,Arial,sans-serif'>" +
+      const htmlBruto =
+        HEAD_EMAIL + "<body bgcolor='#f0f0f0' style='margin:0;padding:16px;background-color:#f0f0f0;" + FONT + "'>" +
         "<div style='max-width:900px;margin:0 auto'>" +
 
         "<div style='background:#D41F3A;border-radius:8px;padding:20px 22px;margin-bottom:12px'>" +
@@ -653,6 +679,10 @@ async function generarYEnviarInforme(label) {
         "<div style='height:14px'></div>" +
         "<div style='text-align:center;font-size:11px;color:#aaa'>Costes de operacion del dia, no importe fijo del contrato &middot; " + diasLaborables + " dias laborables configurados</div>" +
         "</div></body></html>";
+
+      // Repite la familia tipografica en cada elemento con texto: sin esto,
+      // Outlook de escritorio pinta las tablas en Times New Roman.
+      const html = forzarFuente(htmlBruto);
 
       const asunto = "Informe de costes Lanzaderas — " + fechaFmt + " — " + formatEuro(costeTotal);
       const cuerpo = "Informe de costes " + fechaFmt + " — Total operaciones: " + formatEuro(costeTotal);
@@ -713,7 +743,7 @@ async function generarYEnviarInformeBizerba() {
       .get();
 
     const fechaFmt = d.toString().padStart(2,"0") + "/" + m.toString().padStart(2,"0") + "/" + y;
-    const CARD = "border-radius:8px;border:1px solid #e8e8e8;background:#fff";
+    const CARD = "border-radius:8px;border:1px solid #e8e8e8;background:#ffffff;background-color:#ffffff;color:#1A1A1A";
 
     const incs = [];
     snap.forEach(doc => incs.push({ id: doc.id, ...doc.data() }));
@@ -802,8 +832,8 @@ async function generarYEnviarInformeBizerba() {
         "</tr>";
     }).join("") : "<tr><td colspan='5' style='padding:8px;color:#1D9E75;font-size:13px;text-align:center'>Todas resueltas ✓</td></tr>";
 
-    const html =
-      "<!DOCTYPE html><html><body style='margin:0;padding:16px;background:#f0f0f0;font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,Helvetica,Arial,sans-serif'>" +
+    const htmlBruto =
+      HEAD_EMAIL + "<body bgcolor='#f0f0f0' style='margin:0;padding:16px;background-color:#f0f0f0;" + FONT + "'>" +
       "<div style='max-width:700px;margin:0 auto'>" +
 
       "<div style='background:#1A1A1A;border-radius:8px;padding:20px 22px;margin-bottom:12px'>" +
@@ -843,6 +873,8 @@ async function generarYEnviarInformeBizerba() {
       "<div style='height:14px'></div>" +
       "<div style='text-align:center;font-size:11px;color:#aaa'>Informe de incidencias de etiquetado Bizerba &middot; " + fechaFmt + "</div>" +
       "</div></body></html>";
+
+    const html = forzarFuente(htmlBruto);
 
     const asunto = "Informe Bizerba — " + fechaFmt + " — " + total + " incidencias (" + resueltas.length + " resueltas)";
     const cuerpo = "Informe Bizerba " + fechaFmt + " — Total: " + total + " incidencias, " + resueltas.length + " resueltas, " + sinResolver.length + " sin resolver.";
