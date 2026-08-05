@@ -4,10 +4,48 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
   <title>Aldelis — Lanzadera</title>
-  <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#D41F3A">
   <link rel="icon" href="/icon-512.png">
   <link rel="apple-touch-icon" href="/icon-512.png">
+  <!-- iOS: el push web SOLO funciona si la pagina esta añadida a la pantalla
+       de inicio. Estas etiquetas hacen que se abra sin barra de navegador. -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Lanzadera">
+  <script>
+  // El manifest se genera aqui, no es un fichero fijo, porque cada conductor
+  // entra por su QR con ?l=1..4 y su icono tiene que abrir SU lanzadera. Con un
+  // manifest estatico y start_url "/" el icono abriria el formulario de
+  // reservas de transportistas.
+  (function () {
+    try {
+      var n = new URLSearchParams(location.search).get("l");
+      var num = (n && +n >= 1 && +n <= 4) ? +n : null;
+      var manifest = {
+        name:             num ? "Aldelis Lanzadera " + num : "Aldelis Lanzadera",
+        short_name:       num ? "Lanzadera " + num : "Lanzadera",
+        description:      "Registro de ubicacion y chat con el almacen",
+        start_url:        location.pathname + location.search,
+        scope:            "/",
+        display:          "standalone",
+        orientation:      "portrait",
+        background_color: "#F5F5F5",
+        theme_color:      "#D41F3A",
+        icons: [
+          { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+          { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" }
+        ]
+      };
+      var link = document.createElement("link");
+      link.rel = "manifest";
+      link.href = URL.createObjectURL(
+        new Blob([JSON.stringify(manifest)], { type: "application/manifest+json" })
+      );
+      document.head.appendChild(link);
+      if (num) document.title = "Lanzadera " + num + " — Aldelis";
+    } catch (e) { /* sin manifest se puede usar igual, solo no se instala */ }
+  })();
+  </script>
   <link rel="stylesheet" href="css/style.css">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
