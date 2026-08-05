@@ -88,6 +88,7 @@ const ACCION_LABEL = { cargando: "Cargando", descargando: "Descargando", present
 // y lo que sale en el envio manual del informe.
 const LANZ_MENSUAL = 16000;  // €/mes de las lanzaderas 1, 2 y 3
 const LANZ4_HORA   = 150;    // €/hora de la lanzadera 4
+const LANZ_MIN_DIA = { 1: 1440, 2: 1440, 3: 1440 };  // minutos disponibles al dia
 
 // La funcion corre en UTC: hay que formatear la hora en zona Madrid o el
 // detalle por lanzadera saldria desfasado una o dos horas.
@@ -490,9 +491,9 @@ async function generarYEnviarInforme(label) {
 
       const diasLaborables = (appSnap.exists && appSnap.data().diasLaborables) || 22;
       const LANZ_COSTE_MIN = {
-        1: LANZ_MENSUAL / (diasLaborables * 1440),
-        2: LANZ_MENSUAL / (diasLaborables * 1440),
-        3: LANZ_MENSUAL / (diasLaborables * 480),
+        1: LANZ_MENSUAL / (diasLaborables * LANZ_MIN_DIA[1]),
+        2: LANZ_MENSUAL / (diasLaborables * LANZ_MIN_DIA[2]),
+        3: LANZ_MENSUAL / (diasLaborables * LANZ_MIN_DIA[3]),
         4: LANZ4_HORA / 60
       };
 

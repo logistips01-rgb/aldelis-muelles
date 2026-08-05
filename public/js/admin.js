@@ -612,19 +612,19 @@ const ACCION_COLOR = { cargando: "#185FA5", descargando: "#1D9E75", presente: "#
 // functions/index.js (generarYEnviarInforme), que calcula el informe automatico.
 const LANZ_MENSUAL = 16000;  // €/mes de las lanzaderas 1, 2 y 3
 const LANZ4_HORA   = 150;    // €/hora de la lanzadera 4
+const LANZ_MIN_DIA = { 1: 1440, 2: 1440, 3: 1440 };  // minutos disponibles al dia
 
 // Coste por minuto de cada lanzadera — se recalcula con diasLaborables del mes
-// L1/L2: 16.000€/mes ÷ diasLaborables ÷ 1440 min/día (24 h)
-// L3:    16.000€/mes ÷ diasLaborables ÷ 480 min/jornada (8 h)
-// L4:    150€/h → 2,50€/min (tarifa horaria fija)
+// L1/L2/L3: 16.000€/mes ÷ diasLaborables ÷ 1440 min/día (24 h)
+// L4:       150€/h → 2,50€/min (tarifa horaria fija)
 let _diasLaborables = 22;
 let LANZ_COSTE_MIN = {};
 function recalcLanzCosteMin() {
   const d = _diasLaborables > 0 ? _diasLaborables : 22;
   LANZ_COSTE_MIN = {
-    1: LANZ_MENSUAL / (d * 1440),
-    2: LANZ_MENSUAL / (d * 1440),
-    3: LANZ_MENSUAL / (d * 480),
+    1: LANZ_MENSUAL / (d * LANZ_MIN_DIA[1]),
+    2: LANZ_MENSUAL / (d * LANZ_MIN_DIA[2]),
+    3: LANZ_MENSUAL / (d * LANZ_MIN_DIA[3]),
     4: LANZ4_HORA / 60
   };
 }

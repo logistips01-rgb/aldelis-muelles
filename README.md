@@ -207,8 +207,7 @@ llegaban dos correos con diseños distintos.
 
 El coste por minuto de cada lanzadera se calcula así:
 
-- L1, L2: 16.000 €/mes ÷ `diasLaborables` ÷ 1440 min
-- L3: 16.000 €/mes ÷ `diasLaborables` ÷ 480 min (jornada de 8 h)
+- L1, L2, L3: 16.000 €/mes ÷ `diasLaborables` ÷ 1440 min (24 h)
 - L4: 150 €/h (tarifa horaria fija)
 
 `diasLaborables` se configura en el panel y por defecto es 22. Las tarifas, en
