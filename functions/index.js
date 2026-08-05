@@ -83,6 +83,12 @@ function esc(s) {
 
 const ACCION_LABEL = { cargando: "Cargando", descargando: "Descargando", presente: "Presente" };
 
+// Tarifas de las lanzaderas. Si cambian hay que cambiarlas TAMBIEN en
+// public/js/admin.js (recalcLanzCosteMin), que calcula lo que se ve en el panel
+// y lo que sale en el envio manual del informe.
+const LANZ_MENSUAL = 16000;  // €/mes de las lanzaderas 1, 2 y 3
+const LANZ4_HORA   = 150;    // €/hora de la lanzadera 4
+
 // La funcion corre en UTC: hay que formatear la hora en zona Madrid o el
 // detalle por lanzadera saldria desfasado una o dos horas.
 function horaMadrid(ms) {
@@ -484,10 +490,10 @@ async function generarYEnviarInforme(label) {
 
       const diasLaborables = (appSnap.exists && appSnap.data().diasLaborables) || 22;
       const LANZ_COSTE_MIN = {
-        1: 12500 / (diasLaborables * 1440),
-        2: 12500 / (diasLaborables * 1440),
-        3: 12500 / (diasLaborables * 480),
-        4: 150 / 60
+        1: LANZ_MENSUAL / (diasLaborables * 1440),
+        2: LANZ_MENSUAL / (diasLaborables * 1440),
+        3: LANZ_MENSUAL / (diasLaborables * 480),
+        4: LANZ4_HORA / 60
       };
 
       const NAVE_NOMBRE = {};

@@ -207,11 +207,15 @@ llegaban dos correos con diseños distintos.
 
 El coste por minuto de cada lanzadera se calcula así:
 
-- L1, L2: 12.500 €/mes ÷ `diasLaborables` ÷ 1440 min
-- L3: 12.500 €/mes ÷ `diasLaborables` ÷ 480 min (jornada de 8 h)
+- L1, L2: 16.000 €/mes ÷ `diasLaborables` ÷ 1440 min
+- L3: 16.000 €/mes ÷ `diasLaborables` ÷ 480 min (jornada de 8 h)
 - L4: 150 €/h (tarifa horaria fija)
 
-`diasLaborables` se configura en el panel y por defecto es 22.
+`diasLaborables` se configura en el panel y por defecto es 22. Las tarifas, en
+cambio, estan en el codigo como constantes `LANZ_MENSUAL` y `LANZ4_HORA`, y
+estan **duplicadas** en `public/js/admin.js` y `functions/index.js`: si cambian,
+hay que cambiarlas en los dos sitios o el panel y el informe automatico daran
+cifras distintas.
 
 ---
 
