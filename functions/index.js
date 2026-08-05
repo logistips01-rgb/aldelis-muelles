@@ -187,6 +187,7 @@ async function puedeSeccion(email, seccion) {
 
 const SECCION_LABEL = { seco: "Almacen Seco", frio: "Almacen Frio", lavadero: "Lavadero" };
 const FIRMA = "\n\nAldelis — Gestion de muelles";
+const CARD_RESET = "border-radius:8px;border:1px solid #e8e8e8;background:#ffffff;background-color:#ffffff;color:#1A1A1A";
 
 // Envia a una lista y devuelve cuantos han salido bien.
 async function enviarALista(destinatarios, asunto, cuerpo, html, imagen) {
@@ -349,6 +350,77 @@ exports.enviarEmail = functions.https.onCall(async (request, context) => {
         null, null);
 
       return { ok: enviados > 0 };
+    }
+
+    // ── Restablecer contraseña ──────────────────────────────────────────────
+    // Publico por necesidad: quien ha olvidado la contraseña no puede estar
+    // identificado. El enlace lo genera el SDK de administrador y lo enviamos
+    // por Graph desde reservas@aldelis.com, en lugar de dejarselo a Firebase:
+    // sus correos salen de noreply@aldelis-muelles.firebaseapp.com y Exchange
+    // Online los manda a cuarentena.
+    if (tipo === "password_reset") {
+      const email = (typeof data.email === "string") ? data.email.trim().toLowerCase() : "";
+      if (!destinatarioValido(email)) return { ok: false, error: "Email no valido" };
+
+      // Respuesta siempre igual, exista la cuenta o no: si dijeramos la verdad,
+      // esto serviria para averiguar quien tiene cuenta en el sistema.
+      const RESPUESTA = { ok: true };
+
+      // Un correo cada 5 minutos por direccion, para que no se pueda usar para
+      // bombardear el buzon de alguien.
+      const ref  = db.collection("password_resets").doc(email);
+      const prev = await ref.get();
+      if (prev.exists && prev.data().ts &&
+          Date.now() - prev.data().ts.toMillis() < 5 * 60 * 1000) {
+        console.warn("password_reset limitado por frecuencia:", email);
+        return RESPUESTA;
+      }
+      await ref.set({ ts: admin.firestore.Timestamp.now() });
+
+      let enlace;
+      try {
+        enlace = await admin.auth().generatePasswordResetLink(email, {
+          url: "https://aldelis-muelles.web.app/admin.html"
+        });
+      } catch (e) {
+        // Cuenta inexistente: no se distingue del caso correcto.
+        console.warn("password_reset sin cuenta:", email, e.code || e.message);
+        return RESPUESTA;
+      }
+
+      const htmlReset = forzarFuente(
+        HEAD_EMAIL +
+        "<body bgcolor='#f0f0f0' style='margin:0;padding:16px;background-color:#f0f0f0;" + FONT + "'>" +
+        "<div style='max-width:520px;margin:0 auto'>" +
+        "<div style='background:#D41F3A;border-radius:8px;padding:20px 22px;margin-bottom:12px'>" +
+        "<div style='color:#fff;font-size:20px;font-weight:700;letter-spacing:-.5px'>Aldelis</div>" +
+        "<div style='color:rgba(255,255,255,.8);font-size:12px;margin-top:2px'>Restablecer contraseña</div>" +
+        "</div>" +
+        "<div style='" + CARD_RESET + ";padding:22px'>" +
+        "<div style='font-size:14px;color:#374151;line-height:1.6'>" +
+        "Has pedido restablecer la contraseña de tu cuenta del panel de Aldelis." +
+        "</div>" +
+        "<div style='margin:20px 0'>" +
+        "<a href='" + enlace + "' style='background:#D41F3A;color:#ffffff;text-decoration:none;" +
+        "display:inline-block;padding:12px 22px;border-radius:8px;font-size:15px;font-weight:600'>" +
+        "Elegir contraseña nueva</a></div>" +
+        "<div style='font-size:12px;color:#6B7280;line-height:1.6'>" +
+        "El enlace caduca en una hora. Si no has pedido esto, ignora el correo: " +
+        "tu contraseña no cambia mientras no uses el enlace." +
+        "</div></div>" +
+        "<div style='height:14px'></div>" +
+        "<div style='text-align:center;font-size:11px;color:#aaa'>Aldelis &middot; Gestion de muelles</div>" +
+        "</div></body></html>"
+      );
+
+      await enviarALista([email],
+        "Restablecer tu contraseña de Aldelis",
+        "Has pedido restablecer la contraseña del panel de Aldelis.\n\n" +
+        "Abre este enlace para elegir una nueva:\n" + enlace + "\n\n" +
+        "El enlace caduca en una hora. Si no has pedido esto, ignora el correo." + FIRMA,
+        htmlReset, null);
+
+      return RESPUESTA;
     }
 
     // ── Informe de costes enviado a mano desde el panel ─────────────────────

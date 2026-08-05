@@ -16,7 +16,7 @@ global.fetch = async (url, opts) => {
     enviados.push({
       to: msg.toRecipients[0].emailAddress.address,
       subject: msg.subject,
-      contenido: (msg.body.content || "").substring(0, 400),
+      contenido: (msg.body.content || "").substring(0, 6000),
       tieneImagen: (msg.attachments || []).length > 0
     });
     return { status: 202 };
@@ -25,6 +25,23 @@ global.fetch = async (url, opts) => {
 };
 
 const admin = require("firebase-admin");
+
+// Cuentas que "existen" para la prueba, y captura de los enlaces generados
+const CUENTAS = ["mlorente@aldelis.com", "jpina@aldelis.com"];
+// admin.auth es solo lectura en firebase-admin v13: hay que redefinirla.
+Object.defineProperty(admin, "auth", {
+  configurable: true,
+  value: function () {
+    return {
+      generatePasswordResetLink: async (email) => {
+        if (!CUENTAS.includes(email)) {
+          const e = new Error("no existe"); e.code = "auth/user-not-found"; throw e;
+        }
+        return "https://aldelis-muelles.firebaseapp.com/__/auth/action?mode=resetPassword&oobCode=FALSO&email=" + encodeURIComponent(email);
+      }
+    };
+  }
+});
 const fn    = require("./index.js");
 const db    = admin.firestore();
 
@@ -52,6 +69,11 @@ function igual(real, esperado, que) {
 }
 
 async function sembrar() {
+  // El emulador conserva los datos entre ejecuciones: si no se limpia, el
+  // control de frecuencia de la vez anterior hace fallar la primera prueba.
+  const viejos = await db.collection("password_resets").get();
+  for (const d of viejos.docs) await d.ref.delete();
+
   await db.collection("config").doc("alertas").set({ emails: ["mlorente@aldelis.com", "garita@aldelis.com"] });
   await db.collection("config").doc("costes").set({ emails: ["mlorente@aldelis.com"] });
   await db.collection("permisos").doc("sincostes@aldelis.com").set({ secciones: ["lanzaderas"] });
@@ -221,6 +243,42 @@ async function nuevaReserva(id, extra) {
       imageBase64: "x".repeat(5000001)
     }, { auth: ADMIN_USER });
     igual(r.ok, false); igual(r.error, "Imagen no valida");
+  });
+
+  console.log("\n=== password_reset (publico, enviado desde reservas@) ===");
+  await t("cuenta existente: envia el enlace", async () => {
+    const r = await llamar({ tipo: "password_reset", email: "mlorente@aldelis.com" });
+    igual(r.ok, true);
+    igual(enviados.length, 1, "correos:");
+    igual(enviados[0].to, "mlorente@aldelis.com");
+    if (!enviados[0].subject.includes("Restablecer")) throw new Error("asunto: " + enviados[0].subject);
+    if (!enviados[0].contenido.includes("mode=resetPassword")) throw new Error("el correo no lleva el enlace");
+  });
+  await t("cuenta inexistente: misma respuesta y sin correo", async () => {
+    const r = await llamar({ tipo: "password_reset", email: "nadie@ejemplo.com" });
+    igual(r.ok, true, "no debe revelar si existe:");
+    igual(enviados.length, 0, "no debe enviar nada:");
+  });
+  await t("segundo intento seguido se limita (anti bombardeo)", async () => {
+    const r = await llamar({ tipo: "password_reset", email: "mlorente@aldelis.com" });
+    igual(r.ok, true);
+    igual(enviados.length, 0, "no debe reenviar antes de 5 min:");
+  });
+  await t("pasados 5 min si se puede volver a pedir", async () => {
+    await db.collection("password_resets").doc("jpina@aldelis.com")
+      .set({ ts: admin.firestore.Timestamp.fromMillis(Date.now() - 6 * 60 * 1000) });
+    const r = await llamar({ tipo: "password_reset", email: "jpina@aldelis.com" });
+    igual(r.ok, true);
+    igual(enviados.length, 1, "debe enviarse:");
+  });
+  await t("email invalido se rechaza", async () => {
+    const r = await llamar({ tipo: "password_reset", email: "no-es-un-correo" });
+    igual(r.ok, false); igual(r.error, "Email no valido");
+  });
+  await t("sin App Check se rechaza", async () => {
+    const r = await llamar({ tipo: "password_reset", email: "mlorente@aldelis.com" }, { sinAppCheck: true });
+    igual(r.ok, false); igual(r.error, "No autorizado");
+    igual(enviados.length, 0);
   });
 
   console.log("\n=========================================");

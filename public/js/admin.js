@@ -369,8 +369,95 @@ function iniciarSesion() {
   const pass  = document.getElementById("login-pass").value;
   const err   = document.getElementById("login-error");
   err.style.display = "none";
+  document.getElementById("login-info").style.display = "none";
   auth.signInWithEmailAndPassword(email, pass)
     .catch(() => { err.textContent = "Email o contrasena incorrectos."; err.style.display = "block"; });
+}
+
+// ─── CONTRASEÑA ──────────────────────────────────────────────────────────────
+// El correo de restablecimiento lo manda nuestra Cloud Function desde
+// reservas@aldelis.com, no Firebase: los suyos salen de
+// noreply@aldelis-muelles.firebaseapp.com y Exchange Online los pone en
+// cuarentena, asi que nunca llegaban.
+async function olvideContrasena() {
+  const email = document.getElementById("login-email").value.trim().toLowerCase();
+  const err   = document.getElementById("login-error");
+  const info  = document.getElementById("login-info");
+  err.style.display = "none";
+  info.style.display = "none";
+
+  if (!email || !email.includes("@")) {
+    err.textContent = "Escribe tu email arriba y vuelve a pulsar.";
+    err.style.display = "block";
+    return;
+  }
+
+  try {
+    const enviarEmail = firebase.functions().httpsCallable("enviarEmail");
+    await enviarEmail({ tipo: "password_reset", email: email });
+  } catch (e) {
+    console.error("password_reset:", e);
+  }
+  // Mismo mensaje exista la cuenta o no: si dijeramos la verdad, esto serviria
+  // para averiguar quien tiene cuenta.
+  info.textContent = "Si esa direccion tiene cuenta, te llega un correo con el enlace. Revisa tambien la carpeta de correo no deseado.";
+  info.style.display = "block";
+}
+
+function abrirModalPass() {
+  ["pass-actual", "pass-nueva", "pass-nueva2"].forEach(id => {
+    document.getElementById(id).value = "";
+  });
+  document.getElementById("pass-msg").style.display = "none";
+  document.getElementById("modal-pass").style.display = "flex";
+}
+
+function cerrarModalPass() {
+  document.getElementById("modal-pass").style.display = "none";
+}
+
+function msgPass(texto, color) {
+  const m = document.getElementById("pass-msg");
+  m.textContent = texto;
+  m.style.color = color;
+  m.style.display = "block";
+}
+
+async function guardarContrasena() {
+  const actual = document.getElementById("pass-actual").value;
+  const nueva  = document.getElementById("pass-nueva").value;
+  const nueva2 = document.getElementById("pass-nueva2").value;
+
+  if (!actual)              { msgPass("Escribe tu contrasena actual.", "#D41F3A"); return; }
+  if (nueva.length < 6)     { msgPass("La nueva debe tener al menos 6 caracteres.", "#D41F3A"); return; }
+  if (nueva !== nueva2)     { msgPass("Las dos contrasenas nuevas no coinciden.", "#D41F3A"); return; }
+  if (nueva === actual)     { msgPass("La nueva es igual que la actual.", "#D41F3A"); return; }
+
+  const user = auth.currentUser;
+  if (!user) { msgPass("Sesion caducada, vuelve a entrar.", "#D41F3A"); return; }
+
+  msgPass("Guardando...", "#6B7280");
+  try {
+    // Firebase exige reautenticar antes de cambiar la contraseña: evita que
+    // alguien que se encuentre una sesion abierta la secuestre.
+    const cred = firebase.auth.EmailAuthProvider.credential(user.email, actual);
+    await user.reauthenticateWithCredential(cred);
+    await user.updatePassword(nueva);
+    msgPass("Contrasena cambiada correctamente.", "#1D9E75");
+    setTimeout(cerrarModalPass, 1800);
+  } catch (e) {
+    const codigo = e && e.code;
+    if (codigo === "auth/wrong-password" || codigo === "auth/invalid-credential") {
+      msgPass("La contrasena actual no es correcta.", "#D41F3A");
+    } else if (codigo === "auth/weak-password") {
+      msgPass("La nueva es demasiado debil.", "#D41F3A");
+    } else if (codigo === "auth/too-many-requests") {
+      msgPass("Demasiados intentos. Espera unos minutos.", "#D41F3A");
+    } else {
+      console.error("cambio de contrasena:", e);
+      msgPass("No se pudo cambiar. Intentalo de nuevo.", "#D41F3A");
+    }
+  }
 }
 
 function cerrarSesion() {

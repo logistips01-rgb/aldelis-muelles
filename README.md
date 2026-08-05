@@ -138,6 +138,7 @@ relay abierto: cualquiera podía enviar correo desde `reservas@aldelis.com`.
 | `reserva_estado` | Login | `reservaId` | El `email` del documento |
 | `alerta_lanzadera` | Login | `numero`, `lugar`, `minutos` | `config/alertas` |
 | `informe_costes` | Login + sección `costes` | `fechaFmt`, `costeTotal`, `html`, `imageBase64` | `config/costes` |
+| `password_reset` | Público | `email` | La propia dirección, si tiene cuenta |
 
 Reglas que aplica siempre:
 
@@ -150,6 +151,13 @@ Reglas que aplica siempre:
   reservas viejas.
 - Los textos de los correos se redactan dentro de la función. Si hay que cambiar
   la redacción de un aviso, se cambia ahí, no en el navegador.
+- `password_reset` genera el enlace con el SDK de administrador y lo envía por
+  Graph **a propósito, en lugar de dejárselo a Firebase**: los correos de
+  Firebase salen de `noreply@aldelis-muelles.firebaseapp.com` y Exchange Online
+  los manda a cuarentena, así que no llegaban. Responde lo mismo exista la
+  cuenta o no (para que no sirva para averiguar quién tiene cuenta) y admite un
+  correo cada 5 minutos por dirección, controlado en la colección
+  `password_resets`, que el cliente no puede leer ni escribir.
 
 Hay pruebas en `functions/test-enviarEmail.js`, que interceptan las llamadas a
 Microsoft y usan el emulador de Firestore. No se despliegan (`test-*.js` está en

@@ -32,6 +32,13 @@ service cloud.firestore {
       );
     }
 
+    // Control de frecuencia de los correos de restablecimiento de contraseña.
+    // Solo lo toca la Cloud Function con el SDK de administrador: si un cliente
+    // pudiera escribir aqui, podria saltarse el limite de un correo cada 5 min.
+    match /password_resets/{email} {
+      allow read, write: if false;
+    }
+
     // Un usuario puede leer su propio documento de permisos (lo necesita el
     // panel al arrancar). Escribir y listar, solo los administradores.
     match /permisos/{email} {
