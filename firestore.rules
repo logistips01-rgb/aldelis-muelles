@@ -113,6 +113,24 @@ service cloud.firestore {
       allow create, update: if validNota();
     }
 
+    // Quien conduce cada lanzadera y su telefono, para poder llamarle.
+    // La escritura es abierta porque el conductor no tiene login, pero la
+    // LECTURA no: es un telefono, dato personal, y solo lo ve quien tenga la
+    // seccion de lanzaderas en el panel. El movil del conductor no necesita
+    // leerlo: recuerda sus datos en el propio dispositivo.
+    match /lanzaderas_chofer/{id} {
+      allow read: if permitido('lanzaderas');
+      allow create, update: if validChofer();
+    }
+
+    function validChofer() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['numero', 'nombre', 'telefono', 'ts'])
+        && d.numero is number && d.numero >= 1 && d.numero <= 4
+        && d.nombre is string && d.nombre.size() > 0 && d.nombre.size() <= 120
+        && d.telefono is string && d.telefono.size() <= 20;
+    }
+
     function validNota() {
       let d = request.resource.data;
       return d.numero is number && d.numero >= 1 && d.numero <= 4

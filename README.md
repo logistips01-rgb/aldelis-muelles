@@ -70,6 +70,7 @@ escaneando un QR pegado en la línea o en su tarjeta.
 | `lanzaderas` | Estado en vivo, un documento por lanzadera (`"1"`..`"4"`) | Estados: `en_nave`, `transito`, `fuera` |
 | `lanzaderas_log` | Histórico de movimientos | Solo se añade; base de los informes de costes |
 | `lanzaderas_nota` | Indicación del almacén al conductor | Un documento por lanzadera |
+| `lanzaderas_chofer` | Quién conduce cada lanzadera y su teléfono | **Contiene un teléfono**: lectura solo con la sección `lanzaderas`. Lo escribe el conductor desde su móvil |
 | `mensajes` | Chat entre almacén y lanzaderas | Campo `lanzadera` (1-4) y `de` (`almacen`/`lanzadera`) |
 | `cargas` | Registro de cargas en muelles M1-M5 | **Contiene DNI de choferes**, lectura restringida |
 | `descargas_merca` | Descargas de proveedores en Merca (M2, M4) | |

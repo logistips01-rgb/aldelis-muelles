@@ -27,12 +27,84 @@ let sel = { numero: null, nave: null, accion: null, muelle: null, destino: null 
 // Preseleccion de lanzadera por URL (?l=1)
 const paramL = new URLSearchParams(location.search).get("l");
 if (paramL && +paramL >= 1 && +paramL <= 4) sel.numero = +paramL;
+// Los datos del conductor se leen del propio dispositivo, no de Firestore.
+// Se hace en cuanto se sabe la lanzadera (aqui o en pickLanzadera).
 
 const app = document.getElementById("app");
+
+// ── Conductor ───────────────────────────────────────────────────────────────
+// El almacen necesita saber quien conduce y su telefono para poder llamarle. Se
+// pide una sola vez por lanzadera y dispositivo: queda guardado en el propio
+// movil, asi que en los turnos siguientes no se vuelve a preguntar.
+let chofer = { nombre: "", telefono: "" };
+let _editandoChofer = false;
+
+function choferKey() { return "chofer_lanz_" + sel.numero; }
+
+function cargarChoferLocal() {
+  chofer = { nombre: "", telefono: "" };
+  if (!sel.numero) return;
+  try {
+    const j = localStorage.getItem(choferKey());
+    if (j) {
+      const o = JSON.parse(j);
+      chofer.nombre   = o.nombre   || "";
+      chofer.telefono = o.telefono || "";
+    }
+  } catch (e) { /* dato corrupto: se vuelve a pedir */ }
+}
+
+function renderChofer() {
+  app.innerHTML =
+    "<div class='card'><h2>¿Quien conduce?</h2>" +
+    "<p class='card-desc'>Lanzadera " + sel.numero + ". El almacen lo necesita para poder " +
+    "llamarte si hace falta. Solo se pregunta una vez en este movil.</p>" +
+    "<div class='field'><label>Nombre</label>" +
+    "<input type='text' id='ch-nombre' maxlength='120' placeholder='Nombre y apellidos' value='" +
+    escTexto(chofer.nombre) + "'></div>" +
+    "<div class='field'><label>Telefono</label>" +
+    "<input type='tel' id='ch-tel' maxlength='20' inputmode='tel' placeholder='600 000 000' value='" +
+    escTexto(chofer.telefono) + "'></div>" +
+    "<div id='ch-error' style='color:#D41F3A;font-size:13px;margin-bottom:10px;display:none'></div>" +
+    "<button class='btn-primary' onclick='guardarChofer()'>Continuar</button>" +
+    (chofer.nombre ? "<button class='btn-ghost' style='margin-top:8px' onclick='cancelarChofer()'>Cancelar</button>" : "") +
+    "</div>";
+}
+
+async function guardarChofer() {
+  const nombre = document.getElementById("ch-nombre").value.trim();
+  const tel    = document.getElementById("ch-tel").value.trim();
+  const err    = document.getElementById("ch-error");
+
+  if (!nombre) { err.textContent = "Escribe tu nombre."; err.style.display = "block"; return; }
+  if (!tel)    { err.textContent = "Escribe tu telefono."; err.style.display = "block"; return; }
+
+  chofer = { nombre: nombre, telefono: tel };
+  try { localStorage.setItem(choferKey(), JSON.stringify(chofer)); } catch (e) {}
+
+  try {
+    await db.collection("lanzaderas_chofer").doc(String(sel.numero)).set({
+      numero:   sel.numero,
+      nombre:   nombre,
+      telefono: tel,
+      ts:       firebase.firestore.Timestamp.now()
+    });
+  } catch (e) {
+    // Si falla el guardado seguimos: lo importante es que pueda trabajar.
+    console.warn("chofer:", e.message);
+  }
+
+  _editandoChofer = false;
+  render();
+}
+
+function cancelarChofer() { _editandoChofer = false; render(); }
+function editarChofer()   { _editandoChofer = true;  render(); }
 
 function render() {
   ensureChatLanz();
   if (!sel.numero) return renderLanzaderas();
+  if (!chofer.nombre || _editandoChofer) return renderChofer();
   if (!sel.nave)   return renderNaves();
   if (sel.nave === "plaza" && !sel.muelle) return renderMuelles();
   if (sel.nave === "merca" && !sel.muelle) return renderMuellesMerca();
@@ -138,10 +210,16 @@ function renderHecho(estado) {
 }
 
 function cabecera() {
-  return "<div class='step-indicator'>Lanzadera " + sel.numero + "</div>";
+  return "<div class='step-indicator'>Lanzadera " + sel.numero +
+    (chofer.nombre ? " &middot; " + escTexto(chofer.nombre) : "") + "</div>" +
+    (chofer.nombre
+      ? "<div style='text-align:center;margin:-6px 0 10px'>" +
+        "<a href='#' onclick='editarChofer();return false' " +
+        "style='font-size:12px;color:#9CA3AF;text-decoration:none'>No soy yo, cambiar conductor</a></div>"
+      : "");
 }
 
-function pickLanzadera(n) { sel.numero = n; render(); }
+function pickLanzadera(n) { sel.numero = n; cargarChoferLocal(); render(); }
 function pickNave(id)     { sel.nave = id; sel.accion = null; sel.muelle = null; render(); }
 function pickMuelle(m) {
   sel.muelle = m;
@@ -376,5 +454,9 @@ db.collection("config").doc("destinos").onSnapshot(d => {
     render();
   }
 }, () => {});
+
+// Si la lanzadera venia fijada en el QR (?l=N), recuperar los datos del
+// conductor guardados en este movil antes del primer pintado.
+cargarChoferLocal();
 
 render();

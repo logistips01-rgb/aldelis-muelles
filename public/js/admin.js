@@ -288,6 +288,7 @@ function iniciarListeners() {
   window._cargas      = window._cargas      || [];
   window._merca       = window._merca       || [];
   window._incidencias = window._incidencias || [];
+  window._choferes    = window._choferes    || {};
 
   if (_perms.reservas) {
     _unsubs.push(db.collection("reservas").where("fecha", "==", fecha)
@@ -352,6 +353,15 @@ function iniciarListeners() {
       _bizerbaEmailsCache = (d.exists && Array.isArray(d.data().emails)) ? d.data().emails : [];
       renderBizerbaEmails();
     }, () => {}));
+  }
+
+  if (_perms.lanzLog) {
+    // Cuatro documentos: quien conduce cada lanzadera y su telefono.
+    _unsubs.push(db.collection("lanzaderas_chofer").onSnapshot(s => {
+      window._choferes = {};
+      s.forEach(d => { window._choferes[d.id] = d.data(); });
+      renderChoferes();
+    }, e => console.error("choferes:", e)));
   }
 
   if (_perms.incidencias) {
@@ -581,7 +591,7 @@ function switchVista(vista) {
     document.getElementById("vista-" + v).style.display = vista === v ? "block" : "none";
     document.getElementById("btn-vista-" + v).classList.toggle("active", vista === v);
   });
-  if (vista === "lanzaderas") cargarLanzaderas();
+  if (vista === "lanzaderas") { cargarLanzaderas(); renderChoferes(); }
   if (vista === "cargas")     cargarCargas();
   if (vista === "merca")      cargarMerca();
   if (vista === "bizerba")    cargarBizerba();
@@ -649,6 +659,50 @@ function lanzaderaSegmentos(dayStart, dayEnd, accionFiltro, nave) {
     }
   });
   return segs;
+}
+
+// Quien conduce cada lanzadera, con enlace para llamar. El telefono lo escribe
+// el propio conductor en su movil la primera vez que usa su QR.
+function renderChoferes() {
+  const div = document.getElementById("choferes-lista");
+  if (!div) return;
+  const ch = window._choferes || {};
+
+  div.innerHTML = "<div class='informe-metricas' style='margin-top:0'>" +
+    [1, 2, 3, 4].map(n => {
+      const c = ch[String(n)];
+      if (!c || !c.nombre) {
+        return "<div class='metric-card' style='flex:1;min-width:150px'>" +
+          "<div class='metric-label'>Lanzadera " + n + "</div>" +
+          "<div style='font-size:13px;color:#9CA3AF;margin-top:6px'>Sin identificar</div>" +
+          "</div>";
+      }
+      const tel = String(c.telefono || "").trim();
+      // El href tel: quita espacios y guiones; el texto se muestra tal cual.
+      const telLimpio = tel.replace(/[^0-9+]/g, "");
+      return "<div class='metric-card' style='flex:1;min-width:150px'>" +
+        "<div class='metric-label'>Lanzadera " + n + "</div>" +
+        "<div style='font-size:15px;font-weight:600;margin-top:6px'>" + esc(c.nombre) + "</div>" +
+        (tel
+          ? "<div style='margin-top:4px'><a href='tel:" + esc(telLimpio) + "' " +
+            "style='font-size:14px;color:#D41F3A;text-decoration:none;font-weight:500'>" +
+            esc(tel) + "</a></div>"
+          : "<div style='font-size:13px;color:#9CA3AF;margin-top:4px'>Sin telefono</div>") +
+        "<div style='font-size:11px;color:#9CA3AF;margin-top:4px'>" +
+        (c.ts ? "Desde " + horaCorta(c.ts) : "") + "</div>" +
+        "</div>";
+    }).join("") + "</div>";
+}
+
+function horaCorta(ts) {
+  try {
+    const d = ts.toDate();
+    const hoy = new Date();
+    const mismoDia = d.toDateString() === hoy.toDateString();
+    const hora = String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+    if (mismoDia) return "hoy " + hora;
+    return String(d.getDate()).padStart(2, "0") + "/" + String(d.getMonth() + 1).padStart(2, "0") + " " + hora;
+  } catch (e) { return ""; }
 }
 
 function cargarLanzaderas() {
