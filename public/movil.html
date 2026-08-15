@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+  <title>Aldelis — Lanzaderas</title>
+  <meta name="theme-color" content="#1A1A1A">
+  <link rel="manifest" href="/manifest-movil.json">
+  <link rel="icon" href="/icon-512.png">
+  <link rel="apple-touch-icon" href="/icon-512.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Lanzaderas">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; min-width: 0; -webkit-tap-highlight-color: transparent; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: #F1F2F5;
+      color: #1A1A1A;
+      padding-bottom: calc(66px + env(safe-area-inset-bottom));
+      overflow-x: hidden;
+    }
+
+    /* ── Login ─────────────────────────────────────────────────────────── */
+    #login { padding: 40px 20px; max-width: 380px; margin: 0 auto; }
+    #login .logo { font-size: 30px; font-weight: 700; color: #D41F3A; text-align: center; }
+    #login .sub  { font-size: 13px; color: #6B7280; text-align: center; margin: 2px 0 26px; }
+    .campo { margin-bottom: 12px; }
+    .campo label { display: block; font-size: 12px; font-weight: 500; color: #374151; margin-bottom: 5px; }
+    .campo input {
+      width: 100%; padding: 13px 14px; border: 1.5px solid #E0E0E0; border-radius: 10px;
+      font-size: 16px; font-family: 'Inter', sans-serif; outline: none; background: #fff;
+    }
+    .campo input:focus { border-color: #D41F3A; }
+    .btn-full {
+      width: 100%; background: #D41F3A; color: #fff; border: none; border-radius: 10px;
+      padding: 14px; font-size: 16px; font-weight: 600; font-family: 'Inter', sans-serif;
+    }
+    .err { color: #D41F3A; font-size: 13px; margin-bottom: 10px; display: none; }
+
+    /* ── Cabecera ──────────────────────────────────────────────────────── */
+    .top {
+      background: #1A1A1A; color: #fff; padding: calc(12px + env(safe-area-inset-top)) 16px 12px;
+      display: flex; align-items: center; justify-content: space-between;
+      position: sticky; top: 0; z-index: 10;
+    }
+    .top .t { font-size: 16px; font-weight: 600; }
+    .top .h { font-size: 11px; color: #B4BAC2; }
+
+    .wrap { padding: 12px; }
+
+    /* ── Tarjetas de lanzadera ─────────────────────────────────────────── */
+    .card {
+      background: #fff; border-radius: 14px; padding: 14px; margin-bottom: 10px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.07); border-left: 4px solid #1D9E75;
+    }
+    .card.alerta  { border-left-color: #D41F3A; background: #FFF5F6; }
+    .card.transito{ border-left-color: #E08A00; }
+    .card.fuera   { border-left-color: #9CA3AF; }
+    .fila { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+    .fila > div:first-child { flex: 1; min-width: 0; }
+    .lz    { font-size: 12px; font-weight: 700; color: #D41F3A; letter-spacing: .05em; }
+    .donde { font-size: 19px; font-weight: 600; margin-top: 2px; line-height: 1.2; }
+    .donde.gris { color: #9CA3AF; }
+    .sub   { font-size: 13px; color: #6B7280; margin-top: 3px; }
+    .crono { font-size: 26px; font-weight: 700; line-height: 1; text-align: right; white-space: nowrap; }
+    .crono.mal { color: #D41F3A; }
+    .crono small { display: block; font-size: 10px; color: #9CA3AF; font-weight: 500; margin-top: 3px; letter-spacing: .04em; }
+    .chofer {
+      display: flex; align-items: center; gap: 8px; margin-top: 11px;
+      padding-top: 10px; border-top: 1px solid #F0F0F0;
+    }
+    .chofer .n { flex: 1; font-size: 13px; color: #374151; }
+    .chofer .n.gris { color: #9CA3AF; }
+    .btn {
+      border: none; border-radius: 9px; padding: 9px 14px; font-size: 13px;
+      font-weight: 600; font-family: 'Inter', sans-serif; position: relative;
+    }
+    .llamar { background: #1D9E75; color: #fff; text-decoration: none; display: inline-block; }
+    .chat   { background: #F1F2F5; color: #374151; }
+    .punto {
+      position: absolute; top: -5px; right: -5px; min-width: 18px; height: 18px; padding: 0 4px;
+      border-radius: 9px; background: #D41F3A; color: #fff; font-size: 10px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    .aviso {
+      background: #D41F3A; color: #fff; border-radius: 10px; padding: 9px 13px;
+      font-size: 13px; font-weight: 500; margin-bottom: 10px;
+      display: flex; gap: 8px; align-items: center;
+    }
+    .vacio { text-align: center; color: #9CA3AF; font-size: 14px; padding: 30px 16px; }
+
+    /* ── Chat ──────────────────────────────────────────────────────────── */
+    .hilos { display: flex; gap: 7px; overflow-x: auto; padding: 0 0 10px; }
+    .hilo {
+      flex: 0 0 auto; background: #fff; border: 1.5px solid #E5E7EB; border-radius: 20px;
+      padding: 7px 15px; font-size: 13px; font-weight: 600; color: #374151; position: relative;
+    }
+    .hilo.on { background: #1A1A1A; color: #fff; border-color: #1A1A1A; }
+    .msgs { padding-bottom: 8px; }
+    .msg { max-width: 82%; padding: 9px 13px; border-radius: 14px; margin-bottom: 7px; font-size: 14px; line-height: 1.4; }
+    .msg.mio  { background: #1A1A1A; color: #fff; margin-left: auto; border-bottom-right-radius: 4px; }
+    .msg.suyo { background: #fff; border-bottom-left-radius: 4px; }
+    .msg .meta { font-size: 10px; opacity: .6; margin-top: 3px; }
+    .escribir {
+      position: fixed; bottom: calc(66px + env(safe-area-inset-bottom)); left: 0; right: 0;
+      background: #fff; border-top: 1px solid #E5E7EB; padding: 9px 12px; display: flex; gap: 8px;
+    }
+    .escribir input {
+      flex: 1; border: 1.5px solid #E0E0E0; border-radius: 20px; padding: 10px 15px;
+      font-size: 16px; font-family: 'Inter', sans-serif; outline: none;
+    }
+    .escribir input:focus { border-color: #D41F3A; }
+    .escribir button {
+      background: #D41F3A; color: #fff; border: none; border-radius: 20px;
+      padding: 10px 18px; font-size: 14px; font-weight: 600; font-family: 'Inter', sans-serif;
+    }
+
+    /* ── Pestañas ──────────────────────────────────────────────────────── */
+    .tabs {
+      position: fixed; bottom: 0; left: 0; right: 0; background: #fff;
+      border-top: 1px solid #E5E7EB; display: flex;
+      padding: 7px 0 calc(10px + env(safe-area-inset-bottom)); z-index: 10;
+    }
+    .tab { flex: 1; text-align: center; font-size: 10px; color: #9CA3AF; font-weight: 500; position: relative; }
+    .tab .i { font-size: 19px; display: block; margin-bottom: 1px; }
+    .tab.on { color: #D41F3A; }
+    .tab .punto { top: 0; right: 50%; margin-right: -22px; }
+  </style>
+</head>
+<body>
+
+  <div id="login">
+    <div class="logo">Aldelis</div>
+    <div class="sub">Lanzaderas</div>
+    <div class="campo"><label>Email</label><input type="email" id="l-email" autocomplete="username" placeholder="usuario@aldelis.com"></div>
+    <div class="campo"><label>Contrasena</label><input type="password" id="l-pass" autocomplete="current-password" placeholder="••••••••"></div>
+    <div class="err" id="l-err"></div>
+    <button class="btn-full" onclick="entrar()">Entrar</button>
+    <div style="text-align:center;margin-top:14px">
+      <a href="#" onclick="olvide();return false" style="font-size:13px;color:#6B7280;text-decoration:none">He olvidado mi contrasena</a>
+    </div>
+    <div id="l-info" style="font-size:13px;color:#1D9E75;margin-top:12px;display:none;line-height:1.5"></div>
+  </div>
+
+  <div id="app" style="display:none">
+    <div class="top">
+      <div class="t" id="titulo">Lanzaderas</div>
+      <div class="h" id="reloj"></div>
+    </div>
+
+    <div class="wrap">
+      <div id="vista-lanz"></div>
+      <div id="vista-chat" style="display:none"></div>
+    </div>
+
+    <div class="escribir" id="barra-escribir" style="display:none">
+      <input type="text" id="msg-texto" maxlength="500" placeholder="Escribe un mensaje..."
+             onkeydown="if(event.key==='Enter')enviarMensaje()">
+      <button onclick="enviarMensaje()">Enviar</button>
+    </div>
+
+    <div class="tabs">
+      <div class="tab on" id="tab-lanz" onclick="irA('lanz')"><span class="i">&#128666;</span>Lanzaderas</div>
+      <div class="tab" id="tab-chat" onclick="irA('chat')"><span class="i">&#128172;</span>Chat</div>
+      <div class="tab" onclick="salir()"><span class="i">&#9099;</span>Salir</div>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-check-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js"></script>
+  <script src="js/firebase-config-compat.js"></script>
+  <script src="js/push.js"></script>
+  <script src="js/movil.js"></script>
+</body>
+</html>

@@ -26,6 +26,7 @@ public/                       Todo lo que se sirve por Hosting
     reserva.js                Lógica del formulario de reserva
     consulta.js               Lógica de la consulta pública
     admin.js                  Panel de almacén (el fichero principal)
+    movil.js                  Vista móvil del almacén (lanzaderas + chat)
     lanzadera.js              App del conductor
     bizerba.js                Panel del técnico
     push.js                   Registro del token FCM para notificaciones
@@ -39,6 +40,12 @@ firebase.json                 Configuración de Hosting y Firestore
 
 `aldelis-functions/` es una versión anterior de las functions que ya no se
 despliega; se conserva solo como referencia.
+
+`movil.html` es una página aparte del panel **a propósito**, no una versión
+adaptada. El panel suscribe ocho colecciones y dibuja rejillas, informes y
+costes; la vista móvil solo necesita los cuatro documentos de estado en vivo,
+los cuatro de conductor y el chat del día. Con varios móviles abiertos toda la
+jornada, la diferencia en lecturas de Firestore es grande.
 
 ---
 
@@ -54,6 +61,7 @@ despliega; se conserva solo como referencia.
 | `incidencia.html` | QR, sin login | Operarios de línea que reportan averías |
 | `carga.html` | QR, sin login | Choferes que registran su entrada a muelle (M1-M5) |
 | `merca.html` | QR, sin login | Proveedores que descargan en Merca (M2 y M4) |
+| `movil.html` | Login | Vista movil del almacen: donde esta cada lanzadera y chat |
 
 Las páginas sin login están protegidas por **App Check (reCAPTCHA v3)**: solo
 se aceptan peticiones que vengan del dominio real de la aplicación. Se decidió
