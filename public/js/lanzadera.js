@@ -93,17 +93,8 @@ async function guardarChofer() {
   chofer = { nombre: nombre, telefono: tel };
   try { localStorage.setItem(CHOFER_KEY, JSON.stringify(chofer)); } catch (e) {}
 
-  try {
-    await db.collection("lanzaderas_chofer").doc(String(sel.numero)).set({
-      numero:   sel.numero,
-      nombre:   nombre,
-      telefono: tel,
-      ts:       firebase.firestore.Timestamp.now()
-    });
-  } catch (e) {
-    // Si falla el guardado seguimos: lo importante es que pueda trabajar.
-    console.warn("chofer:", e.message);
-  }
+  _choferSync = "";        // forzar la escritura aunque sea la misma lanzadera
+  await sincronizarChofer();
 
   _editandoChofer = false;
   render();
@@ -111,6 +102,30 @@ async function guardarChofer() {
 
 function cancelarChofer() { _editandoChofer = false; render(); }
 function editarChofer()   { _editandoChofer = true;  render(); }
+
+// Lleva la identidad del dispositivo a Firestore, que es de donde la lee el
+// panel. Hace falta porque el formulario solo aparece la primera vez: sin esto,
+// un conductor que ya tuviera sus datos guardados no volvia a escribir nunca y
+// el panel se quedaba vacio. Se llama al saber la lanzadera y en cada
+// movimiento; solo escribe si algo ha cambiado.
+let _choferSync = "";
+
+async function sincronizarChofer() {
+  if (!sel.numero || !chofer.nombre) return;
+  const huella = sel.numero + "|" + chofer.nombre + "|" + chofer.telefono;
+  if (_choferSync === huella) return;
+  try {
+    await db.collection("lanzaderas_chofer").doc(String(sel.numero)).set({
+      numero:   sel.numero,
+      nombre:   chofer.nombre,
+      telefono: chofer.telefono,
+      ts:       firebase.firestore.Timestamp.now()
+    });
+    _choferSync = huella;
+  } catch (e) {
+    console.warn("sincronizar chofer:", e.message);
+  }
+}
 
 function render() {
   ensureChatLanz();
@@ -230,7 +245,7 @@ function cabecera() {
       : "");
 }
 
-function pickLanzadera(n) { sel.numero = n; cargarChoferLocal(); render(); }
+function pickLanzadera(n) { sel.numero = n; cargarChoferLocal(); sincronizarChofer(); render(); }
 function pickNave(id)     { sel.nave = id; sel.accion = null; sel.muelle = null; render(); }
 function pickMuelle(m) {
   sel.muelle = m;
@@ -267,6 +282,9 @@ async function escribir(estado, activa) {
   };
   await db.collection("lanzaderas").doc(String(sel.numero)).set(datos); // estado en vivo
   await db.collection("lanzaderas_log").add(datos);                     // historico
+  // Al fichar fin de jornada el servidor borra el conductor, asi que no se
+  // vuelve a escribir; en cualquier otro movimiento se mantiene al dia.
+  if (estado !== "fuera") await sincronizarChofer();
 }
 
 async function registrar() { // llegada / actividad en una nave
@@ -469,5 +487,6 @@ db.collection("config").doc("destinos").onSnapshot(d => {
 // Si la lanzadera venia fijada en el QR (?l=N), recuperar los datos del
 // conductor guardados en este movil antes del primer pintado.
 cargarChoferLocal();
+sincronizarChofer();
 
 render();

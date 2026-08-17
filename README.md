@@ -36,6 +36,7 @@ functions/index.js            Cloud Functions (envío de correo e informes)
 firestore.rules               Reglas de seguridad
 firestore.indexes.json        Índices compuestos
 firebase.json                 Configuración de Hosting y Firestore
+pruebas/                      Pruebas que no se despliegan (no están en public/)
 ```
 
 `aldelis-functions/` es una versión anterior de las functions que ya no se
