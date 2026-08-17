@@ -977,6 +977,43 @@ exports.enviarInformeBizerba = onSchedule(
   () => generarYEnviarInformeBizerba()
 );
 
+// ── Borrado de fotos del chat ───────────────────────────────────────────────
+// Las fotos ocupan mucho mas que el texto, asi que si no se borran la base de
+// datos crece sin control. Los mensajes SI se conservan: lo que se hace con
+// ellos es no leer los de dias anteriores, que es distinto de borrarlos. Al
+// tocar una foto ya borrada, el cliente avisa de que caduco.
+
+const DIAS_FOTOS = 3;
+
+exports.limpiarFotos = onSchedule(
+  { schedule: "15 4 * * *", timeZone: "Europe/Madrid" },
+  async () => {
+    const corte = admin.firestore.Timestamp.fromMillis(
+      Date.now() - DIAS_FOTOS * 24 * 60 * 60 * 1000
+    );
+
+    let total = 0;
+    // En tandas: un lote de Firestore admite 500 operaciones.
+    for (;;) {
+      const snap = await db.collection("fotos")
+        .where("ts", "<", corte)
+        .limit(400)
+        .get();
+      if (snap.empty) break;
+
+      const lote = db.batch();
+      snap.forEach(d => lote.delete(d.ref));
+      await lote.commit();
+      total += snap.size;
+
+      if (snap.size < 400) break;
+    }
+
+    console.log("Fotos borradas por antiguedad (" + DIAS_FOTOS + " dias):", total);
+    return null;
+  }
+);
+
 // ── Un conductor, una lanzadera ─────────────────────────────────────────────
 // El conductor escribe su nombre y telefono en el documento de la lanzadera que
 // lleva, pero no puede borrar el de otra (las reglas no le dejan, y mejor asi).

@@ -444,7 +444,8 @@ function renderChatLanz() {
         let sep = "";
         const dia = m.ts ? diaChat(m.ts) : "";
         if (dia && dia !== _prevDia) { sep = "<div class='chat-day'>" + dia + "</div>"; _prevDia = dia; }
-        return sep + "<div class='chat-row " + (right ? "r" : "l") + "'><div class='chat-b " + (right ? "chat-b-out" : "chat-b-in") + "'>" + emisor + escTexto(m.texto) + hora + "</div></div>";
+        const foto = (typeof Fotos !== "undefined") ? Fotos.thumbHtml(m) : "";
+        return sep + "<div class='chat-row " + (right ? "r" : "l") + "'><div class='chat-b " + (right ? "chat-b-out" : "chat-b-in") + "'>" + emisor + foto + escTexto(m.texto) + hora + "</div></div>";
       }).join("")
     : "<div style='text-align:center;color:#9CA3AF;padding:24px'>Sin mensajes. Escribe al almacen.</div>";
   cont.scrollTop = cont.scrollHeight;
@@ -462,6 +463,18 @@ function abrirChat() {
 }
 
 function cerrarChat() { document.getElementById("chat-overlay").style.display = "none"; }
+
+function enviarFotoLanz() {
+  if (!sel.numero || typeof Fotos === "undefined") return;
+  Fotos.enviar({
+    lanzadera: sel.numero,
+    de:        "lanzadera",
+    onEstado:  function (txt) {
+      const b = document.getElementById("chat-ov-text");
+      if (b) b.placeholder = txt || "Escribe un mensaje...";
+    }
+  });
+}
 
 async function enviarChatLanz(textoOpt) {
   const inp = document.getElementById("chat-ov-text");

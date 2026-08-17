@@ -319,7 +319,8 @@
     var cuerpo = msgs.length
       ? "<div class='msgs'>" + msgs.map(function (m) {
           var mio = m.de === "almacen";
-          return "<div class='msg " + (mio ? "mio" : "suyo") + "'>" + esc(m.texto) +
+          var foto = (typeof Fotos !== "undefined") ? Fotos.thumbHtml(m) : "";
+          return "<div class='msg " + (mio ? "mio" : "suyo") + "'>" + foto + esc(m.texto) +
             "<div class='meta'>" + (mio ? esc(m.emisor || "Almacen") : "Lanzadera " + m.lanzadera) +
             " &middot; " + hhmm(m.ts) + "</div></div>";
         }).join("") + "</div>"
@@ -357,6 +358,19 @@
   window.abrirChat = function (n) {
     _hilo = n;
     irA("chat");
+  };
+
+  window.enviarFoto = function () {
+    if (typeof Fotos === "undefined") return;
+    Fotos.enviar({
+      lanzadera: _hilo,
+      de:        "almacen",
+      emisor:    _emisor,
+      onEstado:  function (txt) {
+        var i = el("msg-texto");
+        if (i) i.placeholder = txt || "Escribe un mensaje...";
+      }
+    });
   };
 
   window.enviarMensaje = function () {

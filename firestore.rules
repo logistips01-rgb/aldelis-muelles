@@ -76,7 +76,34 @@ service cloud.firestore {
       let d = request.resource.data;
       return d.lanzadera is number && d.lanzadera >= 1 && d.lanzadera <= 4
         && d.de in ['almacen', 'lanzadera']
-        && d.texto is string && d.texto.size() > 0 && d.texto.size() <= 500;
+        // El texto puede ir vacio si el mensaje es una foto, pero no las dos
+        // cosas a la vez.
+        && d.texto is string && d.texto.size() <= 500
+        && (d.texto.size() > 0 || (d.foto is string && d.foto.size() > 0))
+        // La miniatura viaja dentro del mensaje para que el chat se vea al
+        // instante; la foto completa vive en /fotos y se pide al tocarla.
+        && (!('thumb' in d) || (d.thumb is string && d.thumb.size() <= 30000))
+        && (!('foto' in d)  || (d.foto  is string && d.foto.size() <= 60));
+    }
+
+    // Fotos del chat. La completa se guarda aparte del mensaje a proposito: si
+    // fuera dentro, el chat descargaria todas las del dia en cada reconexion.
+    // Se borran a los 3 dias (funcion limpiarFotos).
+    match /fotos/{id} {
+      allow read: if true;              // igual que mensajes: lanzadera.html no tiene login
+      allow create: if validFoto();
+      allow update: if false;           // una foto no se modifica
+      allow delete: if request.auth != null;
+    }
+
+    function validFoto() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['b64', 'lanzadera', 'de', 'ts'])
+        && d.lanzadera is number && d.lanzadera >= 1 && d.lanzadera <= 4
+        && d.de in ['almacen', 'lanzadera']
+        // Tope de tamaño: un documento de Firestore no pasa de 1 MB, y en base64
+        // una imagen crece un tercio. 700.000 caracteres deja margen de sobra.
+        && d.b64 is string && d.b64.size() > 0 && d.b64.size() <= 700000;
     }
 
     match /reservas/{id} {

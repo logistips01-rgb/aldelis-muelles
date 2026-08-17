@@ -30,6 +30,7 @@ public/                       Todo lo que se sirve por Hosting
     lanzadera.js              App del conductor
     bizerba.js                Panel del técnico
     push.js                   Registro del token FCM para notificaciones
+    fotos.js                  Fotos del chat: comprimir, enviar y ver
   firebase-messaging-sw.js    Service worker de notificaciones push
 
 functions/index.js            Cloud Functions (envío de correo e informes)
@@ -80,7 +81,8 @@ escaneando un QR pegado en la línea o en su tarjeta.
 | `lanzaderas_log` | Histórico de movimientos | Solo se añade; base de los informes de costes |
 | `lanzaderas_nota` | Indicación del almacén al conductor | Un documento por lanzadera |
 | `lanzaderas_chofer` | Quién conduce cada lanzadera y su teléfono | **Contiene un teléfono**: lectura solo con la sección `lanzaderas`. Lo escribe el conductor desde su móvil; el servidor garantiza un conductor por lanzadera |
-| `mensajes` | Chat entre almacén y lanzaderas | Campo `lanzadera` (1-4) y `de` (`almacen`/`lanzadera`) |
+| `mensajes` | Chat entre almacén y lanzaderas | Campo `lanzadera` (1-4) y `de` (`almacen`/`lanzadera`). Si lleva foto, incluye `thumb` (miniatura) y `foto` (id) |
+| `fotos` | Fotos del chat, en base64 | **Se borran a los 3 días** (`limpiarFotos`). Van aparte del mensaje para que el chat no descargue todas en cada reconexión |
 | `cargas` | Registro de cargas en muelles M1-M5 | **Contiene DNI de choferes**, lectura restringida |
 | `descargas_merca` | Descargas de proveedores en Merca (M2, M4) | |
 | `incidencias` | Averías de las líneas Bizerba (0-16) | Estados: `abierta`, `aceptada`, `repuesto`, `resuelta` |
@@ -136,6 +138,7 @@ Todas en `functions/index.js`, región `us-central1`, runtime Node 24.
 | `notifChat` | Trigger Firestore | Al crear en `mensajes` | Notificación push del chat |
 | `choferUnaLanzadera` | Trigger Firestore | Al escribir en `lanzaderas_chofer` | Libera cualquier otra lanzadera con el mismo teléfono |
 | `liberarChoferAlSalir` | Trigger Firestore | Al escribir en `lanzaderas` | Borra el conductor cuando ficha fin de jornada |
+| `limpiarFotos` | Programada | 04:15 Europe/Madrid | Borra las fotos del chat con más de 3 días |
 
 ### enviarEmail: el cliente no elige destinatario ni contenido
 

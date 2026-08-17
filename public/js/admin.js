@@ -2071,8 +2071,9 @@ function renderChat() {
         let sep = "";
         const dia = m.ts ? diaChat(m.ts) : "";
         if (dia && dia !== _prevDia) { sep = "<div class='chat-day'>" + dia + "</div>"; _prevDia = dia; }
+        const foto = (typeof Fotos !== "undefined") ? Fotos.thumbHtml(m) : "";
         return sep + "<div class='chat-row " + (right ? "r" : "l") + "'><div class='chat-b " + (right ? "chat-b-out" : "chat-b-in") + "'>" +
-          emisor + esc(m.texto) + "<span class='chat-time'>" + (m.ts ? tsHora(m.ts) : "") + "</span></div></div>";
+          emisor + foto + esc(m.texto) + "<span class='chat-time'>" + (m.ts ? tsHora(m.ts) : "") + "</span></div></div>";
       }).join("")
     : "<div class='empty-state' style='padding:20px'>Sin mensajes con Lanzadera " + _chatSel + "</div>";
 
@@ -2082,6 +2083,19 @@ function renderChat() {
   const quicks = ["Recibido", "Ve a Plaza", "Espera 10 min", "Llama al almacen"];
   document.getElementById("chat-quick").innerHTML =
     quicks.map(q => "<button class='chat-chip' onclick=\"enviarChatAlmacen('" + q + "')\">" + q + "</button>").join("");
+}
+
+function enviarFotoAlmacen() {
+  if (typeof Fotos === "undefined") return;
+  Fotos.enviar({
+    lanzadera: _chatSel,
+    de:        "almacen",
+    emisor:    _emisorActual,
+    onEstado:  function (txt) {
+      const i = document.getElementById("chat-text");
+      if (i) i.placeholder = txt || "Escribe un mensaje...";
+    }
+  });
 }
 
 async function enviarChatAlmacen(textoOpt) {
