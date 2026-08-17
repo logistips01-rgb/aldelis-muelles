@@ -78,7 +78,7 @@ escaneando un QR pegado en la línea o en su tarjeta.
 | `lanzaderas` | Estado en vivo, un documento por lanzadera (`"1"`..`"4"`) | Estados: `en_nave`, `transito`, `fuera` |
 | `lanzaderas_log` | Histórico de movimientos | Solo se añade; base de los informes de costes |
 | `lanzaderas_nota` | Indicación del almacén al conductor | Un documento por lanzadera |
-| `lanzaderas_chofer` | Quién conduce cada lanzadera y su teléfono | **Contiene un teléfono**: lectura solo con la sección `lanzaderas`. Lo escribe el conductor desde su móvil |
+| `lanzaderas_chofer` | Quién conduce cada lanzadera y su teléfono | **Contiene un teléfono**: lectura solo con la sección `lanzaderas`. Lo escribe el conductor desde su móvil; el servidor garantiza un conductor por lanzadera |
 | `mensajes` | Chat entre almacén y lanzaderas | Campo `lanzadera` (1-4) y `de` (`almacen`/`lanzadera`) |
 | `cargas` | Registro de cargas en muelles M1-M5 | **Contiene DNI de choferes**, lectura restringida |
 | `descargas_merca` | Descargas de proveedores en Merca (M2, M4) | |
@@ -133,6 +133,8 @@ Todas en `functions/index.js`, región `us-central1`, runtime Node 24.
 | `enviarInformeManana` | Programada | 08:30 Europe/Madrid | El mismo informe (para revisarlo por la mañana) |
 | `enviarInformeBizerba` | Programada | 23:59 Europe/Madrid | Informe de incidencias de etiquetado |
 | `notifChat` | Trigger Firestore | Al crear en `mensajes` | Notificación push del chat |
+| `choferUnaLanzadera` | Trigger Firestore | Al escribir en `lanzaderas_chofer` | Libera cualquier otra lanzadera con el mismo teléfono |
+| `liberarChoferAlSalir` | Trigger Firestore | Al escribir en `lanzaderas` | Borra el conductor cuando ficha fin de jornada |
 
 ### enviarEmail: el cliente no elige destinatario ni contenido
 

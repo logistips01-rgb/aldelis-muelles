@@ -1,6 +1,6 @@
 const functions  = require("firebase-functions");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
-const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+const { onDocumentCreated, onDocumentWritten } = require("firebase-functions/v2/firestore");
 const admin      = require("firebase-admin");
 
 if (!admin.apps.length) admin.initializeApp();
@@ -976,6 +976,58 @@ exports.enviarInformeBizerba = onSchedule(
   { schedule: "59 23 * * *", timeZone: "Europe/Madrid" },
   () => generarYEnviarInformeBizerba()
 );
+
+// ── Un conductor, una lanzadera ─────────────────────────────────────────────
+// El conductor escribe su nombre y telefono en el documento de la lanzadera que
+// lleva, pero no puede borrar el de otra (las reglas no le dejan, y mejor asi).
+// De eso se encarga el servidor: en cuanto alguien se identifica en una
+// lanzadera, se libera cualquier otra que tuviera su mismo telefono.
+
+function soloDigitos(t) {
+  return String(t || "").replace(/[^0-9]/g, "");
+}
+
+exports.choferUnaLanzadera = onDocumentWritten("lanzaderas_chofer/{id}", async (event) => {
+  const nuevo = event.data && event.data.after && event.data.after.exists
+    ? event.data.after.data() : null;
+  if (!nuevo) return;
+
+  const tel = soloDigitos(nuevo.telefono);
+  if (!tel) return;
+
+  const snap = await db.collection("lanzaderas_chofer").get();
+  const sobran = [];
+  snap.forEach(d => {
+    if (d.id === event.params.id) return;
+    if (soloDigitos(d.data().telefono) === tel) sobran.push(d.id);
+  });
+
+  for (const id of sobran) {
+    try {
+      await db.collection("lanzaderas_chofer").doc(id).delete();
+      console.log("Liberada la lanzadera", id, "porque", nuevo.nombre,
+                  "paso a la", event.params.id);
+    } catch (e) { console.error("liberar", id, e.message); }
+  }
+});
+
+// Al fichar fin de jornada se libera la lanzadera: si no, el conductor seguiria
+// apareciendo al dia siguiente hasta que alguien lo pisara.
+exports.liberarChoferAlSalir = onDocumentWritten("lanzaderas/{id}", async (event) => {
+  const d = event.data && event.data.after && event.data.after.exists
+    ? event.data.after.data() : null;
+  if (!d) return;
+  if (d.estado !== "fuera" && d.activa !== false) return;
+
+  const ref = db.collection("lanzaderas_chofer").doc(event.params.id);
+  const prev = await ref.get();
+  if (!prev.exists) return;
+
+  try {
+    await ref.delete();
+    console.log("Fin de jornada: liberada la lanzadera", event.params.id);
+  } catch (e) { console.error("liberar al salir:", e.message); }
+});
 
 // ── Notificación push al chat de lanzaderas ─────────────────────────────────
 

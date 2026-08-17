@@ -39,13 +39,24 @@ const app = document.getElementById("app");
 let chofer = { nombre: "", telefono: "" };
 let _editandoChofer = false;
 
-function choferKey() { return "chofer_lanz_" + sel.numero; }
+// Una sola clave por dispositivo, NO una por lanzadera. Antes se guardaba por
+// lanzadera y aparecia el mismo conductor en varias a la vez: si hoy llevas la
+// 1 y mañana la 3, quedaban las dos con tu nombre. Con la identidad ligada al
+// movil, al cambiar de lanzadera te sigue, y el servidor limpia la anterior.
+const CHOFER_KEY = "chofer_datos";
 
 function cargarChoferLocal() {
   chofer = { nombre: "", telefono: "" };
-  if (!sel.numero) return;
   try {
-    const j = localStorage.getItem(choferKey());
+    let j = localStorage.getItem(CHOFER_KEY);
+    // Migracion de las claves antiguas por lanzadera
+    if (!j) {
+      for (let n = 1; n <= 4; n++) {
+        const viejo = localStorage.getItem("chofer_lanz_" + n);
+        if (viejo) { j = viejo; localStorage.setItem(CHOFER_KEY, viejo); }
+        localStorage.removeItem("chofer_lanz_" + n);
+      }
+    }
     if (j) {
       const o = JSON.parse(j);
       chofer.nombre   = o.nombre   || "";
@@ -80,7 +91,7 @@ async function guardarChofer() {
   if (!tel)    { err.textContent = "Escribe tu telefono."; err.style.display = "block"; return; }
 
   chofer = { nombre: nombre, telefono: tel };
-  try { localStorage.setItem(choferKey(), JSON.stringify(chofer)); } catch (e) {}
+  try { localStorage.setItem(CHOFER_KEY, JSON.stringify(chofer)); } catch (e) {}
 
   try {
     await db.collection("lanzaderas_chofer").doc(String(sel.numero)).set({
