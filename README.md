@@ -93,7 +93,11 @@ escaneando un QR pegado en la línea o en su tarjeta.
 Documentos de `config`:
 
 - `app` — versión de la app (fuerza recarga en los clientes), `tiempoMaxLanz`, `diasLaborables`
-- `destinos` — lista de naves disponibles para las lanzaderas
+- `destinos` — lista de naves disponibles para las lanzaderas. El conductor puede
+  además escribir un lugar que no esté en la lista («Otro lugar»): se guarda tal
+  cual en `nave` o `destino`, que en las reglas son texto libre, y todas las
+  vistas e informes lo muestran porque hacen `NAVE_NOMBRE[x] || x`. Si un sitio
+  se vuelve habitual, conviene añadirlo aquí desde Config
 - `alertas` — destinatarios de las alertas de lanzadera parada
 - `costes` — destinatarios del informe diario de costes
 - `bizerba` — destinatarios del informe diario de incidencias

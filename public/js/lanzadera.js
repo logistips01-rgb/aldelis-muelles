@@ -159,9 +159,92 @@ function renderNaves() {
       "<div class='temp-icon'>" + (n.externa ? "🏭" : "🏠") + "</div>" +
       "<div class='temp-name'>" + n.nombre + "</div></div>"
     ).join("") +
+    "<div class='temp-btn' onclick=\"pedirOtroLugar('estoy')\" style='border-style:dashed'>" +
+    "<div class='temp-icon'>📍</div><div class='temp-name'>Otro lugar</div></div>" +
     "</div>" +
     "<button class='btn-back' style='width:100%;margin-top:12px' onclick='volver(\"nave\")'>&#8592; Atras</button>" +
     "</div>";
+}
+
+// ── Lugares que no estan en la lista ────────────────────────────────────────
+// El nombre escrito se guarda tal cual en el campo "nave" (o "destino"), que en
+// las reglas ya es texto libre. El panel, la vista movil y los informes lo
+// muestran sin cambios porque todos hacen NAVE_NOMBRE[x] || x.
+//
+// Los ultimos lugares escritos se recuerdan en el propio movil, para que el
+// conductor que va a menudo al mismo sitio no tenga que teclearlo cada vez. Si
+// un lugar se vuelve habitual, lo suyo es añadirlo en Config desde el panel.
+
+const OTROS_KEY = "otros_lugares";
+const MAX_OTROS = 6;
+
+function otrosLugares() {
+  try {
+    const l = JSON.parse(localStorage.getItem(OTROS_KEY) || "[]");
+    return Array.isArray(l) ? l.filter(x => typeof x === "string" && x) : [];
+  } catch (e) { return []; }
+}
+
+function recordarLugar(nombre) {
+  try {
+    const l = otrosLugares().filter(x => x.toLowerCase() !== nombre.toLowerCase());
+    l.unshift(nombre);
+    localStorage.setItem(OTROS_KEY, JSON.stringify(l.slice(0, MAX_OTROS)));
+  } catch (e) {}
+}
+
+// modo: "estoy" (donde esta ahora) o "voy" (hacia donde sale)
+function pedirOtroLugar(modo) {
+  const recientes = otrosLugares();
+  app.innerHTML =
+    "<div class='card'>" + cabecera() +
+    "<h2>" + (modo === "voy" ? "¿A donde vas?" : "¿Donde estas?") + "</h2>" +
+    "<p class='card-desc'>Escribe el nombre del sitio. Lo vera el almacen tal cual.</p>" +
+    (recientes.length
+      ? "<p class='card-desc' style='margin-bottom:6px'>Ultimos sitios:</p>" +
+        "<div style='display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px'>" +
+        recientes.map(r =>
+          "<button class='chatov-chip' style='background:#F3F4F6;border:none;border-radius:16px;" +
+          "padding:7px 14px;font-size:13px;font-family:Inter,sans-serif'" +
+          " onclick=\"usarOtroLugar('" + modo + "', '" + escTexto(r).replace(/'/g, "&#39;") + "')\">" +
+          escTexto(r) + "</button>"
+        ).join("") + "</div>"
+      : "") +
+    "<div class='field'><label>Nombre del sitio</label>" +
+    "<input type='text' id='otro-nombre' maxlength='60' autocomplete='off' " +
+    "placeholder='Ej: Mercadona Plaza'></div>" +
+    "<div id='otro-error' style='color:#D41F3A;font-size:13px;margin-bottom:10px;display:none'></div>" +
+    "<button class='btn-primary' onclick=\"confirmarOtroLugar('" + modo + "')\">Continuar</button>" +
+    "<button class='btn-back' style='width:100%;margin-top:8px' onclick='" +
+    (modo === "voy" ? "salir()" : "render()") + "'>&#8592; Atras</button>" +
+    "</div>";
+  const i = document.getElementById("otro-nombre");
+  if (i) i.focus();
+}
+
+function confirmarOtroLugar(modo) {
+  const nombre = (document.getElementById("otro-nombre").value || "").trim();
+  const err = document.getElementById("otro-error");
+  if (nombre.length < 2) {
+    err.textContent = "Escribe el nombre del sitio.";
+    err.style.display = "block";
+    return;
+  }
+  usarOtroLugar(modo, nombre);
+}
+
+function usarOtroLugar(modo, nombre) {
+  recordarLugar(nombre);
+  if (modo === "voy") {
+    sel.destino = nombre;
+    registrarTransito();
+  } else {
+    // Un lugar de fuera no tiene muelles nuestros: se registra como presencia.
+    sel.nave   = nombre;
+    sel.accion = "presente";
+    sel.muelle = null;
+    render();
+  }
 }
 
 function renderMuelles() {
@@ -196,7 +279,8 @@ function renderConfirmar() {
     ? "Plaza · " + (sel.accion === "cargando" ? "Cargando" : "Descargando") + " · " + sel.muelle
     : sel.nave === "merca"
     ? "Merca · " + sel.muelle
-    : NOMBRE_NAVE[sel.nave];
+    // Un lugar escrito a mano no esta en NOMBRE_NAVE: se muestra tal cual.
+    : (NOMBRE_NAVE[sel.nave] || sel.nave || "—");
   app.innerHTML =
     "<div class='card text-center'>" +
     "<div class='temp-icon' style='font-size:40px'>📍</div>" +
@@ -212,7 +296,7 @@ function renderHecho(estado) {
     app.innerHTML =
       "<div class='card text-center'>" +
       "<div class='done-icon'>✓</div><h2>Registrado</h2>" +
-      "<p class='card-desc'>Lanzadera " + sel.numero + " en " + NOMBRE_NAVE[sel.nave] + ".</p>" +
+      "<p class='card-desc'>Lanzadera " + sel.numero + " en " + escTexto(NOMBRE_NAVE[sel.nave] || sel.nave || "—") + ".</p>" +
       "<button class='btn-primary' style='width:100%' onclick='salir()'>Salir de la nave</button>" +
       "<button class='btn-back' style='width:100%;margin-top:8px' onclick='nuevo()'>Nuevo registro</button>" +
       "<button class='btn-back' style='width:100%;margin-top:8px;color:#D41F3A;border-color:#F5C0C8' onclick='finJornada()'>Fin de jornada</button>" +
@@ -221,7 +305,7 @@ function renderHecho(estado) {
     app.innerHTML =
       "<div class='card text-center'>" +
       "<div class='done-icon'>🚚</div><h2>En transito</h2>" +
-      "<p class='card-desc'>Lanzadera " + sel.numero + " en transito hacia <strong>" + (NOMBRE_NAVE[sel.destino] || "destino") + "</strong>.</p>" +
+      "<p class='card-desc'>Lanzadera " + sel.numero + " en transito hacia <strong>" + escTexto(NOMBRE_NAVE[sel.destino] || sel.destino || "destino") + "</strong>.</p>" +
       "<button class='btn-primary' style='width:100%' onclick='irANaves()'>Registrar llegada a nave</button>" +
       "<button class='btn-back' style='width:100%;margin-top:8px' onclick='finJornada()'>Fin de jornada</button>" +
       "</div>";
@@ -259,7 +343,7 @@ function volver(desde) {
   if (desde === "muelle") {
     if (sel.nave === "plaza") { sel.muelle = null; sel.accion = null; }
     else if (sel.nave === "merca") { sel.muelle = null; }
-    else sel.nave = null;
+    else { sel.nave = null; sel.accion = null; }   // externa o lugar manual
   }
   if (desde === "merca-nave") { sel.nave = null; sel.muelle = null; }
   if (desde === "plaza-nave") { sel.nave = null; sel.muelle = null; sel.accion = null; }
@@ -314,6 +398,8 @@ function renderDestino(nota, urgente) {
       "<div class='temp-icon'>" + (n.externa ? "🏭" : "🏠") + "</div>" +
       "<div class='temp-name'>" + n.nombre + "</div></div>"
     ).join("") +
+    "<div class='temp-btn' onclick=\"pedirOtroLugar('voy')\" style='border-style:dashed'>" +
+    "<div class='temp-icon'>📍</div><div class='temp-name'>Otro lugar</div></div>" +
     "</div>" +
     "<button class='btn-back' style='width:100%;margin-top:12px' onclick='render()'>&#8592; Atras</button>" +
     "</div>";
