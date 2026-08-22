@@ -75,16 +75,70 @@
   function getRepetir() { return localStorage.getItem("despertador_repetir") !== "0"; }
   function setRepetir(v) { localStorage.setItem("despertador_repetir", v ? "1" : "0"); }
 
-  function fmtReloj(d) {
-    return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0") + ":" + String(d.getSeconds()).padStart(2, "0");
-  }
   function fmtHM(d) {
     return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
   }
 
+  // Reloj retro de cortinillas (split-flap): cada digito es una cajita con
+  // el valor actual debajo y una "cortinilla" que cae tapando el valor viejo
+  // hasta revelar el nuevo, como los despertadores/paneles de aeropuerto.
+  const flipDigitos = {};
+
+  function crearUnidadFlip(id, valorInicial) {
+    const u = document.createElement("div");
+    u.className = "flip-unit";
+    u.id = id;
+    u.innerHTML =
+      "<div class='fu-half top'><span class='fu-top-txt'>" + valorInicial + "</span></div>" +
+      "<div class='fu-half bottom'><span class='fu-bottom-txt'>" + valorInicial + "</span></div>" +
+      "<div class='fu-flap'><span class='fu-flap-txt'>" + valorInicial + "</span></div>";
+    flipDigitos[id] = { el: u, valor: valorInicial };
+    return u;
+  }
+
+  function construirReloj() {
+    const cont = el("reloj");
+    cont.innerHTML = "";
+    const ahora = new Date();
+    const hm = fmtHM(ahora).replace(":", "");
+    cont.appendChild(crearUnidadFlip("fu-h1", hm[0]));
+    cont.appendChild(crearUnidadFlip("fu-h2", hm[1]));
+    const colon = document.createElement("div");
+    colon.className = "reloj-colon";
+    colon.innerHTML = "<span></span><span></span>";
+    cont.appendChild(colon);
+    cont.appendChild(crearUnidadFlip("fu-m1", hm[2]));
+    cont.appendChild(crearUnidadFlip("fu-m2", hm[3]));
+  }
+
+  function flipA(id, nuevoValor) {
+    const u = flipDigitos[id];
+    if (!u || u.valor === nuevoValor) return;
+    const flap = u.el.querySelector(".fu-flap");
+    const flapTxt = u.el.querySelector(".fu-flap-txt");
+    const topTxt = u.el.querySelector(".fu-top-txt");
+    const bottomTxt = u.el.querySelector(".fu-bottom-txt");
+    flapTxt.textContent = u.valor; // la cortinilla enseña el valor viejo cayendo
+    topTxt.textContent = nuevoValor;
+    bottomTxt.textContent = nuevoValor;
+    u.valor = nuevoValor;
+    flap.classList.remove("falling");
+    void flap.offsetWidth; // fuerza a reiniciar la animacion si ya estaba corriendo
+    flap.classList.add("falling");
+    flap.addEventListener("animationend", function handler() {
+      flap.classList.remove("falling");
+      flapTxt.textContent = nuevoValor;
+      flap.removeEventListener("animationend", handler);
+    });
+  }
+
   function actualizarReloj() {
     const now = new Date();
-    el("reloj").textContent = fmtReloj(now);
+    const hm = fmtHM(now).replace(":", "");
+    flipA("fu-h1", hm[0]);
+    flipA("fu-h2", hm[1]);
+    flipA("fu-m1", hm[2]);
+    flipA("fu-m2", hm[3]);
     el("fecha-hoy").textContent = now.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" });
     comprobarDisparo(now);
   }
@@ -150,6 +204,7 @@
     actualizarUiArmado();
     if (estaArmado()) pedirWakeLock();
 
+    construirReloj();
     actualizarReloj();
     tickTimer = setInterval(actualizarReloj, 1000);
 
@@ -164,6 +219,7 @@
     });
     el("btn-armar").addEventListener("click", () => {
       primeAudio();
+      pedirPantallaCompleta();
       const nuevoEstado = !estaArmado();
       setArmado(nuevoEstado);
       ultimoDisparo = null;
@@ -171,6 +227,7 @@
       if (nuevoEstado) { pedirWakeLock(); showToast("Alarma activada."); }
       else showToast("Alarma desactivada.");
     });
+    el("btn-pantalla-completa").addEventListener("click", pedirPantallaCompleta);
     el("btn-test-sonido").addEventListener("click", () => {
       primeAudio();
       beepUnaVez();
@@ -186,6 +243,14 @@
 
   function actualizarGiroForzado() {
     document.body.classList.toggle("forzar-rot", window.innerHeight > window.innerWidth);
+  }
+
+  function pedirPantallaCompleta() {
+    try {
+      const req = document.documentElement.requestFullscreen
+        || document.documentElement.webkitRequestFullscreen;
+      if (req && !document.fullscreenElement) req.call(document.documentElement);
+    } catch (e) { /* si el navegador lo bloquea, se sigue usando igual sin pantalla completa */ }
   }
 
   el("login-btn").addEventListener("click", async () => {
