@@ -245,12 +245,32 @@
     document.body.classList.toggle("forzar-rot", window.innerHeight > window.innerWidth);
   }
 
+  function elFullscreen() {
+    return document.fullscreenElement || document.webkitFullscreenElement || null;
+  }
+
   function pedirPantallaCompleta() {
     try {
+      if (elFullscreen()) {
+        const salir = document.exitFullscreen || document.webkitExitFullscreen;
+        if (salir) salir.call(document);
+        return;
+      }
       const req = document.documentElement.requestFullscreen
         || document.documentElement.webkitRequestFullscreen;
-      if (req && !document.fullscreenElement) req.call(document.documentElement);
-    } catch (e) { /* si el navegador lo bloquea, se sigue usando igual sin pantalla completa */ }
+      if (!req) { showToast("Este navegador no admite pantalla completa."); return; }
+      const resultado = req.call(document.documentElement);
+      if (resultado && resultado.catch) {
+        resultado.catch(e => showToast("No se pudo poner en pantalla completa: " + e.message));
+      }
+    } catch (e) { showToast("No se pudo poner en pantalla completa: " + e.message); }
+  }
+
+  document.addEventListener("fullscreenchange", actualizarBotonPantallaCompleta);
+  document.addEventListener("webkitfullscreenchange", actualizarBotonPantallaCompleta);
+  function actualizarBotonPantallaCompleta() {
+    const btn = el("btn-pantalla-completa");
+    if (btn) btn.textContent = elFullscreen() ? "⛶ Salir de pantalla completa" : "⛶ Pantalla completa";
   }
 
   el("login-btn").addEventListener("click", async () => {
