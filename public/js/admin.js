@@ -588,6 +588,10 @@ function aplicarRol() {
   const btnUbic = document.getElementById("btn-ubicacion");
   if (btnUbic) btnUbic.style.display = (_perms.esAdmin || _perms.ubicacion) ? "" : "none";
 
+  // Despertador: uso personal, no se ofrece via el sistema de permisos a proposito.
+  const btnDespertador = document.getElementById("btn-despertador");
+  if (btnDespertador) btnDespertador.style.display = _perms.esAdmin ? "" : "none";
+
   // Abrir la primera vista disponible
   const orden = ["rejilla", "lista", "lanzaderas", "bizerba", "cargas", "merca", "informes", "costes", "config"];
   const primera = orden.find(v => _perms.ver[v]);
