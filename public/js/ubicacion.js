@@ -198,6 +198,32 @@
 
   function tsMillis(ts) { return ts && ts.toMillis ? ts.toMillis() : 0; }
 
+  // Caducidad correlativa al numero de lote: lote 4911 = 11/10/2026, y cada
+  // unidad de lote suma un dia (lote mayor, caducidad mas tardia).
+  const LOTE_CAD_ANCLA = 4911;
+  const FECHA_CAD_ANCLA = "2026-10-11";
+  let caducidadAutoValor = "";
+
+  function calcularCaducidadPorLote(loteStr) {
+    const n = parseInt(String(loteStr).replace(/\D/g, ""), 10);
+    if (!Number.isFinite(n)) return null;
+    const base = new Date(FECHA_CAD_ANCLA + "T00:00:00");
+    base.setDate(base.getDate() + (n - LOTE_CAD_ANCLA));
+    const y = base.getFullYear();
+    const m = String(base.getMonth() + 1).padStart(2, "0");
+    const d = String(base.getDate()).padStart(2, "0");
+    return y + "-" + m + "-" + d;
+  }
+
+  function autoCalcularCaducidad() {
+    const loteVal = el("lote-input").value.trim();
+    const cadInput = el("caducidad-input");
+    if (!loteVal) return;
+    if (cadInput.value && cadInput.value !== caducidadAutoValor) return; // el usuario la puso a mano
+    const calc = calcularCaducidadPorLote(loteVal);
+    if (calc) { cadInput.value = calc; caducidadAutoValor = calc; }
+  }
+
   function render() { renderStats(); renderTabs(); renderRack(); updateHintForInput(); }
 
   function renderStats() {
@@ -503,5 +529,5 @@
   scanInput.addEventListener("input", updateHintForInput);
   scanInput.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); updateHintForInput(); } });
   el("clear-btn").addEventListener("click", () => { scanInput.value = ""; updateHintForInput(); scanInput.focus(); });
-  el("lote-input").addEventListener("input", updateHintForInput);
+  el("lote-input").addEventListener("input", () => { updateHintForInput(); autoCalcularCaducidad(); });
 })();

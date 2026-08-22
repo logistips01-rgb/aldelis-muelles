@@ -103,9 +103,9 @@ header .volver{ color:#B4BAC2; font-size:12px; text-decoration:none; display:inl
 .tab .sub{ display:block; font-size:10.5px; font-weight:600; opacity:.8; text-transform:none; letter-spacing:0; margin-top:2px; }
 
 .rack{ margin:0 16px; background:var(--panel); border-radius:var(--radius); border:1px solid #E5E7EB; }
-.rack-scroll{ overflow-x:auto; padding-bottom:4px; }
-.rack-inner{ min-width:100%; width:max-content; }
-.loc-header-row, .level-row{ display:grid; grid-template-columns: 64px repeat(16, 52px); }
+.rack-scroll{ overflow-x:hidden; padding-bottom:4px; }
+.rack-inner{ width:100%; }
+.loc-header-row, .level-row{ display:grid; grid-template-columns: minmax(26px,44px) repeat(16, 1fr); }
 .sticky-col{ position:sticky; left:0; z-index:2; display:flex; align-items:center; justify-content:center; }
 .loc-header-row{ background:var(--steel-dark); border-radius:var(--radius) var(--radius) 0 0; }
 .loc-header-row .sticky-col{ background:var(--steel-dark); color:#E4E7EA; font-size:10px; font-weight:700; text-transform:uppercase; }
@@ -115,11 +115,11 @@ header .volver{ color:#B4BAC2; font-size:12px; text-decoration:none; display:inl
 .level-row .sticky-col{ background:#FAFAFA; font-weight:700; font-size:11.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.2px; border-right:2px solid #E5E7EB; text-align:center; line-height:1.15; }
 .level-row.suelo .sticky-col{ background:var(--floor); color:#4B5563; }
 
-.cell{ margin:4px; border-radius:7px; height:52px; display:flex; flex-direction:column; align-items:center; justify-content:center; cursor:pointer; position:relative; border:1.5px dashed var(--empty-border); background:#fff; }
+.cell{ margin:2px; border-radius:6px; height:48px; display:flex; flex-direction:column; align-items:center; justify-content:center; cursor:pointer; position:relative; border:1.5px dashed var(--empty-border); background:#fff; overflow:hidden; }
 .cell.filled{ border-style:solid; border-width:1.5px; }
 .cell.filled.costillas{ background:var(--costillas-soft); border-color:var(--costillas); }
 .cell.filled.alitas{ background:var(--alitas-soft); border-color:var(--alitas); }
-.cell .lote-txt{ font-size:10.5px; font-weight:700; max-width:46px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.cell .lote-txt{ font-size:9.5px; font-weight:700; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:0 2px; }
 .cell.filled.costillas .lote-txt{ color:var(--costillas); }
 .cell.filled.alitas .lote-txt{ color:#8A6516; }
 .cell .sscc-tail{ font-size:8.5px; font-weight:600; color:var(--ink-soft); opacity:.85; margin-top:1px; }
