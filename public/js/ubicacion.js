@@ -428,9 +428,20 @@
   el("cotejar-file").addEventListener("change", e => {
     const file = e.target.files[0];
     if (!file) return;
+    const esExcel = /\.xlsx?$/i.test(file.name);
     const reader = new FileReader();
-    reader.onload = ev => { el("cotejar-textarea").value = ev.target.result; };
-    reader.readAsText(file);
+    if (esExcel) {
+      reader.onload = ev => {
+        const wb = XLSX.read(new Uint8Array(ev.target.result), { type: "array" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const filas = XLSX.utils.sheet_to_json(ws, { header: 1 });
+        el("cotejar-textarea").value = filas.map(f => f[0]).filter(v => v != null && v !== "").join("\n");
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      reader.onload = ev => { el("cotejar-textarea").value = ev.target.result; };
+      reader.readAsText(file);
+    }
   });
 
   function parseSSCCList(text) {
@@ -444,16 +455,26 @@
     return set;
   }
 
+  // El SSCC que integramos en el sistema lleva un sufijo "+C" que el archivo
+  // del ERP no incluye; para cotejar se comparan solo los ultimos 10 digitos.
+  function sscc10(s) {
+    const digits = String(s || "").replace(/\D/g, "");
+    return digits.slice(-10);
+  }
+
   el("cotejar-run").addEventListener("click", () => {
-    const fileSet = parseSSCCList(el("cotejar-textarea").value);
+    const fileTokens = parseSSCCList(el("cotejar-textarea").value);
     const results = el("cotejar-results");
-    if (!fileSet.size) { results.innerHTML = "<div class='meta' style='margin-top:14px;'>Pega o carga un listado de SSCC primero.</div>"; return; }
+    if (!fileTokens.size) { results.innerHTML = "<div class='meta' style='margin-top:14px;'>Pega o carga un listado de SSCC primero.</div>"; return; }
+
+    const fileMap = new Map();
+    fileTokens.forEach(t => { const k = sscc10(t); if (k) fileMap.set(k, t); });
 
     const located = allSlots();
-    const locatedMap = new Map(located.map(s => [s.sscc, s]));
-    const sinUbicar = [...fileSet].filter(s => !locatedMap.has(s));
-    const sobrantes = located.filter(s => !fileSet.has(s.sscc));
-    const coinciden = fileSet.size - sinUbicar.length;
+    const locatedMap = new Map(located.map(s => [sscc10(s.sscc), s]));
+    const sinUbicar = [...fileMap.entries()].filter(([k]) => !locatedMap.has(k)).map(([, raw]) => raw);
+    const sobrantes = located.filter(s => !fileMap.has(sscc10(s.sscc)));
+    const coinciden = fileMap.size - sinUbicar.length;
 
     let html = "<div class='cotejar-summary'>" +
       "<div class='c ok'><div class='n'>" + coinciden + "</div><div class='l'>Coinciden</div></div>" +
