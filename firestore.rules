@@ -285,15 +285,31 @@ service cloud.firestore {
         && (d.peso  == null || d.peso  is number);
     }
 
+    // Como permitido(), pero SIN el refuerzo progresivo. permitido() concede
+    // acceso a quien no tiene ficha en /permisos, pensado para no dejar fuera a
+    // los usuarios de secciones que ya existian antes del sistema de permisos.
+    // Una seccion nueva como "ubicacion" no tiene ese pasado que proteger: sin
+    // ficha, o con ficha que no la incluya, el acceso es que no.
+    function permitidoEstricto(seccion) {
+      return request.auth != null && (
+        esAdmin() || (
+          exists(miDocPermisos())
+          && get(miDocPermisos()).data.secciones is list
+          && seccion in get(miDocPermisos()).data.secciones
+        )
+      );
+    }
+
     // ── Modulo de ubicacion de palets (camara frigorifica) ────────────────────
     // Independiente del resto: coleccion propia, reglas propias, sin Cloud
-    // Functions ni relacion con ninguna otra parte de la app. Solo admins por
-    // ahora (mismo esAdmin() de arriba). Nunca se borra fisicamente: la baja es
-    // un update que pone activo=false, para dejar historico y trazabilidad.
+    // Functions ni relacion con ninguna otra parte de la app. El acceso lo
+    // decide el admin desde Config -> Permisos de usuario (seccion "ubicacion").
+    // Nunca se borra fisicamente: la baja es un update que pone activo=false,
+    // para dejar historico y trazabilidad.
     match /ubicaciones_palet/{id} {
-      allow read: if esAdmin();
-      allow create: if esAdmin() && validUbicacionAlta();
-      allow update: if esAdmin() && validUbicacionBaja();
+      allow read: if permitidoEstricto('ubicacion');
+      allow create: if permitidoEstricto('ubicacion') && validUbicacionAlta();
+      allow update: if permitidoEstricto('ubicacion') && validUbicacionBaja();
       allow delete: if false;
     }
 

@@ -55,7 +55,27 @@
       });
   };
 
-  auth.onAuthStateChanged(user => {
+  // A diferencia de otras secciones del panel, aqui NO hay refuerzo progresivo:
+  // no tener ficha en /permisos significa que NO se ve el modulo, no que se vea
+  // por defecto. Tiene sentido porque "ubicacion" es una seccion nueva sin
+  // usuarios previos que proteger; el resto del sistema de permisos si hace esa
+  // excepcion para no dejar fuera a quien ya tenia acceso antes de existir.
+  // Mismo criterio en firestore.rules (permitidoEstricto), asi que aunque este
+  // chequeo se sortease, las lecturas y escrituras reales seguirian bloqueadas.
+  async function tieneAcceso(email) {
+    if (ADMINS.indexOf(email) !== -1) return true;
+    try {
+      const d = await db.collection("permisos").doc(email).get();
+      if (!d.exists) return false;
+      const s = d.data().secciones;
+      return Array.isArray(s) && s.indexOf("ubicacion") !== -1;
+    } catch (e) {
+      console.warn("permisos ubicacion:", e.message);
+      return false;
+    }
+  }
+
+  auth.onAuthStateChanged(async user => {
     if (unsub) { unsub(); unsub = null; }
 
     if (!user) {
@@ -68,7 +88,7 @@
     miEmail = (user.email || "").toLowerCase();
     el("login").style.display = "none";
 
-    if (ADMINS.indexOf(miEmail) === -1) {
+    if (!(await tieneAcceso(miEmail))) {
       el("sin-acceso").style.display = "";
       el("app").style.display = "none";
       return;
@@ -351,6 +371,32 @@
     }
   });
 
+  el("fefo-excel").addEventListener("click", () => {
+    const items = fefoOrdenados();
+    if (!items.length) { showToast("Todavia no hay palets ubicados."); return; }
+    const hoy = new Date().toISOString().slice(0, 10);
+    const filas = items.map((it, i) => {
+      const dias = it.caducidad ? Math.round((new Date(it.caducidad) - new Date(hoy)) / 86400000) : null;
+      return {
+        "Orden FEFO": i + 1,
+        "Producto": it.producto,
+        "Lote": it.lote,
+        "SSCC": it.sscc,
+        "Pasillo": PASILLO_LABEL[it.pasillo],
+        "Nivel": nivelLabel(it.nivel),
+        "Ubicacion": String(it.idx + 1).padStart(2, "0"),
+        "Caducidad": it.caducidad ? fmtCaducidad(it.caducidad) : "Sin fecha",
+        "Dias restantes": dias == null ? "" : dias,
+        "Ubicado el": fmtFecha(it.fecha)
+      };
+    });
+    const ws = XLSX.utils.json_to_sheet(filas);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Orden FEFO");
+    const fechaArchivo = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(wb, "Aldelis_FEFO_Camara_" + fechaArchivo + ".xlsx");
+  });
+
   el("cotejar-open-btn").addEventListener("click", () => { el("cotejar-results").innerHTML = ""; showSheet("cotejar-sheet"); });
   el("cotejar-cancel").addEventListener("click", closeSheets);
   el("cotejar-file").addEventListener("change", e => {
@@ -403,7 +449,9 @@
     results.innerHTML = html;
   });
 
-  el("fefo-open-btn").addEventListener("click", () => {
+  // Mismo orden para pintar la lista y para exportarla: FEFO es caducidad
+  // ascendente, y sin caducidad al final por antiguedad.
+  function fefoOrdenados() {
     const items = allSlots();
     items.sort((a, b) => {
       const ca = a.caducidad || "9999-12-31";
@@ -411,6 +459,11 @@
       if (ca !== cb) return ca < cb ? -1 : 1;
       return tsMillis(a.fecha) - tsMillis(b.fecha);
     });
+    return items;
+  }
+
+  el("fefo-open-btn").addEventListener("click", () => {
+    const items = fefoOrdenados();
     const list = el("fefo-list");
     if (!items.length) {
       list.innerHTML = "<div class='meta'>Todavia no hay palets ubicados.</div>";

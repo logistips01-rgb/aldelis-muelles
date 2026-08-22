@@ -275,7 +275,10 @@ header .volver{ color:#B4BAC2; font-size:12px; text-decoration:none; display:inl
     <h2>Orden de salida FEFO</h2>
     <div class="meta" style="margin-bottom:6px;">De más urgente a menos urgente, por caducidad.</div>
     <div id="fefo-list"></div>
-    <div class="sheet-actions"><button class="btn-cancel" id="fefo-cancel" style="flex:1;">Cerrar</button></div>
+    <div class="sheet-actions">
+      <button class="btn-cancel" id="fefo-cancel">Cerrar</button>
+      <button id="fefo-excel" style="flex:1;background:var(--accent);color:#fff;border:none;border-radius:8px;padding:12px;font-weight:700;font-size:14px;cursor:pointer">Exportar a Excel</button>
+    </div>
   </div>
 
   <div class="sheet" id="cotejar-sheet">
@@ -292,6 +295,7 @@ header .volver{ color:#B4BAC2; font-size:12px; text-decoration:none; display:inl
 
   <div id="toast"></div>
 
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-check-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>

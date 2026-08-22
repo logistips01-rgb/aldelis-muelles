@@ -123,15 +123,22 @@ suban las lecturas del día a día.
 Las reglas dejan la baja tocar únicamente `activo`, `fecha_baja` y
 `usuario_baja` — el resto de campos tiene que llegar idéntico al documento
 anterior, así una actualización no puede colarse como una reescritura del
-alta. Verificado con el emulador (18 casos): alta, lectura, baja e
-inmutabilidad de los campos que no debe tocar.
+alta. Verificado con el emulador (18 + 6 casos): alta, lectura, baja e
+inmutabilidad de los campos que no debe tocar, y que sin la sección concedida
+no hay acceso aunque el usuario ya tenga ficha para otra cosa.
 
-Por ahora el acceso es solo para `ADMINS` (mismo criterio que `esAdmin()`),
-comprobado tanto en el cliente como en las reglas. Hay un botón «📦 Ubicación»
-en la barra superior del panel, visible solo para administradores, que abre la
-página en una pestaña nueva. Cuando se decida dar acceso a más gente, lo más
-sencillo es añadir una sección `ubicacion` al sistema de permisos que ya
-existe (ver más abajo) en vez de mantener la lista de `ADMINS` a mano.
+El acceso se gestiona desde **Config → Permisos de usuario**, sección
+«Ubicación de palets», igual que el resto de secciones del panel. El botón
+«📦 Ubicación» de la barra superior aparece para quien tenga esa sección
+marcada (o sea administrador) y abre la página en una pestaña nueva.
+
+Una diferencia importante con el resto de secciones: aquí **no hay refuerzo
+progresivo**. En las demás secciones, un usuario sin ficha en `/permisos`
+conserva el acceso que ya tenía (para no dejar a nadie fuera de golpe al
+introducir el sistema de permisos). Como `ubicacion` es una sección nueva sin
+usuarios previos que proteger, sin ficha —o con ficha que no la incluya— el
+acceso es que no, tanto en el cliente como en `firestore.rules`
+(`permitidoEstricto`, en vez de `permitido`). Verificado con el emulador.
 
 El diseño está adaptado a la paleta de Aldelis (rojo `#D41F3A`, cabecera
 oscura), conservando los colores por producto del prototipo original
