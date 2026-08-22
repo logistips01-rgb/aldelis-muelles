@@ -178,9 +178,14 @@
     });
     el("btn-apagar").addEventListener("click", apagarAlarma);
     el("btn-posponer").addEventListener("click", posponerAlarma);
-    if (screen.orientation && screen.orientation.lock) {
-      screen.orientation.lock("landscape").catch(() => {});
-    }
+
+    actualizarGiroForzado();
+    window.addEventListener("resize", actualizarGiroForzado);
+    window.addEventListener("orientationchange", actualizarGiroForzado);
+  }
+
+  function actualizarGiroForzado() {
+    document.body.classList.toggle("forzar-rot", window.innerHeight > window.innerWidth);
   }
 
   el("login-btn").addEventListener("click", async () => {

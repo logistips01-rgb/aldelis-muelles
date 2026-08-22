@@ -58,11 +58,15 @@ body{
 
 #app{ height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:22px; padding:20px; text-align:center; }
 
-.rotar-aviso{ display:none; }
-@media (orientation:portrait){
-  #app-contenido{ display:none; }
-  .rotar-aviso{ display:flex; flex-direction:column; align-items:center; gap:14px; height:100vh; justify-content:center; }
-  .rotar-aviso .icono{ font-size:48px; }
+/* Muchos moviles no tienen activada la rotacion automatica y
+   screen.orientation.lock() solo funciona instalado a pantalla completa,
+   asi que forzamos el giro por CSS: si el viewport esta en vertical,
+   rotamos toda la pagina 90 grados en vez de depender del sistema. */
+body.forzar-rot{
+  position:absolute; top:0; left:100%;
+  width:100vh; height:100vw;
+  transform-origin:0 0; transform:rotate(90deg);
+  overflow-x:hidden;
 }
 
 #reloj{ font-size:clamp(56px, 16vw, 140px); font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:2px; line-height:1; }
@@ -118,11 +122,6 @@ body{
 
 <div id="app" style="display:none">
   <a href="#" class="cerrar-sesion" id="cerrar-sesion">Cerrar sesion</a>
-
-  <div class="rotar-aviso">
-    <div class="icono">📱↻</div>
-    <div>Gira el movil en horizontal para usar el despertador</div>
-  </div>
 
   <div id="app-contenido" style="display:flex; flex-direction:column; align-items:center; gap:22px;">
     <div>
