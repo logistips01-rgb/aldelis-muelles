@@ -39,10 +39,13 @@ body{ margin:0; background: var(--bg); color: var(--ink); font-family:'Inter',sa
 .campo input:focus{ border-color:var(--accent); }
 .btn-full{ width:100%; background:var(--accent); color:#fff; border:none; border-radius:9px; padding:13px; font-size:15px; font-weight:700; cursor:pointer; }
 .err{ color:var(--accent); font-size:13px; margin-bottom:10px; display:none; }
-#sin-acceso{ display:none; max-width:420px; margin:60px auto; text-align:center; padding:0 20px; color:var(--ink-soft); }
+#sin-acceso{ max-width:420px; margin:60px auto; text-align:center; padding:0 20px; color:var(--ink-soft); }
 
 /* ── App ───────────────────────────────────────────────────────────────── */
-#app{ display:none; }
+/* Ojo: #app se oculta con el atributo style del propio elemento, NO con una
+   regla aqui. Si se ocultara con una regla, "el('app').style.display=''" en
+   ubicacion.js solo borraria el estilo en linea sin anular la regla, y el
+   bloque no llegaria a mostrarse nunca (asi fallo la primera version). */
 .app-inner{ max-width: 860px; margin: 0 auto; padding-bottom: 100px; }
 
 header{
@@ -185,17 +188,18 @@ header .volver{ color:#B4BAC2; font-size:12px; text-decoration:none; display:inl
     <button class="btn-full" onclick="entrar()">Entrar</button>
   </div>
 
-  <div id="sin-acceso">
+  <div id="sin-acceso" style="display:none">
     <div class="logo" style="font-size:24px;font-weight:700;color:#D41F3A;margin-bottom:8px">Aldelis</div>
     <p>Tu usuario no tiene acceso a este módulo todavía.</p>
     <p><a href="admin.html" style="color:#D41F3A">Volver al panel</a></p>
   </div>
 
-  <div id="app">
+  <div id="app" style="display:none">
     <div class="app-inner">
       <header>
         <div>
           <a class="volver" href="admin.html">&#8592; Volver al panel</a>
+          <a class="volver" href="#" onclick="auth.signOut();return false" style="margin-left:10px">Cerrar sesión</a>
           <h1>Ubicación de palets</h1>
           <p>Cámara frigorífica · Pasillo 3 y Pasillo 4</p>
         </div>
