@@ -64,6 +64,7 @@ jornada, la diferencia en lecturas de Firestore es grande.
 | `carga.html` | QR, sin login | Choferes que registran su entrada a muelle (M1-M5) |
 | `merca.html` | QR, sin login | Proveedores que descargan en Merca (M2 y M4) |
 | `movil.html` | Login | Vista movil del almacen: donde esta cada lanzadera y chat |
+| `ubicacion.html` | Login, solo admins por ahora | Ubicación de palets en la cámara frigorífica |
 
 Las páginas sin login están protegidas por **App Check (reCAPTCHA v3)**: solo
 se aceptan peticiones que vengan del dominio real de la aplicación. Se decidió
@@ -101,6 +102,40 @@ Documentos de `config`:
 - `alertas` — destinatarios de las alertas de lanzadera parada
 - `costes` — destinatarios del informe diario de costes
 - `bizerba` — destinatarios del informe diario de incidencias
+
+---
+
+## Módulo de ubicación de palets (cámara frigorífica)
+
+`ubicacion.html` + `public/js/ubicacion.js`. **Deliberadamente independiente**
+del resto de la app: colección propia (`ubicaciones_palet`), bloque propio en
+`firestore.rules`, sin Cloud Functions ni relación con ninguna otra colección
+o pantalla. Un fallo aquí no puede afectar a reservas, lanzaderas, Bizerba ni
+los informes.
+
+Rejilla fija de 2 pasillos (P3, P4) × 4 niveles (suelo, cota1-3) × 16
+posiciones. Cada documento es un movimiento (alta o baja), nunca se borra:
+`activo` pasa a `false` en la baja para dejar histórico y trazabilidad, algo
+obligatorio en alimentación. Solo se leen los documentos con `activo == true`
+(como mucho 128), así que el histórico puede crecer con los meses sin que
+suban las lecturas del día a día.
+
+Las reglas dejan la baja tocar únicamente `activo`, `fecha_baja` y
+`usuario_baja` — el resto de campos tiene que llegar idéntico al documento
+anterior, así una actualización no puede colarse como una reescritura del
+alta. Verificado con el emulador (18 casos): alta, lectura, baja e
+inmutabilidad de los campos que no debe tocar.
+
+Por ahora el acceso es solo para `ADMINS` (mismo criterio que `esAdmin()`),
+comprobado tanto en el cliente como en las reglas. Hay un botón «📦 Ubicación»
+en la barra superior del panel, visible solo para administradores, que abre la
+página en una pestaña nueva. Cuando se decida dar acceso a más gente, lo más
+sencillo es añadir una sección `ubicacion` al sistema de permisos que ya
+existe (ver más abajo) en vez de mantener la lista de `ADMINS` a mano.
+
+El diseño está adaptado a la paleta de Aldelis (rojo `#D41F3A`, cabecera
+oscura), conservando los colores por producto del prototipo original
+(Costillas en terracota, Alitas en ámbar), que son información, no marca.
 
 ---
 

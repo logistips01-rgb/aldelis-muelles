@@ -578,6 +578,12 @@ function aplicarRol() {
   const fab = document.getElementById("chat-fab");
   if (fab && !_perms.mensajes) fab.style.display = "none";
 
+  // Modulo de ubicacion de palets: enlace aparte, solo admins por ahora.
+  // Vive en su propia pagina (ubicacion.html) a proposito, para que un fallo
+  // ahi no pueda afectar al resto del panel.
+  const btnUbic = document.getElementById("btn-ubicacion");
+  if (btnUbic) btnUbic.style.display = _perms.esAdmin ? "" : "none";
+
   // Abrir la primera vista disponible
   const orden = ["rejilla", "lista", "lanzaderas", "bizerba", "cargas", "merca", "informes", "costes", "config"];
   const primera = orden.find(v => _perms.ver[v]);

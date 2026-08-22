@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Aldelis — Ubicación de palets</title>
+<link rel="icon" href="/icon-512.png">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg: #F1F2F5;
+  --panel: #FFFFFF;
+  --ink: #1A1A1A;
+  --ink-soft: #6B7280;
+  --steel-dark: #1A1A1A;
+  --costillas: #B23A2F;
+  --costillas-soft: #F3DAD6;
+  --alitas: #C98A1E;
+  --alitas-soft: #F4E4C2;
+  --empty-border: #D1D5DB;
+  --accent: #D41F3A;
+  --accent-soft: #FBE4E1;
+  --danger: #A32E24;
+  --fefo-gold: #C8961E;
+  --floor: #E9EAED;
+  --radius: 10px;
+}
+*{ box-sizing: border-box; }
+body{ margin:0; background: var(--bg); color: var(--ink); font-family:'Inter',sans-serif; -webkit-tap-highlight-color: transparent; }
+.mono{ font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace; }
+
+/* ── Login ─────────────────────────────────────────────────────────────── */
+#login{ max-width:380px; margin:0 auto; padding:60px 20px; }
+#login .logo{ font-size:28px; font-weight:700; color:var(--accent); text-align:center; }
+#login .sub{ font-size:13px; color:var(--ink-soft); text-align:center; margin:2px 0 26px; }
+.campo{ margin-bottom:12px; }
+.campo label{ display:block; font-size:12px; font-weight:600; color:#374151; margin-bottom:5px; }
+.campo input{ width:100%; padding:12px 13px; border:1.5px solid #E0E0E0; border-radius:9px; font-size:16px; font-family:'Inter',sans-serif; outline:none; }
+.campo input:focus{ border-color:var(--accent); }
+.btn-full{ width:100%; background:var(--accent); color:#fff; border:none; border-radius:9px; padding:13px; font-size:15px; font-weight:700; cursor:pointer; }
+.err{ color:var(--accent); font-size:13px; margin-bottom:10px; display:none; }
+#sin-acceso{ display:none; max-width:420px; margin:60px auto; text-align:center; padding:0 20px; color:var(--ink-soft); }
+
+/* ── App ───────────────────────────────────────────────────────────────── */
+#app{ display:none; }
+.app-inner{ max-width: 860px; margin: 0 auto; padding-bottom: 100px; }
+
+header{
+  background: var(--steel-dark);
+  padding: 16px 16px 14px;
+  display:flex; justify-content:space-between; align-items:flex-start; gap:10px;
+}
+header h1{ font-family:'Inter'; font-weight:800; font-size:20px; letter-spacing:.2px; color:#fff; margin:0 0 2px; }
+header p{ margin:0; color:#B4BAC2; font-size:12px; font-weight:500; }
+header .volver{ color:#B4BAC2; font-size:12px; text-decoration:none; display:inline-block; margin-bottom:6px; }
+#fefo-open-btn, #cotejar-open-btn{
+  background: var(--fefo-gold); color:#2B1E00; border:none; border-radius:8px;
+  padding: 8px 12px; font-family:'Inter'; font-weight:700; font-size:11.5px;
+  text-transform:uppercase; letter-spacing:.3px; cursor:pointer; white-space:nowrap;
+  display:flex; align-items:center; gap:5px; flex-shrink:0; justify-content:center;
+}
+#cotejar-open-btn{ background:var(--accent); color:#fff; }
+
+.stats{ display:flex; gap:8px; padding: 12px 16px; overflow-x:auto; }
+.stat{ flex:1 1 0; background:var(--panel); border-radius:var(--radius); padding:8px 10px; min-width:78px; border:1px solid #E5E7EB; }
+.stat .n{ font-size:20px; font-weight:800; line-height:1; }
+.stat .l{ font-size:10.5px; color:var(--ink-soft); font-weight:600; text-transform:uppercase; letter-spacing:.3px; margin-top:3px; }
+.stat.costillas .n{ color:var(--costillas); }
+.stat.alitas .n{ color:var(--alitas); }
+
+.scan-panel{ margin:0 16px 14px; background:var(--panel); border-radius:var(--radius); padding:14px; border:1px solid #E5E7EB; }
+.field-label{ font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; color:var(--ink-soft); margin:10px 0 5px; }
+.field-label:first-child{ margin-top:0; }
+.scan-row{ display:flex; gap:8px; }
+#sscc-input{ flex:1; font-size:15px; font-weight:700; padding:12px; border-radius:8px; border:2px solid #E0E0E0; outline:none; color:var(--ink); background:#FAFAFA; letter-spacing:.3px; }
+#sscc-input:focus{ border-color:var(--accent); }
+#clear-btn{ border:none; background:#F0F0F0; color:var(--ink-soft); border-radius:8px; padding:0 14px; font-size:18px; cursor:pointer; font-weight:700; }
+
+.producto-row{ display:flex; gap:8px; }
+.producto-btn{ flex:1; border:2px solid #E0E0E0; background:#FAFAFA; border-radius:8px; padding:10px 6px; font-weight:700; font-size:13.5px; cursor:pointer; color:var(--ink-soft); display:flex; align-items:center; justify-content:center; gap:7px; }
+.producto-btn .dot{ width:10px; height:10px; border-radius:50%; background:#ccc; }
+.producto-btn.costillas.active{ border-color:var(--costillas); background:var(--costillas-soft); color:var(--costillas); }
+.producto-btn.costillas.active .dot{ background:var(--costillas); }
+.producto-btn.alitas.active{ border-color:var(--alitas); background:var(--alitas-soft); color:#8A6516; }
+.producto-btn.alitas.active .dot{ background:var(--alitas); }
+
+.lote-row{ display:flex; gap:8px; }
+#lote-input, #caducidad-input{ flex:1; font-size:14px; font-weight:700; padding:10px; border-radius:8px; border:2px solid #E0E0E0; outline:none; color:var(--ink); background:#FAFAFA; font-family:'Inter',sans-serif; }
+#lote-input:focus, #caducidad-input:focus{ border-color:var(--accent); }
+
+.hint{ margin-top:10px; font-size:12.5px; font-weight:600; padding:9px 10px; border-radius:7px; }
+.hint.info{ background:var(--accent-soft); color:#8A1526; }
+.hint.locate{ background:#FFF3D6; color:#7A5A00; }
+.hint.place{ background:#EAF6EC; color:#1E6B33; }
+.hint.warn{ background:#FBE4E1; color:#8A2A20; }
+
+.tabs{ display:flex; gap:8px; padding:0 16px 10px; }
+.tab{ flex:1; text-align:center; padding:10px 0; border-radius:8px; font-weight:700; font-size:13.5px; letter-spacing:.2px; background:var(--panel); border:1px solid #E5E7EB; color:var(--ink-soft); cursor:pointer; text-transform:uppercase; }
+.tab.active{ background:var(--steel-dark); color:#fff; border-color:var(--steel-dark); }
+.tab .sub{ display:block; font-size:10.5px; font-weight:600; opacity:.8; text-transform:none; letter-spacing:0; margin-top:2px; }
+
+.rack{ margin:0 16px; background:var(--panel); border-radius:var(--radius); border:1px solid #E5E7EB; }
+.rack-scroll{ overflow-x:auto; padding-bottom:4px; }
+.rack-inner{ min-width:100%; width:max-content; }
+.loc-header-row, .level-row{ display:grid; grid-template-columns: 64px repeat(16, 52px); }
+.sticky-col{ position:sticky; left:0; z-index:2; display:flex; align-items:center; justify-content:center; }
+.loc-header-row{ background:var(--steel-dark); border-radius:var(--radius) var(--radius) 0 0; }
+.loc-header-row .sticky-col{ background:var(--steel-dark); color:#E4E7EA; font-size:10px; font-weight:700; text-transform:uppercase; }
+.loc-header-row .col-num{ color:#E4E7EA; font-size:11px; font-weight:700; text-align:center; padding:8px 0; border-left:1px solid rgba(255,255,255,.08); }
+.level-row{ border-top:1px solid #F0F0F0; }
+.level-row.suelo{ background:var(--floor); border-top:3px solid #D1D5DB; border-bottom:3px solid #D1D5DB; }
+.level-row .sticky-col{ background:#FAFAFA; font-weight:700; font-size:11.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.2px; border-right:2px solid #E5E7EB; text-align:center; line-height:1.15; }
+.level-row.suelo .sticky-col{ background:var(--floor); color:#4B5563; }
+
+.cell{ margin:4px; border-radius:7px; height:52px; display:flex; flex-direction:column; align-items:center; justify-content:center; cursor:pointer; position:relative; border:1.5px dashed var(--empty-border); background:#fff; }
+.cell.filled{ border-style:solid; border-width:1.5px; }
+.cell.filled.costillas{ background:var(--costillas-soft); border-color:var(--costillas); }
+.cell.filled.alitas{ background:var(--alitas-soft); border-color:var(--alitas); }
+.cell .lote-txt{ font-size:10.5px; font-weight:700; max-width:46px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.cell.filled.costillas .lote-txt{ color:var(--costillas); }
+.cell.filled.alitas .lote-txt{ color:#8A6516; }
+.cell .sscc-tail{ font-size:8.5px; font-weight:600; color:var(--ink-soft); opacity:.85; margin-top:1px; }
+.cell .empty-mark{ color:#D8D8D8; font-size:16px; }
+.cell.highlight{ outline:3px solid var(--accent); outline-offset:1px; animation:pulse 1s ease-in-out 2; }
+.cell.fefo-next::after{ content:'★'; position:absolute; top:-6px; right:-4px; color:var(--fefo-gold); font-size:13px; text-shadow:0 0 2px rgba(255,255,255,.9); }
+@keyframes pulse{ 0%,100%{ box-shadow:0 0 0 0 rgba(212,31,58,.45);} 50%{ box-shadow:0 0 0 6px rgba(212,31,58,0);} }
+
+.rack-legend{ display:flex; gap:14px; padding:10px 14px 12px; font-size:11px; color:var(--ink-soft); flex-wrap:wrap; }
+.rack-legend span{ display:flex; align-items:center; gap:5px; }
+.rack-legend .sw{ width:11px; height:11px; border-radius:3px; }
+
+.sheet-backdrop{ position:fixed; inset:0; background:rgba(20,18,15,.45); display:none; z-index:20; }
+.sheet-backdrop.show{ display:block; }
+.sheet{ position:fixed; left:0; right:0; bottom:0; background:#fff; z-index:21; border-radius:16px 16px 0 0; padding:18px 18px 22px; max-width:860px; margin:0 auto; box-shadow:0 -4px 20px rgba(0,0,0,.15); transform:translateY(100%); transition:transform .2s ease-out; display:none; max-height:78vh; overflow-y:auto; }
+.sheet.show{ transform:translateY(0); display:block; }
+.sheet-tag{ display:inline-block; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.3px; }
+.sheet-tag.costillas{ background:var(--costillas-soft); color:var(--costillas); }
+.sheet-tag.alitas{ background:var(--alitas-soft); color:#8A6516; }
+.sheet h2{ font-size:19px; margin:10px 0 2px; }
+.sheet .sscc-full{ font-size:13px; font-weight:700; color:var(--ink-soft); word-break:break-all; }
+.sheet .meta{ font-size:12.5px; color:var(--ink-soft); margin-top:6px; }
+.sheet .meta b{ color:var(--ink); }
+.sheet-actions{ display:flex; gap:10px; margin-top:16px; }
+.sheet-actions button{ flex:1; padding:12px; border-radius:8px; border:none; font-weight:700; font-size:14px; cursor:pointer; }
+.btn-cancel{ background:#F0F0F0; color:var(--ink); }
+.btn-remove{ background:var(--danger); color:#fff; }
+.btn-remove:disabled{ opacity:.6; cursor:default; }
+
+.fefo-list-item{ display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid #F0F0F0; }
+.fefo-list-item:last-child{ border-bottom:none; }
+.fefo-rank{ font-weight:800; font-size:15px; color:var(--ink-soft); width:22px; flex-shrink:0; }
+.fefo-dot{ width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+.fefo-body{ flex:1; min-width:0; }
+.fefo-lote{ font-weight:700; font-size:13.5px; }
+.fefo-loc{ font-size:11.5px; color:var(--ink-soft); margin-top:1px; }
+.fefo-exp{ font-size:11.5px; font-weight:700; text-align:right; flex-shrink:0; }
+.fefo-exp.soon{ color:var(--danger); }
+.fefo-exp.none{ color:#B7B2A4; font-weight:600; }
+
+.cotejar-summary{ display:flex; gap:8px; margin-top:14px; }
+.cotejar-summary .c{ flex:1; border-radius:8px; padding:10px; text-align:center; }
+.cotejar-summary .c .n{ font-size:20px; font-weight:800; }
+.cotejar-summary .c .l{ font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.3px; margin-top:2px; }
+.cotejar-summary .ok{ background:#EAF6EC; color:#1E6B33; }
+.cotejar-summary .warn{ background:#FFF3D6; color:#7A5A00; }
+.cotejar-summary .bad{ background:#FBE4E1; color:#8A2A20; }
+.cotejar-block{ margin-top:16px; }
+.cotejar-block h3{ font-size:13.5px; text-transform:uppercase; letter-spacing:.3px; margin:0 0 6px; }
+.cotejar-row{ display:flex; justify-content:space-between; gap:8px; padding:7px 0; border-bottom:1px solid #F0F0F0; font-size:12.5px; }
+.cotejar-row:last-child{ border-bottom:none; }
+.cotejar-row .loc{ color:var(--ink-soft); font-size:11.5px; text-align:right; flex-shrink:0; }
+
+#toast{ position:fixed; left:50%; bottom:22px; transform:translateX(-50%) translateY(20px); background:var(--steel-dark); color:#fff; padding:11px 18px; border-radius:24px; font-size:13.5px; font-weight:600; opacity:0; transition:all .25s; z-index:30; max-width:88%; text-align:center; }
+#toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+  <div id="login">
+    <div class="logo">Aldelis</div>
+    <div class="sub">Ubicación de palets — Cámara frigorífica</div>
+    <div class="campo"><label>Email</label><input type="email" id="l-email" autocomplete="username" placeholder="usuario@aldelis.com"></div>
+    <div class="campo"><label>Contraseña</label><input type="password" id="l-pass" autocomplete="current-password" placeholder="••••••••"></div>
+    <div class="err" id="l-err"></div>
+    <button class="btn-full" onclick="entrar()">Entrar</button>
+  </div>
+
+  <div id="sin-acceso">
+    <div class="logo" style="font-size:24px;font-weight:700;color:#D41F3A;margin-bottom:8px">Aldelis</div>
+    <p>Tu usuario no tiene acceso a este módulo todavía.</p>
+    <p><a href="admin.html" style="color:#D41F3A">Volver al panel</a></p>
+  </div>
+
+  <div id="app">
+    <div class="app-inner">
+      <header>
+        <div>
+          <a class="volver" href="admin.html">&#8592; Volver al panel</a>
+          <h1>Ubicación de palets</h1>
+          <p>Cámara frigorífica · Pasillo 3 y Pasillo 4</p>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:6px;">
+          <button id="fefo-open-btn">★ Orden FEFO</button>
+          <button id="cotejar-open-btn">&#128203; Cotejar SSCC</button>
+        </div>
+      </header>
+
+      <div class="stats">
+        <div class="stat"><div class="n" id="stat-libres">–</div><div class="l">Libres</div></div>
+        <div class="stat"><div class="n" id="stat-ocupadas">–</div><div class="l">Ocupadas</div></div>
+        <div class="stat costillas"><div class="n" id="stat-costillas">–</div><div class="l">Costillas</div></div>
+        <div class="stat alitas"><div class="n" id="stat-alitas">–</div><div class="l">Alitas</div></div>
+      </div>
+
+      <div class="scan-panel">
+        <div class="field-label">SSCC</div>
+        <div class="scan-row">
+          <input id="sscc-input" type="text" inputmode="text" placeholder="Escanea o escribe el SSCC" autocomplete="off">
+          <button id="clear-btn" title="Borrar">&#10005;</button>
+        </div>
+
+        <div class="field-label">Producto</div>
+        <div class="producto-row">
+          <button class="producto-btn costillas" data-producto="Costillas"><span class="dot"></span>Costillas</button>
+          <button class="producto-btn alitas" data-producto="Alitas"><span class="dot"></span>Alitas</button>
+        </div>
+
+        <div class="field-label">Lote y caducidad</div>
+        <div class="lote-row">
+          <input id="lote-input" type="text" placeholder="Nº de lote" autocomplete="off">
+          <input id="caducidad-input" type="date" title="Fecha de caducidad (opcional, recomendado para FEFO)">
+        </div>
+
+        <div class="hint info" id="hint">Escanea un SSCC para ubicarlo o localizarlo.</div>
+        <button id="quick-remove-btn" style="display:none; width:100%; margin-top:8px; background:var(--danger); color:#fff; border:none; border-radius:8px; padding:11px; font-weight:700; font-size:13.5px; cursor:pointer;">Dar de baja este palet</button>
+      </div>
+
+      <div class="tabs">
+        <div class="tab active" data-pasillo="P3">Pasillo 3<span class="sub" id="sub-P3">– / 64</span></div>
+        <div class="tab" data-pasillo="P4">Pasillo 4<span class="sub" id="sub-P4">– / 64</span></div>
+      </div>
+
+      <div class="rack">
+        <div class="rack-scroll"><div class="rack-inner" id="rack"></div></div>
+        <div class="rack-legend">
+          <span><span class="sw" style="background:var(--costillas)"></span>Costillas</span>
+          <span><span class="sw" style="background:var(--alitas)"></span>Alitas</span>
+          <span><span class="sw" style="background:#fff;border:1.5px dashed var(--empty-border)"></span>Libre</span>
+          <span>★ Siguiente salida FEFO</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sheet-backdrop" id="sheet-backdrop"></div>
+
+  <div class="sheet" id="sheet">
+    <span class="sheet-tag" id="sheet-tag"></span>
+    <h2 id="sheet-ubic"></h2>
+    <div class="sscc-full" id="sheet-sscc"></div>
+    <div class="meta" id="sheet-lote"></div>
+    <div class="meta" id="sheet-caducidad"></div>
+    <div class="meta" id="sheet-fecha"></div>
+    <div class="sheet-actions">
+      <button class="btn-cancel" id="sheet-cancel">Cerrar</button>
+      <button class="btn-remove" id="sheet-remove">Retirar palet</button>
+    </div>
+  </div>
+
+  <div class="sheet" id="fefo-sheet">
+    <h2>Orden de salida FEFO</h2>
+    <div class="meta" style="margin-bottom:6px;">De más urgente a menos urgente, por caducidad.</div>
+    <div id="fefo-list"></div>
+    <div class="sheet-actions"><button class="btn-cancel" id="fefo-cancel" style="flex:1;">Cerrar</button></div>
+  </div>
+
+  <div class="sheet" id="cotejar-sheet">
+    <h2>Cotejar listado de SSCC</h2>
+    <div class="meta">Pega la lista de SSCC (uno por línea, o exportado de Excel) o carga un archivo .csv / .txt.</div>
+    <textarea id="cotejar-textarea" rows="6" placeholder="SSCC1&#10;SSCC2&#10;SSCC3..." style="width:100%; margin-top:10px; padding:10px; border-radius:8px; border:2px solid #E0E0E0; font-size:12.5px; resize:vertical; font-family:'SFMono-Regular',Consolas,monospace;"></textarea>
+    <input type="file" id="cotejar-file" accept=".csv,.txt" style="margin-top:8px; font-size:12.5px;">
+    <div class="sheet-actions">
+      <button class="btn-cancel" id="cotejar-cancel">Cerrar</button>
+      <button id="cotejar-run" style="flex:1; padding:12px; border-radius:8px; border:none; font-weight:700; font-size:14px; cursor:pointer; background:var(--accent); color:#fff;">Comparar con la cámara</button>
+    </div>
+    <div id="cotejar-results"></div>
+  </div>
+
+  <div id="toast"></div>
+
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-check-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="js/firebase-config-compat.js"></script>
+  <script src="js/ubicacion.js"></script>
+</body>
+</html>
