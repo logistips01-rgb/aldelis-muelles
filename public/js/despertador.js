@@ -89,9 +89,9 @@
     u.className = "flip-unit";
     u.id = id;
     u.innerHTML =
-      "<div class='fu-half top'><span class='fu-top-txt'>" + valorInicial + "</span></div>" +
-      "<div class='fu-half bottom'><span class='fu-bottom-txt'>" + valorInicial + "</span></div>" +
-      "<div class='fu-flap'><span class='fu-flap-txt'>" + valorInicial + "</span></div>";
+      "<div class='fu-half top'><div class='fu-digit'><span class='fu-top-txt'>" + valorInicial + "</span></div></div>" +
+      "<div class='fu-half bottom'><div class='fu-digit'><span class='fu-bottom-txt'>" + valorInicial + "</span></div></div>" +
+      "<div class='fu-flap'><div class='fu-digit'><span class='fu-flap-txt'>" + valorInicial + "</span></div></div>";
     flipDigitos[id] = { el: u, valor: valorInicial };
     return u;
   }
