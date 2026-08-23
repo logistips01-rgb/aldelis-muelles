@@ -239,6 +239,18 @@
     actualizarGiroForzado();
     window.addEventListener("resize", actualizarGiroForzado);
     window.addEventListener("orientationchange", actualizarGiroForzado);
+
+    ["click", "touchstart", "mousemove", "keydown"].forEach(ev => document.addEventListener(ev, avisarActividad));
+    avisarActividad();
+  }
+
+  // Al minuto sin tocar la pantalla se esconde todo menos el reloj, para
+  // que de noche se parezca a un despertador real y no a una pantalla de movil.
+  let inactividadTimer = null;
+  function avisarActividad() {
+    document.body.classList.remove("reposo");
+    clearTimeout(inactividadTimer);
+    inactividadTimer = setTimeout(() => document.body.classList.add("reposo"), 60000);
   }
 
   function actualizarGiroForzado() {
