@@ -55,7 +55,7 @@ body{
 
 #sin-acceso{ max-width:380px; margin:80px auto; text-align:center; padding:0 20px; color:var(--ink-soft); }
 
-#app{ height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:22px; padding:20px; text-align:center; overflow:auto; }
+#app{ height:100%; display:flex; flex-direction:column; align-items:center; padding:14px; text-align:center; overflow:auto; }
 
 /* Muchos moviles no tienen activada la rotacion automatica y
    screen.orientation.lock() solo funciona instalado a pantalla completa,
@@ -68,21 +68,27 @@ body.forzar-rot{
   overflow-x:hidden;
 }
 
-/* Reloj retro de cortinillas (split-flap), tipo despertador de mesa de toda la vida */
+/* Reloj retro de cortinillas (split-flap), tipo despertador de mesa de toda
+   la vida: ocupa casi toda la pantalla, los controles van en una barra
+   pequeña debajo. Los tamaños se calculan con container query units sobre
+   .reloj-caja (no con vw/vh) porque el giro forzado por CSS deja los vw/vh
+   del viewport referidos al movil en vertical, no a lo que se ve en pantalla. */
+#app-contenido{ height:100%; width:100%; max-width:900px; display:flex; flex-direction:column; align-items:center; gap:8px; }
 .reloj-caja{
+  flex:1 1 auto; min-height:0; width:100%;
   background:linear-gradient(180deg,#2b1f18,#1c1410);
   border:1px solid #3a2c22; border-radius:20px;
-  padding:clamp(14px,3vw,30px) clamp(18px,4vw,36px) clamp(10px,2vw,20px);
   box-shadow:0 16px 40px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.05);
-  display:inline-flex; flex-direction:column; align-items:center; gap:8px;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1cqh;
+  container-type:size;
 }
-#reloj{ display:flex; align-items:center; gap:clamp(4px,1.2vw,10px); perspective:600px; }
+#reloj{ display:flex; align-items:center; gap:2.5cqw; perspective:600px; }
 .flip-unit{
   position:relative;
-  width:clamp(34px,7.5vw,78px); height:clamp(58px,13vw,132px);
-  font-size:clamp(34px,7.5vw,78px);
+  width:15cqw; height:60cqh;
+  font-size:52cqh;
   font-family:'Courier New', Courier, monospace; font-weight:700;
-  color:#F3ECDA; background:#1c1c1c; border-radius:.14em;
+  color:#F3ECDA; background:#1c1c1c; border-radius:.12em;
   box-shadow:inset 0 0 0 1px rgba(255,255,255,.05), 0 6px 14px rgba(0,0,0,.5);
   overflow:hidden;
 }
@@ -93,31 +99,31 @@ body.forzar-rot{
 .fu-flap{
   position:absolute; left:0; right:0; top:0; height:50%; overflow:hidden;
   display:flex; align-items:flex-start; justify-content:center;
-  background:#242424; border-radius:.14em .14em 0 0;
+  background:#242424; border-radius:.12em .12em 0 0;
   transform-origin:bottom center; backface-visibility:hidden;
   box-shadow:0 2px 4px rgba(0,0,0,.4); z-index:6;
 }
 .fu-flap.falling{ animation:fu-caer .4s cubic-bezier(.5,0,.75,0) forwards; }
 @keyframes fu-caer{ 0%{ transform:rotateX(0deg); } 100%{ transform:rotateX(-100deg); } }
-.reloj-colon{ display:flex; flex-direction:column; gap:clamp(10px,2.5vw,20px); padding:0 2px; align-self:center; }
-.reloj-colon span{ width:clamp(6px,1.4vw,12px); height:clamp(6px,1.4vw,12px); border-radius:50%; background:var(--accent); display:block; animation:fu-parpadeo 2s steps(1) infinite; }
+.reloj-colon{ display:flex; flex-direction:column; gap:8cqh; padding:0 .3cqw; align-self:center; }
+.reloj-colon span{ width:3cqh; height:3cqh; border-radius:50%; background:var(--accent); display:block; animation:fu-parpadeo 2s steps(1) infinite; }
 @keyframes fu-parpadeo{ 0%,49%{ opacity:1; } 50%,100%{ opacity:.25; } }
-#fecha-hoy{ color:var(--ink-soft); font-size:12px; text-transform:capitalize; }
+#fecha-hoy{ color:var(--ink-soft); font-size:3.2cqh; text-transform:capitalize; }
 
-.panel-alarma{ background:var(--panel); border-radius:16px; padding:18px 26px; display:flex; align-items:center; gap:18px; flex-wrap:wrap; justify-content:center; }
+.panel-alarma{ background:var(--panel); border-radius:14px; padding:8px 16px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; justify-content:center; flex:0 0 auto; }
 .panel-alarma input[type=time]{
-  font-size:36px; font-weight:700; background:transparent; color:var(--ink);
+  font-size:22px; font-weight:700; background:transparent; color:var(--ink);
   border:none; font-variant-numeric:tabular-nums; text-align:center;
 }
-.chk-repetir{ display:flex; align-items:center; gap:8px; font-size:14px; color:var(--ink-soft); }
-.chk-repetir input{ width:20px; height:20px; }
+.chk-repetir{ display:flex; align-items:center; gap:6px; font-size:12px; color:var(--ink-soft); }
+.chk-repetir input{ width:16px; height:16px; }
 
-#btn-armar{ padding:16px 40px; border-radius:14px; border:none; font-size:18px; font-weight:700; background:var(--ok); color:#fff; cursor:pointer; }
+#btn-armar{ padding:9px 22px; border-radius:10px; border:none; font-size:14px; font-weight:700; background:var(--ok); color:#fff; cursor:pointer; }
 #btn-armar.armado{ background:var(--accent); }
-#estado-alarma{ font-size:13px; color:var(--ink-soft); min-height:18px; }
-#aviso-pantalla{ font-size:12px; color:var(--ink-soft); max-width:420px; }
+#estado-alarma{ font-size:11px; color:var(--ink-soft); min-height:14px; flex:0 0 auto; }
+#aviso-pantalla{ font-size:10px; color:var(--ink-soft); max-width:520px; flex:0 0 auto; }
 
-#btn-test-sonido{ padding:8px 16px; border-radius:10px; border:1px solid var(--line); background:transparent; color:var(--ink-soft); font-size:12px; cursor:pointer; }
+#btn-test-sonido{ padding:5px 12px; border-radius:8px; border:1px solid var(--line); background:transparent; color:var(--ink-soft); font-size:11px; cursor:pointer; flex:0 0 auto; }
 
 .cerrar-sesion{ position:fixed; top:10px; right:14px; font-size:12px; color:var(--ink-soft); text-decoration:none; }
 #btn-pantalla-completa{ position:fixed; top:8px; left:14px; font-size:12px; color:var(--ink-soft); background:transparent; border:1px solid var(--line); border-radius:8px; padding:4px 10px; cursor:pointer; }
@@ -157,7 +163,7 @@ body.forzar-rot{
   <a href="#" class="cerrar-sesion" id="cerrar-sesion">Cerrar sesion</a>
   <button id="btn-pantalla-completa">⛶ Pantalla completa</button>
 
-  <div id="app-contenido" style="display:flex; flex-direction:column; align-items:center; gap:22px;">
+  <div id="app-contenido">
     <div class="reloj-caja">
       <div id="reloj"></div>
       <div id="fecha-hoy"></div>
