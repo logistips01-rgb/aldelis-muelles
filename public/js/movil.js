@@ -373,6 +373,16 @@
     });
   };
 
+  window.enviarEmoji = function (emoji) {
+    db.collection("mensajes").add({
+      lanzadera: _hilo,
+      de:        "almacen",
+      emisor:    _emisor,
+      texto:     emoji,
+      ts:        firebase.firestore.Timestamp.now()
+    }).catch(function (e) { console.error("enviar:", e); });
+  };
+
   window.enviarMensaje = function () {
     var inp = el("msg-texto");
     var texto = inp.value.trim();

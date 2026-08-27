@@ -2102,7 +2102,7 @@ function renderChat() {
   if (conv.length) { const last = conv[conv.length - 1]; if (last.ts) chatSetSeen(_chatSel, last.ts.toMillis()); }
   const mc = document.getElementById("chat-msgs"); mc.scrollTop = mc.scrollHeight;
 
-  const quicks = ["Recibido", "Ve a Plaza", "Espera 10 min", "Llama al almacen"];
+  const quicks = ["👍", "🙏", "Recibido", "Ve a Plaza", "Espera 10 min", "Llama al almacen"];
   document.getElementById("chat-quick").innerHTML =
     quicks.map(q => "<button class='chat-chip' onclick=\"enviarChatAlmacen('" + q + "')\">" + q + "</button>").join("");
 }

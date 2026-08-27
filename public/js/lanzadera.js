@@ -578,7 +578,7 @@ function abrirChat() {
   if (!sel.numero) return;
   document.getElementById("chat-ov-titulo").textContent = "Chat con Almacen — Lanzadera " + sel.numero;
   document.getElementById("chat-ov-quick").innerHTML =
-    ["Voy", "OK", "5 min", "Cargando", "Problema"].map(q => "<button class='chatov-chip' onclick=\"enviarChatLanz('" + q + "')\">" + q + "</button>").join("");
+    ["👍", "🙏", "Voy", "OK", "5 min", "Cargando", "Problema"].map(q => "<button class='chatov-chip' onclick=\"enviarChatLanz('" + q + "')\">" + q + "</button>").join("");
   document.getElementById("chat-overlay").style.display = "flex";
   renderChatLanz();
 }
