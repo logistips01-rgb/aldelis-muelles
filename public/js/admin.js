@@ -711,7 +711,7 @@ function renderChoferes() {
         "<div class='chofer-lanz'>Lanzadera " + n + "</div>" +
         "<div class='chofer-nombre'>" + esc(c.nombre) + "</div>" +
         (tel
-          ? "<a class='chofer-tel' href='tel:" + esc(telLimpio) + "'>" + esc(tel) + "</a>"
+          ? "<a class='chofer-tel tnum' href='tel:" + esc(telLimpio) + "'>" + esc(tel) + "</a>"
           : "<div class='chofer-vacio-txt'>Sin telefono</div>") +
         "<div class='chofer-since'>" + (c.ts ? "Desde " + horaCorta(c.ts) : "") + "</div>" +
         "</div></div>";
@@ -753,6 +753,7 @@ function cargarLanzaderas() {
     }
   });
 
+  renderLiveStrip(segs, trans, finMarks);
   renderGanttLanz(segs, trans, finMarks);
 }
 
@@ -1515,6 +1516,36 @@ function revisarAlertas(segs, trans, finMarks) {
   });
   // Si la alerta se resuelve, permitir reenvio si vuelve a ocurrir
   _alertasEmailEnviadas.forEach(id => { if (!alertaIds.has(id)) _alertasEmailEnviadas.delete(id); });
+}
+
+// Cuenta cuantas lanzaderas estan ahora mismo en cada situacion, para la
+// tira "En vivo" de arriba. Mismo criterio de "ultimo movimiento" que
+// resumenEstado, pero solo necesita el recuento, no el detalle.
+function contarEstados(segs, trans, finMarks) {
+  let nave = 0, transito = 0, fin = 0;
+  for (let n = 1; n <= 4; n++) {
+    let best = null;
+    segs.filter(s => s.numero === n).forEach(s => { if (!best || s.startMin > best.start) best = { start: s.startMin, tipo: "nave" }; });
+    trans.filter(s => s.numero === n).forEach(s => { if (!best || s.startMin > best.start) best = { start: s.startMin, tipo: "transito" }; });
+    finMarks.filter(m => m.numero === n).forEach(m => { if (!best || m.atMin > best.start) best = { start: m.atMin, tipo: "fin" }; });
+    if (best && best.tipo === "nave") nave++;
+    else if (best && best.tipo === "transito") transito++;
+    else if (best && best.tipo === "fin") fin++;
+  }
+  return { nave, transito, fin };
+}
+
+function renderLiveStrip(segs, trans, finMarks) {
+  const el = document.getElementById("lanz-livestrip");
+  if (!el) return;
+  const c = contarEstados(segs, trans, finMarks);
+  el.innerHTML =
+    "<span class='live-dot'></span><span class='live-lbl'>En vivo</span>" +
+    "<span class='live-summary'>" +
+    "<b class='tnum'>" + c.nave + "</b> en nave" +
+    (c.transito ? " &middot; <b class='tnum'>" + c.transito + "</b> en transito" : "") +
+    (c.fin ? " &middot; <span class='live-fin'><b class='tnum'>" + c.fin + "</b> fin de jornada</span>" : "") +
+    "</span>";
 }
 
 function resumenEstado(segs, trans, finMarks) {
