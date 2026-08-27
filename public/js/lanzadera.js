@@ -127,14 +127,43 @@ async function sincronizarChofer() {
   }
 }
 
+// Estado ya registrado en el servidor para esta lanzadera (en_nave/transito),
+// para no volver a preguntar "¿donde estas?" si ya lo sabemos por Firestore.
+// Se actualiza en cada escritura (escribir()) y se recupera al abrir la app
+// (recuperarEstadoActivo()). null = no hay estado activo o aun no se sabe.
+let estadoActivoServidor = null;
+
 function render() {
   ensureChatLanz();
   if (!sel.numero) return renderLanzaderas();
   if (!chofer.nombre || _editandoChofer) return renderChofer();
+  if (estadoActivoServidor) return renderHecho(estadoActivoServidor.estado);
   if (!sel.nave)   return renderNaves();
   if (sel.nave === "plaza" && !sel.muelle) return renderMuelles();
   if (sel.nave === "merca" && !sel.muelle) return renderMuellesMerca();
   return renderConfirmar();
+}
+
+// Al abrir la app, mira si esta lanzadera ya estaba registrada como activa
+// (en una nave o en transito) y salta directo a esa pantalla, en vez de
+// pedir otra vez "¿donde estas?". Si no hay nada activo, sigue el flujo
+// normal de siempre.
+async function recuperarEstadoActivo() {
+  if (!sel.numero) { render(); return; }
+  try {
+    const d = await db.collection("lanzaderas").doc(String(sel.numero)).get();
+    if (d.exists && d.data().activa) {
+      const data = d.data();
+      sel.nave    = data.nave    || null;
+      sel.muelle  = data.muelle  || null;
+      sel.accion  = data.accion  || null;
+      sel.destino = data.destino || null;
+      estadoActivoServidor = { estado: data.estado };
+    } else {
+      estadoActivoServidor = null;
+    }
+  } catch (e) { console.warn("recuperar estado lanzadera:", e.message); }
+  render();
 }
 
 function renderLanzaderas() {
@@ -329,7 +358,7 @@ function cabecera() {
       : "");
 }
 
-function pickLanzadera(n) { sel.numero = n; cargarChoferLocal(); sincronizarChofer(); render(); }
+function pickLanzadera(n) { sel.numero = n; cargarChoferLocal(); sincronizarChofer(); recuperarEstadoActivo(); }
 function pickNave(id)     { sel.nave = id; sel.accion = null; sel.muelle = null; render(); }
 function pickMuelle(m) {
   sel.muelle = m;
@@ -350,7 +379,11 @@ function volver(desde) {
   render();
 }
 
-function nuevo() { sel = { numero: paramL ? +paramL : null, nave: null, accion: null, muelle: null, destino: null }; render(); }
+function nuevo() {
+  sel = { numero: paramL ? +paramL : null, nave: null, accion: null, muelle: null, destino: null };
+  estadoActivoServidor = null; // registro manual: no volver a saltar al estado anterior
+  render();
+}
 
 async function escribir(estado, activa) {
   const datos = {
@@ -366,6 +399,7 @@ async function escribir(estado, activa) {
   };
   await db.collection("lanzaderas").doc(String(sel.numero)).set(datos); // estado en vivo
   await db.collection("lanzaderas_log").add(datos);                     // historico
+  estadoActivoServidor = activa ? { estado: estado } : null;
   // Al fichar fin de jornada el servidor borra el conductor, asi que no se
   // vuelve a escribir; en cualquier otro movimiento se mantiene al dia.
   if (estado !== "fuera") await sincronizarChofer();
@@ -423,6 +457,7 @@ async function finJornada() {
 
 function irANaves() {
   sel.nave = sel.destino; sel.accion = null; sel.muelle = null; sel.destino = null;
+  estadoActivoServidor = null; // se sale del "transito" registrado, toca elegir muelle antes de volver a escribir
   if (sel.nave && sel.nave !== "plaza" && sel.nave !== "merca") registrar(); // llegada directa a nave externa (cierra el transito)
   else render();                                      // Plaza o Merca: elegir muelle
 }
@@ -588,4 +623,4 @@ db.collection("config").doc("destinos").onSnapshot(d => {
 cargarChoferLocal();
 sincronizarChofer();
 
-render();
+if (sel.numero) recuperarEstadoActivo(); else render();

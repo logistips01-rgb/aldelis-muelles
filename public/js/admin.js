@@ -605,7 +605,12 @@ function switchVista(vista) {
     document.getElementById("vista-" + v).style.display = vista === v ? "block" : "none";
     document.getElementById("btn-vista-" + v).classList.toggle("active", vista === v);
   });
-  if (vista === "lanzaderas") { cargarLanzaderas(); renderChoferes(); }
+  // "lanzaderas" no se recarga aqui a proposito: los listeners de
+  // lanzaderas_log/lanzaderas_chofer ya mantienen #vista-lanzaderas al dia
+  // en segundo plano aunque la pestaña este oculta. Si se recargaba aqui con
+  // los datos que hubiera en ese momento, al abrir el panel por primera vez
+  // (antes de que llegara el primer snapshot) se pintaba vacio y luego se
+  // repintaba entero al llegar los datos: el efecto de "dos fases" visible.
   if (vista === "cargas")     cargarCargas();
   if (vista === "merca")      cargarMerca();
   if (vista === "bizerba")    cargarBizerba();
