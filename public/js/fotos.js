@@ -66,7 +66,6 @@
     var inp = document.createElement("input");
     inp.type = "file";
     inp.accept = "image/*";
-    inp.setAttribute("capture", "environment");   // en el movil abre la camara
     inp.style.display = "none";
     document.body.appendChild(inp);
 
