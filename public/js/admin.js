@@ -811,7 +811,15 @@ function renderMapaLanzaderas() {
 
     const d = datos[String(n)];
     if (!d || !d.activa) continue; // fuera de servicio: no se pinta
-    if (d.lat == null || d.lng == null) { sinGps.push(n); continue; }
+
+    // La nave ya la dice el propio chofer al elegirla (no hace falta GPS para
+    // eso). Si esa nave ya se conoce por llegadas anteriores de cualquier
+    // lanzadera, se usa esa ubicacion aprendida; el GPS de este chofer en
+    // este momento concreto solo hace falta como respaldo si la nave todavia
+    // no se ha aprendido nunca.
+    const naveOrigen = ubicNaves[d.nave];
+    const pos = naveOrigen || (d.lat != null && d.lng != null ? { lat: d.lat, lng: d.lng } : null);
+    if (!pos) { sinGps.push(n); continue; }
 
     const color = d.estado === "en_nave" ? "#1D9E75" : d.estado === "transito" ? "#F59E0B" : "#9CA3AF";
 
@@ -826,7 +834,7 @@ function renderMapaLanzaderas() {
       lbl = "Fuera de servicio";
     }
 
-    const marker = L.marker([d.lat, d.lng], { icon: pinCamion(n, color) }).addTo(_leafletMap);
+    const marker = L.marker([pos.lat, pos.lng], { icon: pinCamion(n, color) }).addTo(_leafletMap);
     marker.bindPopup("<b>Lanzadera " + n + "</b><br>" + lbl +
       (d.estado === "transito" ? "<br><span style='color:#9CA3AF;font-size:11px'>Posicion de salida, no en vivo durante el trayecto</span>" : ""));
     _leafletMarkers[n] = marker;
@@ -837,7 +845,7 @@ function renderMapaLanzaderas() {
     // solo la ruta prevista entre salida y destino.
     if (d.estado === "transito" && d.destino && ubicNaves[d.destino]) {
       const dest = ubicNaves[d.destino];
-      _leafletLineas[n] = L.polyline([[d.lat, d.lng], [dest.lat, dest.lng]], {
+      _leafletLineas[n] = L.polyline([[pos.lat, pos.lng], [dest.lat, dest.lng]], {
         color: "#F59E0B", weight: 3, opacity: 0.8, dashArray: "6,8"
       }).addTo(_leafletMap);
       _leafletDestinos[n] = L.circleMarker([dest.lat, dest.lng], {
@@ -849,7 +857,7 @@ function renderMapaLanzaderas() {
   const aviso = document.getElementById("mapa-avisos");
   if (aviso) {
     aviso.textContent = sinGps.length
-      ? "Sin señal GPS ahora mismo: " + sinGps.map(n => "Lanzadera " + n).join(", ")
+      ? "Sin ubicacion conocida todavia: " + sinGps.map(n => "Lanzadera " + n).join(", ")
       : "";
   }
 }
