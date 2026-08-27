@@ -417,7 +417,24 @@ function nuevo() {
   render();
 }
 
+// Ubicacion GPS solo en el momento de registrar un movimiento (no en
+// continuo, para no gastar bateria/datos del chofer). Si el navegador no
+// tiene geolocalizacion, el permiso esta denegado o tarda mas de 5s,
+// sencillamente no se manda lat/lng y el mapa del panel lo trata como
+// "sin señal" para esa lanzadera.
+function obtenerUbicacion() {
+  return new Promise(resolve => {
+    if (!navigator.geolocation) { resolve(null); return; }
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => resolve(null),
+      { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 }
+    );
+  });
+}
+
 async function escribir(estado, activa) {
+  const geo = await obtenerUbicacion();
   const datos = {
     numero:      sel.numero,
     estado:      estado,
@@ -426,6 +443,8 @@ async function escribir(estado, activa) {
     muelle:      (sel.nave === "plaza" || sel.nave === "merca") ? sel.muelle : null,
     destino:     estado === "transito" ? (sel.destino || null) : null,
     activa:      activa,
+    lat:         geo ? geo.lat : null,
+    lng:         geo ? geo.lng : null,
     desde:       firebase.firestore.Timestamp.now(),
     actualizado: firebase.firestore.Timestamp.now()
   };

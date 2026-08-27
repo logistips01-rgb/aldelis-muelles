@@ -364,6 +364,13 @@ function iniciarListeners() {
       s.forEach(d => { window._choferes[d.id] = d.data(); });
       renderChoferes();
     }, e => console.error("choferes:", e)));
+
+    // Estado en vivo (con GPS si el chofer lo mando) para la vista de Mapa.
+    _unsubs.push(db.collection("lanzaderas").onSnapshot(s => {
+      window._lanzLive = {};
+      s.forEach(d => { window._lanzLive[d.id] = d.data(); });
+      if (_vistaLanzSub === "mapa") renderMapaLanzaderas();
+    }, e => console.error("lanzaderas live:", e)));
   }
 
   if (_perms.incidencias) {
@@ -614,6 +621,10 @@ function switchVista(vista) {
   // lo que causaba el efecto de "dos fases" al abrir el panel por primera vez;
   // el propio listener ya lo pintara en cuanto lleguen los datos.
   if (vista === "lanzaderas" && window._logsListos) { cargarLanzaderas(); renderChoferes(); }
+  if (vista === "lanzaderas" && _vistaLanzSub === "mapa") {
+    renderMapaLanzaderas();
+    setTimeout(() => { if (_leafletMap) _leafletMap.invalidateSize(); }, 60);
+  }
   if (vista === "cargas")     cargarCargas();
   if (vista === "merca")      cargarMerca();
   if (vista === "bizerba")    cargarBizerba();
@@ -727,6 +738,78 @@ function horaCorta(ts) {
     if (mismoDia) return "hoy " + hora;
     return String(d.getDate()).padStart(2, "0") + "/" + String(d.getMonth() + 1).padStart(2, "0") + " " + hora;
   } catch (e) { return ""; }
+}
+
+// Sub-vista de Lanzaderas: cronologia (Gantt, de siempre) o mapa (GPS real,
+// solo si el chofer lo mando al registrar un movimiento).
+let _vistaLanzSub = "cronologia";
+let _leafletMap = null;
+let _leafletMarkers = {};
+
+function switchLanzVista(v) {
+  _vistaLanzSub = v;
+  document.getElementById("lanz-cronologia").style.display = v === "cronologia" ? "" : "none";
+  document.getElementById("lanz-mapa").style.display = v === "mapa" ? "" : "none";
+  document.getElementById("btn-lanz-cronologia").classList.toggle("active", v === "cronologia");
+  document.getElementById("btn-lanz-mapa").classList.toggle("active", v === "mapa");
+  if (v === "mapa") {
+    renderMapaLanzaderas();
+    // Leaflet calcula su tamaño al crearse; si el contenedor estaba oculto
+    // (display:none) sale con el mapa mal recortado hasta que se le avisa.
+    setTimeout(() => { if (_leafletMap) _leafletMap.invalidateSize(); }, 60);
+  }
+}
+
+function renderMapaLanzaderas() {
+  const cont = document.getElementById("leaflet-map");
+  if (!cont || typeof L === "undefined") return;
+  if (!_leafletMap) {
+    _leafletMap = L.map(cont).setView([41.6488, -0.8891], 12); // Zaragoza
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    }).addTo(_leafletMap);
+  }
+
+  const datos = window._lanzLive || {};
+  const sinGps = [];
+  for (let n = 1; n <= 4; n++) {
+    if (_leafletMarkers[n]) { _leafletMap.removeLayer(_leafletMarkers[n]); delete _leafletMarkers[n]; }
+    const d = datos[String(n)];
+    if (!d || !d.activa) continue; // fuera de servicio: no se pinta
+    if (d.lat == null || d.lng == null) { sinGps.push(n); continue; }
+
+    const color = d.estado === "en_nave" ? "#1D9E75" : d.estado === "transito" ? "#F59E0B" : "#9CA3AF";
+    const icon = L.divIcon({
+      className: "lanz-pin",
+      html: "<div style='background:" + color + ";width:30px;height:30px;border-radius:50% 50% 50% 0;" +
+        "transform:rotate(-45deg);display:flex;align-items:center;justify-content:center;" +
+        "box-shadow:0 2px 6px rgba(0,0,0,.35)'><span class='lanz-pin-label'>" + n + "</span></div>",
+      iconSize: [30, 30], iconAnchor: [15, 30]
+    });
+
+    let lbl;
+    if (d.estado === "en_nave") {
+      lbl = "En " + esc(NAVE_NOMBRE[d.nave] || d.nave || "?");
+      if (d.nave === "plaza" && d.muelle) lbl += " · " + (d.accion === "cargando" ? "Cargando" : "Descargando") + " " + esc(d.muelle);
+      else if (d.nave === "merca" && d.muelle) lbl += " · " + esc(d.muelle);
+    } else if (d.estado === "transito") {
+      lbl = "En transito a " + esc(NAVE_NOMBRE[d.destino] || d.destino || "destino desconocido");
+    } else {
+      lbl = "Fuera de servicio";
+    }
+
+    const marker = L.marker([d.lat, d.lng], { icon }).addTo(_leafletMap);
+    marker.bindPopup("<b>Lanzadera " + n + "</b><br>" + lbl);
+    _leafletMarkers[n] = marker;
+  }
+
+  const aviso = document.getElementById("mapa-avisos");
+  if (aviso) {
+    aviso.textContent = sinGps.length
+      ? "Sin señal GPS ahora mismo: " + sinGps.map(n => "Lanzadera " + n).join(", ")
+      : "";
+  }
 }
 
 function cargarLanzaderas() {

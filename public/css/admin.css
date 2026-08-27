@@ -394,6 +394,20 @@
 .chofer-vacio-txt { font-size: 13px; color: #9CA3AF; }
 .chofer-since { font-size: 10.5px; color: #B0B6C0; margin-top: 2px; }
 
+/* Sub-pestañas Cronologia / Mapa dentro de Lanzaderas */
+.lanz-subtabs { display: flex; gap: 6px; margin-bottom: 12px; }
+.lanz-subtab {
+  background: transparent; border: 1.5px solid #C7CCD3; color: #6B7280;
+  border-radius: 20px; padding: 6px 16px; font-size: 13px; font-weight: 500;
+  font-family: 'Inter', sans-serif; cursor: pointer; transition: all .12s ease;
+}
+.lanz-subtab.active { background: #1A1A1A; border-color: #1A1A1A; color: #fff; }
+
+/* Mapa de lanzaderas (Leaflet) */
+#leaflet-map { height: 440px; border-radius: 14px; overflow: hidden; box-shadow: 0 1px 3px rgba(20,24,32,0.08); }
+.mapa-avisos { font-size: 12.5px; color: #9CA3AF; margin-top: 10px; }
+.lanz-pin-label { transform: rotate(45deg); color: #fff; font-weight: 700; font-size: 13px; font-family: 'Inter', sans-serif; }
+
 /* Linea de tiempo (Gantt) de lanzaderas */
 .gantt-wrap { display: flex; background: #fff; border-radius: 14px; box-shadow: 0 1px 3px rgba(20,24,32,0.08), 0 1px 1px rgba(20,24,32,0.04); overflow: hidden; }
 .gantt-labels { flex: 0 0 110px; }
@@ -609,6 +623,12 @@ body.dark .tabla-inf tr:hover td { background: #242428; }
 /* TIRA EN VIVO */
 body.dark .live-strip { background: #1B1B1F; box-shadow: 0 1px 4px rgba(0,0,0,0.4); }
 body.dark .live-summary { color: #E8E8EA; }
+
+/* SUB-PESTAÑAS Y MAPA */
+body.dark .lanz-subtab { border-color: #3C3C42; color: #888F9B; }
+body.dark .lanz-subtab.active { background: #E8E8EA; border-color: #E8E8EA; color: #0F0F11; }
+body.dark #leaflet-map { box-shadow: 0 1px 4px rgba(0,0,0,0.4); }
+body.dark .mapa-avisos { color: #5A6070; }
 
 /* CONDUCTORES */
 body.dark .chofer-card { background: #1B1B1F; box-shadow: 0 1px 4px rgba(0,0,0,0.4); }

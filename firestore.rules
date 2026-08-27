@@ -249,7 +249,9 @@ service cloud.firestore {
         && d.accion in ['presente','cargando','descargando']
         && (d.muelle == null || (d.muelle is string && d.muelle.size() <= 10))
         && (d.destino == null || (d.destino is string && d.destino.size() <= 60))
-        && d.activa is bool;
+        && d.activa is bool
+        && (d.lat == null || (d.lat is number && d.lat >= -90 && d.lat <= 90))
+        && (d.lng == null || (d.lng is number && d.lng >= -180 && d.lng <= 180));
     }
 
     function validReserva() {
