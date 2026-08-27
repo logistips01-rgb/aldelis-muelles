@@ -844,6 +844,17 @@ function cargarLanzaderas() {
 
   renderLiveStrip(segs, trans, finMarks);
   renderGanttLanz(segs, trans, finMarks);
+  renderResumenMapa(segs, trans, finMarks);
+}
+
+// Mismas tarjetas de "Estado actual" que hay debajo del Gantt, pero
+// tambien en la vista de Mapa: el chofer/telefono ya sale en Conductores
+// (que es comun a las dos sub-pestañas), aqui se ve donde esta y desde
+// cuando sin tener que cambiar a Cronologia.
+function renderResumenMapa(segs, trans, finMarks) {
+  const el = document.getElementById("mapa-resumen");
+  if (!el) return;
+  el.innerHTML = "<div class='gantt-resumen'>" + resumenEstado(segs, trans, finMarks) + "</div>";
 }
 
 // ─── COSTES / HISTORIAL DIARIO DE LANZADERAS ────────────────────────
