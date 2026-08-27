@@ -614,6 +614,12 @@ function switchVista(vista) {
     document.getElementById("vista-" + v).style.display = vista === v ? "block" : "none";
     document.getElementById("btn-vista-" + v).classList.toggle("active", vista === v);
   });
+  // Las tarjetas de "Total reservas/Pendientes/..." son solo de Rejilla:
+  // antes se veian en todas las pestañas (Lanzaderas incluida) porque solo
+  // se controlaban por permiso, no por la vista activa.
+  const mr = document.querySelector(".metrics-row");
+  if (mr) mr.style.display = (vista === "rejilla" && _perms.ver.rejilla) ? "" : "none";
+
   // "lanzaderas" solo se repinta aqui si ya hay datos reales (window._logsListos):
   // el Gantt necesita repintarse al hacerse visible para centrar el scroll en la
   // hora actual (con la pestaña oculta clientWidth es 0 y el calculo sale mal).
