@@ -125,6 +125,14 @@ service cloud.firestore {
       allow create, update: if validLanzadera();
     }
 
+    // Coordenadas GPS aprendidas de cada nave (Plaza, Merca, Caserfri...), a
+    // partir de las lecturas reales de los choferes al llegar. Se usan para
+    // dibujar en el mapa hacia donde va una lanzadera en transito.
+    match /ubicaciones_naves/{id} {
+      allow read: if permitido('lanzaderas');
+      allow create, update: if validUbicacionNave();
+    }
+
     // Historico de movimientos (para informes). Solo se anade, no se edita.
     // Lo necesitan las vistas de lanzaderas, costes, cargas y merca.
     match /lanzaderas_log/{id} {
@@ -252,6 +260,12 @@ service cloud.firestore {
         && d.activa is bool
         && (d.lat == null || (d.lat is number && d.lat >= -90 && d.lat <= 90))
         && (d.lng == null || (d.lng is number && d.lng >= -180 && d.lng <= 180));
+    }
+
+    function validUbicacionNave() {
+      let d = request.resource.data;
+      return d.lat is number && d.lat >= -90 && d.lat <= 90
+        && d.lng is number && d.lng >= -180 && d.lng <= 180;
     }
 
     function validReserva() {

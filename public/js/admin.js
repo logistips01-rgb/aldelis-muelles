@@ -371,6 +371,14 @@ function iniciarListeners() {
       s.forEach(d => { window._lanzLive[d.id] = d.data(); });
       if (_vistaLanzSub === "mapa") renderMapaLanzaderas();
     }, e => console.error("lanzaderas live:", e)));
+
+    // Coordenadas aprendidas de cada nave (pocos documentos), para trazar
+    // la ruta prevista de las lanzaderas en transito.
+    _unsubs.push(db.collection("ubicaciones_naves").onSnapshot(s => {
+      window._ubicNaves = {};
+      s.forEach(d => { window._ubicNaves[d.id] = d.data(); });
+      if (_vistaLanzSub === "mapa") renderMapaLanzaderas();
+    }, e => console.error("ubicaciones_naves:", e)));
   }
 
   if (_perms.incidencias) {
@@ -751,6 +759,8 @@ function horaCorta(ts) {
 let _vistaLanzSub = "cronologia";
 let _leafletMap = null;
 let _leafletMarkers = {};
+let _leafletLineas = {};
+let _leafletDestinos = {};
 
 function switchLanzVista(v) {
   _vistaLanzSub = v;
@@ -766,6 +776,20 @@ function switchLanzVista(v) {
   }
 }
 
+function pinCamion(n, color) {
+  return L.divIcon({
+    className: "lanz-pin",
+    html: "<div style='background:#fff;border:2.5px solid " + color + ";width:34px;height:34px;" +
+      "border-radius:50%;display:flex;align-items:center;justify-content:center;" +
+      "box-shadow:0 2px 6px rgba(0,0,0,.3);position:relative'>" +
+      "<span style='font-size:16px;line-height:1'>🚛</span>" +
+      "<span style='position:absolute;bottom:-4px;right:-4px;background:" + color + ";color:#fff;" +
+      "font-size:9px;font-weight:800;width:15px;height:15px;border-radius:50%;display:flex;" +
+      "align-items:center;justify-content:center;border:1.5px solid #fff'>" + n + "</span></div>",
+    iconSize: [34, 34], iconAnchor: [17, 17]
+  });
+}
+
 function renderMapaLanzaderas() {
   const cont = document.getElementById("leaflet-map");
   if (!cont || typeof L === "undefined") return;
@@ -778,21 +802,18 @@ function renderMapaLanzaderas() {
   }
 
   const datos = window._lanzLive || {};
+  const ubicNaves = window._ubicNaves || {};
   const sinGps = [];
   for (let n = 1; n <= 4; n++) {
     if (_leafletMarkers[n]) { _leafletMap.removeLayer(_leafletMarkers[n]); delete _leafletMarkers[n]; }
+    if (_leafletLineas[n]) { _leafletMap.removeLayer(_leafletLineas[n]); delete _leafletLineas[n]; }
+    if (_leafletDestinos[n]) { _leafletMap.removeLayer(_leafletDestinos[n]); delete _leafletDestinos[n]; }
+
     const d = datos[String(n)];
     if (!d || !d.activa) continue; // fuera de servicio: no se pinta
     if (d.lat == null || d.lng == null) { sinGps.push(n); continue; }
 
     const color = d.estado === "en_nave" ? "#1D9E75" : d.estado === "transito" ? "#F59E0B" : "#9CA3AF";
-    const icon = L.divIcon({
-      className: "lanz-pin",
-      html: "<div style='background:" + color + ";width:30px;height:30px;border-radius:50% 50% 50% 0;" +
-        "transform:rotate(-45deg);display:flex;align-items:center;justify-content:center;" +
-        "box-shadow:0 2px 6px rgba(0,0,0,.35)'><span class='lanz-pin-label'>" + n + "</span></div>",
-      iconSize: [30, 30], iconAnchor: [15, 30]
-    });
 
     let lbl;
     if (d.estado === "en_nave") {
@@ -805,9 +826,24 @@ function renderMapaLanzaderas() {
       lbl = "Fuera de servicio";
     }
 
-    const marker = L.marker([d.lat, d.lng], { icon }).addTo(_leafletMap);
-    marker.bindPopup("<b>Lanzadera " + n + "</b><br>" + lbl);
+    const marker = L.marker([d.lat, d.lng], { icon: pinCamion(n, color) }).addTo(_leafletMap);
+    marker.bindPopup("<b>Lanzadera " + n + "</b><br>" + lbl +
+      (d.estado === "transito" ? "<br><span style='color:#9CA3AF;font-size:11px'>Posicion de salida, no en vivo durante el trayecto</span>" : ""));
     _leafletMarkers[n] = marker;
+
+    // En transito: si sabemos donde esta esa nave (por GPS aprendido de
+    // llegadas anteriores), se traza una linea discontinua hacia alli. No es
+    // la posicion real del camion en cada momento -no hay GPS continuo-,
+    // solo la ruta prevista entre salida y destino.
+    if (d.estado === "transito" && d.destino && ubicNaves[d.destino]) {
+      const dest = ubicNaves[d.destino];
+      _leafletLineas[n] = L.polyline([[d.lat, d.lng], [dest.lat, dest.lng]], {
+        color: "#F59E0B", weight: 3, opacity: 0.8, dashArray: "6,8"
+      }).addTo(_leafletMap);
+      _leafletDestinos[n] = L.circleMarker([dest.lat, dest.lng], {
+        radius: 6, color: "#F59E0B", weight: 2, fillColor: "#fff", fillOpacity: 1
+      }).addTo(_leafletMap).bindTooltip(esc(NAVE_NOMBRE[d.destino] || d.destino));
+    }
   }
 
   const aviso = document.getElementById("mapa-avisos");

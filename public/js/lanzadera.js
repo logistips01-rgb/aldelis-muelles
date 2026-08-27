@@ -462,6 +462,14 @@ async function escribir(estado, activa) {
   };
   await db.collection("lanzaderas").doc(String(sel.numero)).set(datos); // estado en vivo
   await db.collection("lanzaderas_log").add(datos);                     // historico
+  // Aprende donde esta cada nave a partir de los GPS reales de llegada: asi
+  // el mapa del panel sabe hacia donde trazar la linea cuando alguien vaya
+  // en transito hacia ahi, sin tener que introducir coordenadas a mano.
+  if (estado === "en_nave" && geo && sel.nave) {
+    db.collection("ubicaciones_naves").doc(sel.nave).set({
+      lat: geo.lat, lng: geo.lng, actualizado: firebase.firestore.Timestamp.now()
+    }).catch(e => console.warn("ubicacion nave:", e.message));
+  }
   estadoActivoServidor = activa ? { estado: estado } : null;
   _muelleAnterior = null; // el cambio de muelle (si lo habia) ya quedo confirmado
   // Al fichar fin de jornada el servidor borra el conductor, asi que no se
