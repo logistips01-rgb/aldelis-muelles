@@ -110,10 +110,16 @@ function editarChofer()   { _editandoChofer = true;  render(); }
 // movimiento; solo escribe si algo ha cambiado.
 let _choferSync = "";
 
-async function sincronizarChofer() {
+// forzar=true ignora la cache local y reescribe siempre. Hace falta en cada
+// movimiento real (escribir()): si el servidor borro la ficha por otro motivo
+// (p.ej. choferUnaLanzadera al detectar el mismo telefono en otra lanzadera),
+// el movil no se entera y, sin forzar, pensaria que ya esta sincronizado y no
+// la volveria a escribir nunca -> la lanzadera se quedaria "sin identificar"
+// aunque siga registrando movimientos con normalidad.
+async function sincronizarChofer(forzar) {
   if (!sel.numero || !chofer.nombre) return;
   const huella = sel.numero + "|" + chofer.nombre + "|" + chofer.telefono;
-  if (_choferSync === huella) return;
+  if (!forzar && _choferSync === huella) return;
   try {
     await db.collection("lanzaderas_chofer").doc(String(sel.numero)).set({
       numero:   sel.numero,
@@ -401,8 +407,10 @@ async function escribir(estado, activa) {
   await db.collection("lanzaderas_log").add(datos);                     // historico
   estadoActivoServidor = activa ? { estado: estado } : null;
   // Al fichar fin de jornada el servidor borra el conductor, asi que no se
-  // vuelve a escribir; en cualquier otro movimiento se mantiene al dia.
-  if (estado !== "fuera") await sincronizarChofer();
+  // vuelve a escribir; en cualquier otro movimiento se fuerza la reescritura
+  // (ver comentario en sincronizarChofer) para que se autorepare sola si el
+  // servidor la borro por otro motivo.
+  if (estado !== "fuera") await sincronizarChofer(true);
 }
 
 async function registrar() { // llegada / actividad en una nave
