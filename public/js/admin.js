@@ -690,29 +690,31 @@ function renderChoferes() {
   if (!div) return;
   const ch = window._choferes || {};
 
-  div.innerHTML = "<div class='informe-metricas' style='margin-top:0'>" +
+  div.innerHTML = "<div class='chofer-grid'>" +
     [1, 2, 3, 4].map(n => {
       const c = ch[String(n)];
       if (!c || !c.nombre) {
-        return "<div class='metric-card' style='flex:1;min-width:150px'>" +
-          "<div class='metric-label'>Lanzadera " + n + "</div>" +
-          "<div style='font-size:13px;color:#9CA3AF;margin-top:6px'>Sin identificar</div>" +
-          "</div>";
+        return "<div class='chofer-card vacio'>" +
+          "<div class='chofer-avatar'>🚛</div>" +
+          "<div class='chofer-body'>" +
+          "<div class='chofer-lanz'>Lanzadera " + n + "</div>" +
+          "<div class='chofer-vacio-txt'>Sin identificar</div>" +
+          "</div></div>";
       }
       const tel = String(c.telefono || "").trim();
       // El href tel: quita espacios y guiones; el texto se muestra tal cual.
       const telLimpio = tel.replace(/[^0-9+]/g, "");
-      return "<div class='metric-card' style='flex:1;min-width:150px'>" +
-        "<div class='metric-label'>Lanzadera " + n + "</div>" +
-        "<div style='font-size:15px;font-weight:600;margin-top:6px'>" + esc(c.nombre) + "</div>" +
+      const inicial = esc((c.nombre.trim().charAt(0) || "?").toUpperCase());
+      return "<div class='chofer-card'>" +
+        "<div class='chofer-avatar'>" + inicial + "</div>" +
+        "<div class='chofer-body'>" +
+        "<div class='chofer-lanz'>Lanzadera " + n + "</div>" +
+        "<div class='chofer-nombre'>" + esc(c.nombre) + "</div>" +
         (tel
-          ? "<div style='margin-top:4px'><a href='tel:" + esc(telLimpio) + "' " +
-            "style='font-size:14px;color:#D41F3A;text-decoration:none;font-weight:500'>" +
-            esc(tel) + "</a></div>"
-          : "<div style='font-size:13px;color:#9CA3AF;margin-top:4px'>Sin telefono</div>") +
-        "<div style='font-size:11px;color:#9CA3AF;margin-top:4px'>" +
-        (c.ts ? "Desde " + horaCorta(c.ts) : "") + "</div>" +
-        "</div>";
+          ? "<a class='chofer-tel' href='tel:" + esc(telLimpio) + "'>" + esc(tel) + "</a>"
+          : "<div class='chofer-vacio-txt'>Sin telefono</div>") +
+        "<div class='chofer-since'>" + (c.ts ? "Desde " + horaCorta(c.ts) : "") + "</div>" +
+        "</div></div>";
     }).join("") + "</div>";
 }
 
@@ -1533,18 +1535,20 @@ function resumenEstado(segs, trans, finMarks) {
     finMarks.filter(m => m.numero === n).forEach(m => {
       if (!best || m.atMin > best.start) best = { start: m.atMin, txt: "fin de jornada", color: "#D41F3A" };
     });
-    let cuerpo;
+    let cuerpo, borderColor;
     if (!best) {
-      cuerpo = "<span class='gantt-res-desde'>sin actividad hoy</span>";
+      cuerpo = "<span class='gantt-res-desde'>Sin actividad hoy</span>";
+      borderColor = "#D8DCE5";
     } else {
       const el = best.esNave && esHoy ? (ahoraMin - best.start) : -1;
       const alerta = el >= 120;
       const color = alerta ? "#D41F3A" : best.color;
+      borderColor = color;
       cuerpo = "<span style='color:" + color + ";font-weight:600'>" + esc(best.txt) + "</span> " +
         "<span class='gantt-res-desde'>desde " + minToHHMM(best.start) + "</span>" +
         (alerta ? " <span style='color:#D41F3A;font-weight:800'>🚨 " + formatDuracion(el) + "</span>" : "");
     }
-    html += "<div class='gantt-res-item'><span class='gantt-res-n'>Lanzadera " + n + "</span> " + cuerpo + "</div>";
+    html += "<div class='gantt-res-item' style='border-left-color:" + borderColor + "'><span class='gantt-res-n'>Lanzadera " + n + "</span> " + cuerpo + "</div>";
   }
   return html + "</div>";
 }
