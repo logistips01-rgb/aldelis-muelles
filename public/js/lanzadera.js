@@ -328,11 +328,14 @@ function renderConfirmar() {
 
 function renderHecho(estado) {
   if (estado === "en_nave") {
+    const conMuelle = sel.nave === "plaza" || sel.nave === "merca";
     app.innerHTML =
       "<div class='card text-center'>" +
       "<div class='done-icon'>✓</div><h2>Registrado</h2>" +
-      "<p class='card-desc'>Lanzadera " + sel.numero + " en " + escTexto(NOMBRE_NAVE[sel.nave] || sel.nave || "—") + ".</p>" +
+      "<p class='card-desc'>Lanzadera " + sel.numero + " en " + escTexto(NOMBRE_NAVE[sel.nave] || sel.nave || "—") +
+      (conMuelle && sel.muelle ? " · " + escTexto(sel.muelle) : "") + ".</p>" +
       "<button class='btn-primary' style='width:100%' onclick='salir()'>Salir de la nave</button>" +
+      (conMuelle ? "<button class='btn-back' style='width:100%;margin-top:8px' onclick='cambiarMuelle()'>Cambiar de muelle</button>" : "") +
       "<button class='btn-back' style='width:100%;margin-top:8px' onclick='nuevo()'>Nuevo registro</button>" +
       "<button class='btn-back' style='width:100%;margin-top:8px;color:#D41F3A;border-color:#F5C0C8' onclick='finJornada()'>Fin de jornada</button>" +
       "</div>";
@@ -373,6 +376,26 @@ function pickMuelle(m) {
   render();
 }
 
+// Cuando ya estan "en_nave" en Plaza o Merca, permite ir directo a elegir
+// otro muelle sin pasar por todo el ciclo de salir/elegir destino/llegar.
+// Se guarda el muelle anterior para poder volver sin perderlo si se
+// arrepienten a mitad del cambio.
+let _muelleAnterior = null;
+
+function cambiarMuelle() {
+  _muelleAnterior = sel.muelle;
+  sel.muelle = null;
+  estadoActivoServidor = null;
+  render();
+}
+
+function cancelarCambioMuelle() {
+  sel.muelle = _muelleAnterior;
+  _muelleAnterior = null;
+  estadoActivoServidor = { estado: "en_nave" };
+  render();
+}
+
 function volver(desde) {
   if (desde === "nave")   { sel.numero = paramL ? sel.numero : null; if (!paramL) sel.numero = null; }
   if (desde === "muelle") {
@@ -380,14 +403,17 @@ function volver(desde) {
     else if (sel.nave === "merca") { sel.muelle = null; }
     else { sel.nave = null; sel.accion = null; }   // externa o lugar manual
   }
-  if (desde === "merca-nave") { sel.nave = null; sel.muelle = null; }
-  if (desde === "plaza-nave") { sel.nave = null; sel.muelle = null; sel.accion = null; }
+  if (desde === "merca-nave" || desde === "plaza-nave") {
+    if (_muelleAnterior !== null) { cancelarCambioMuelle(); return; }
+    sel.nave = null; sel.muelle = null; sel.accion = null;
+  }
   render();
 }
 
 function nuevo() {
   sel = { numero: paramL ? +paramL : null, nave: null, accion: null, muelle: null, destino: null };
   estadoActivoServidor = null; // registro manual: no volver a saltar al estado anterior
+  _muelleAnterior = null;
   render();
 }
 
@@ -406,6 +432,7 @@ async function escribir(estado, activa) {
   await db.collection("lanzaderas").doc(String(sel.numero)).set(datos); // estado en vivo
   await db.collection("lanzaderas_log").add(datos);                     // historico
   estadoActivoServidor = activa ? { estado: estado } : null;
+  _muelleAnterior = null; // el cambio de muelle (si lo habia) ya quedo confirmado
   // Al fichar fin de jornada el servidor borra el conductor, asi que no se
   // vuelve a escribir; en cualquier otro movimiento se fuerza la reescritura
   // (ver comentario en sincronizarChofer) para que se autorepare sola si el
