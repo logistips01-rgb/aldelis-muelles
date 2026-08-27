@@ -367,7 +367,7 @@ function cabecera() {
       : "");
 }
 
-function pickLanzadera(n) { sel.numero = n; cargarChoferLocal(); sincronizarChofer(); recuperarEstadoActivo(); }
+function pickLanzadera(n) { sel.numero = n; cargarChoferLocal(); sincronizarChofer(); precalentarPermisoUbicacion(); recuperarEstadoActivo(); }
 function pickNave(id)     { sel.nave = id; sel.accion = null; sel.muelle = null; render(); }
 function pickMuelle(m) {
   sel.muelle = m;
@@ -419,7 +419,7 @@ function nuevo() {
 
 // Ubicacion GPS solo en el momento de registrar un movimiento (no en
 // continuo, para no gastar bateria/datos del chofer). Si el navegador no
-// tiene geolocalizacion, el permiso esta denegado o tarda mas de 5s,
+// tiene geolocalizacion, el permiso esta denegado o tarda demasiado,
 // sencillamente no se manda lat/lng y el mapa del panel lo trata como
 // "sin señal" para esa lanzadera.
 function obtenerUbicacion() {
@@ -427,10 +427,22 @@ function obtenerUbicacion() {
     if (!navigator.geolocation) { resolve(null); return; }
     navigator.geolocation.getCurrentPosition(
       pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      () => resolve(null),
-      { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 }
+      e => { console.warn("GPS:", e.message); resolve(null); },
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 }
     );
   });
+}
+
+// La primera vez que el navegador pide permiso de ubicacion, el chofer puede
+// tardar en contestar al aviso mas de lo que se espera dentro de un registro
+// (obtenerUbicacion corta a los 8s para no retrasar el "Registrar"). Por eso
+// se pide el permiso pronto, en cuanto se sabe la lanzadera, sin bloquear
+// nada: si tarda o lo deniegan aqui no pasa nada, solo es para que el
+// permiso ya este concedido de antemano cuando llegue el primer movimiento
+// real y esa lectura sea instantanea.
+function precalentarPermisoUbicacion() {
+  if (!navigator.geolocation) return;
+  navigator.geolocation.getCurrentPosition(() => {}, () => {}, { timeout: 20000, maximumAge: 60000 });
 }
 
 async function escribir(estado, activa) {
@@ -676,5 +688,6 @@ db.collection("config").doc("destinos").onSnapshot(d => {
 // conductor guardados en este movil antes del primer pintado.
 cargarChoferLocal();
 sincronizarChofer();
+if (sel.numero) precalentarPermisoUbicacion();
 
 if (sel.numero) recuperarEstadoActivo(); else render();
