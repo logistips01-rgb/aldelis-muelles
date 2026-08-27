@@ -299,10 +299,12 @@ function iniciarListeners() {
   }
 
   if (_perms.lanzLog) {
+    window._logsListos = false;
     _unsubs.push(db.collection("lanzaderas_log")
       .where("desde", ">=", Ts.fromMillis(dayStart)).where("desde", "<", Ts.fromMillis(dayEnd))
       .onSnapshot(s => {
         window._logs = []; s.forEach(d => window._logs.push(d.data()));
+        window._logsListos = true;
         cargarLanzaderas(); cargarReservas(); cargarCargas(); cargarMerca();
       }, e => console.error("lanzaderas_log:", e)));
   }
@@ -605,12 +607,13 @@ function switchVista(vista) {
     document.getElementById("vista-" + v).style.display = vista === v ? "block" : "none";
     document.getElementById("btn-vista-" + v).classList.toggle("active", vista === v);
   });
-  // "lanzaderas" no se recarga aqui a proposito: los listeners de
-  // lanzaderas_log/lanzaderas_chofer ya mantienen #vista-lanzaderas al dia
-  // en segundo plano aunque la pestaña este oculta. Si se recargaba aqui con
-  // los datos que hubiera en ese momento, al abrir el panel por primera vez
-  // (antes de que llegara el primer snapshot) se pintaba vacio y luego se
-  // repintaba entero al llegar los datos: el efecto de "dos fases" visible.
+  // "lanzaderas" solo se repinta aqui si ya hay datos reales (window._logsListos):
+  // el Gantt necesita repintarse al hacerse visible para centrar el scroll en la
+  // hora actual (con la pestaña oculta clientWidth es 0 y el calculo sale mal).
+  // Si aun no llego el primer snapshot no se repinta con datos vacios: eso era
+  // lo que causaba el efecto de "dos fases" al abrir el panel por primera vez;
+  // el propio listener ya lo pintara en cuanto lleguen los datos.
+  if (vista === "lanzaderas" && window._logsListos) { cargarLanzaderas(); renderChoferes(); }
   if (vista === "cargas")     cargarCargas();
   if (vista === "merca")      cargarMerca();
   if (vista === "bizerba")    cargarBizerba();
