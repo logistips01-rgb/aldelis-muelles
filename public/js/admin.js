@@ -812,13 +812,15 @@ function renderMapaLanzaderas() {
     const d = datos[String(n)];
     if (!d || !d.activa) continue; // fuera de servicio: no se pinta
 
-    // La nave ya la dice el propio chofer al elegirla (no hace falta GPS para
-    // eso). Si esa nave ya se conoce por llegadas anteriores de cualquier
-    // lanzadera, se usa esa ubicacion aprendida; el GPS de este chofer en
-    // este momento concreto solo hace falta como respaldo si la nave todavia
-    // no se ha aprendido nunca.
-    const naveOrigen = ubicNaves[d.nave];
-    const pos = naveOrigen || (d.lat != null && d.lng != null ? { lat: d.lat, lng: d.lng } : null);
+    // La nave (y el muelle, si lo hay) ya los dice el propio chofer al
+    // elegirlos, no hace falta GPS para eso. Se prueba primero la ubicacion
+    // aprendida de ese muelle en concreto (Plaza/Merca tienen varios, cada
+    // uno en un sitio distinto), luego la general de la nave, y el GPS de
+    // este chofer en este momento solo como ultimo respaldo si no hay nada
+    // aprendido todavia.
+    const clave = d.muelle ? (d.nave + "_" + d.muelle) : d.nave;
+    const pos = ubicNaves[clave] || ubicNaves[d.nave]
+      || (d.lat != null && d.lng != null ? { lat: d.lat, lng: d.lng } : null);
     if (!pos) { sinGps.push(n); continue; }
 
     const color = d.estado === "en_nave" ? "#1D9E75" : d.estado === "transito" ? "#F59E0B" : "#9CA3AF";

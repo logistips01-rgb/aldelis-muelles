@@ -462,12 +462,23 @@ async function escribir(estado, activa) {
   };
   await db.collection("lanzaderas").doc(String(sel.numero)).set(datos); // estado en vivo
   await db.collection("lanzaderas_log").add(datos);                     // historico
-  // Aprende donde esta cada nave a partir de los GPS reales de llegada: asi
-  // el mapa del panel sabe hacia donde trazar la linea cuando alguien vaya
-  // en transito hacia ahi, sin tener que introducir coordenadas a mano.
+  // Aprende donde esta cada nave (y cada muelle dentro de Plaza/Merca, que
+  // no estan todos en el mismo sitio) a partir de los GPS reales de
+  // llegada: asi el mapa del panel ubica cada lanzadera en su muelle real
+  // en vez de en un punto generico de la nave, sin tener que introducir
+  // coordenadas a mano en ningun sitio.
   if (estado === "en_nave" && geo && sel.nave) {
+    const ts = firebase.firestore.Timestamp.now();
+    if (sel.muelle) {
+      db.collection("ubicaciones_naves").doc(sel.nave + "_" + sel.muelle).set({
+        lat: geo.lat, lng: geo.lng, actualizado: ts
+      }).catch(e => console.warn("ubicacion muelle:", e.message));
+    }
+    // Entrada general de la nave (sin muelle): aproximada al ultimo muelle
+    // usado, para cuando se traza la ruta de un transito hacia ahi sin
+    // saber aun a que muelle exacto va a ir.
     db.collection("ubicaciones_naves").doc(sel.nave).set({
-      lat: geo.lat, lng: geo.lng, actualizado: firebase.firestore.Timestamp.now()
+      lat: geo.lat, lng: geo.lng, actualizado: ts
     }).catch(e => console.warn("ubicacion nave:", e.message));
   }
   estadoActivoServidor = activa ? { estado: estado } : null;
