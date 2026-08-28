@@ -67,6 +67,7 @@
         <button class="tab-view" id="btn-vista-lista" onclick="switchVista('lista')">Lista</button>
         <button class="tab-view" id="btn-vista-informes" onclick="switchVista('informes')">Informes</button>
         <button class="tab-view" id="btn-vista-lanzaderas" onclick="switchVista('lanzaderas')">Lanzaderas</button>
+        <button class="tab-view" id="btn-vista-pedidos" onclick="switchVista('pedidos')">Pedidos</button>
         <button class="tab-view" id="btn-vista-cargas" onclick="switchVista('cargas')">Cargas</button>
         <button class="tab-view" id="btn-vista-merca" onclick="switchVista('merca')">Merca</button>
         <button class="tab-view" id="btn-vista-bizerba" onclick="switchVista('bizerba')" style="display:none">Bizerba</button>
@@ -222,6 +223,31 @@
         <button class="btn-excel" onclick="exportarLanzaderas()">Exportar Excel</button>
       </div>
       <div id="lz-resultado" style="margin-top:14px"></div>
+    </div>
+
+    <div id="vista-pedidos" class="reservas-wrap" style="display:none">
+      <div class="informe-header">
+        <div class="section-title" style="margin-bottom:0">Palets pendientes por recoger</div>
+      </div>
+
+      <div id="pedidos-grid" class="pedido-grid"></div>
+
+      <div class="sitio-elegir">1. ¿Para que almacen es este pedido?</div>
+      <div class="sitio-btns">
+        <div class="sitio-btn" data-almacen="avitrans" onclick="seleccionarAlmacenPedido('avitrans')">Avitrans</div>
+        <div class="sitio-btn" data-almacen="caserfri" onclick="seleccionarAlmacenPedido('caserfri')">Caserfri</div>
+        <div class="sitio-btn" data-almacen="txt" onclick="seleccionarAlmacenPedido('txt')">Txt</div>
+      </div>
+
+      <div class="sitio-elegir">2. Suelta el archivo (vale Excel o PDF)</div>
+      <div class="drop-zone" id="pedido-drop">
+        <div class="drop-icon">📄</div>
+        Arrastra aqui el pedido, o <b>pulsa para elegir el archivo</b>.<br>
+        <span style="font-size:12px">Cada linea del archivo (cada SSCC) cuenta como un palet</span>
+        <div><span class="drop-btn">Elegir archivo</span></div>
+      </div>
+      <input type="file" id="pedido-file-input" accept=".xlsx,.xls,.pdf" style="display:none">
+      <div id="pedido-estado" class="pedido-estado"></div>
     </div>
 
     <div id="vista-cargas" class="reservas-wrap" style="display:none">

@@ -133,6 +133,35 @@ service cloud.firestore {
       allow create, update: if validUbicacionNave();
     }
 
+    // Pedidos de transferencia a almacenes externos (un documento por
+    // codigo PT, subido desde el panel o por el correo automatico). Lectura
+    // abierta porque el movil del chofer (sin login) necesita ver que PT
+    // hay pendientes en cada almacen para poder marcarlos al salir. No es
+    // un dato sensible (solo codigos y cantidades). Solo el panel los
+    // crea/corrige (via Cloud Function); "recogido"/"cerrado" los toca
+    // siempre el servidor, nunca el cliente directamente.
+    match /pedidos_transferencia/{id} {
+      allow read: if true;
+      allow create, update: if permitido('lanzaderas') && validPedidoTransferencia();
+    }
+
+    // Saldo pendiente por almacen (avitrans/caserfri/txt): lo mantiene solo
+    // el servidor (sumando pedidos_transferencia y restando recogidas_palets),
+    // nunca se escribe desde el cliente. Lectura abierta porque el movil del
+    // chofer no tiene login y necesita verlo.
+    match /almacenes_pendientes/{id} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Registro de "cuantos palets llevo" al salir de un almacen externo. Lo
+    // escribe el chofer (sin login, como el resto de su flujo); el servidor
+    // usa cada alta para descontar del saldo pendiente.
+    match /recogidas_palets/{id} {
+      allow read: if permitido('lanzaderas');
+      allow create: if validRecogidaPalets();
+    }
+
     // Historico de movimientos (para informes). Solo se anade, no se edita.
     // Lo necesitan las vistas de lanzaderas, costes, cargas y merca.
     match /lanzaderas_log/{id} {
@@ -266,6 +295,23 @@ service cloud.firestore {
       let d = request.resource.data;
       return d.lat is number && d.lat >= -90 && d.lat <= 90
         && d.lng is number && d.lng >= -180 && d.lng <= 180;
+    }
+
+    function validPedidoTransferencia() {
+      let d = request.resource.data;
+      return d.almacen in ['avitrans', 'caserfri', 'txt']
+        && d.palets is number && d.palets >= 0 && d.palets <= 2000
+        && d.recogido is number && d.recogido >= 0
+        && d.cerrado is bool
+        && d.creado is timestamp;
+    }
+
+    function validRecogidaPalets() {
+      let d = request.resource.data;
+      return d.numero is number && d.numero >= 1 && d.numero <= 4
+        && d.almacen in ['avitrans', 'caserfri', 'txt']
+        && d.palets is number && d.palets >= 0 && d.palets <= 2000
+        && d.ts is timestamp;
     }
 
     function validReserva() {

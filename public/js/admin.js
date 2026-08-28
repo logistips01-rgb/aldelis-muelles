@@ -379,6 +379,14 @@ function iniciarListeners() {
       s.forEach(d => { window._ubicNaves[d.id] = d.data(); });
       if (_vistaLanzSub === "mapa") renderMapaLanzaderas();
     }, e => console.error("ubicaciones_naves:", e)));
+
+    // Saldo pendiente por almacen externo (3 documentos): lo mantiene el
+    // servidor solo, aqui solo se lee para pintar las tarjetas.
+    _unsubs.push(db.collection("almacenes_pendientes").onSnapshot(s => {
+      window._almacenesPend = {};
+      s.forEach(d => { window._almacenesPend[d.id] = d.data(); });
+      renderPedidosCards();
+    }, e => console.error("almacenes_pendientes:", e)));
   }
 
   if (_perms.incidencias) {
@@ -562,6 +570,9 @@ function calcularPermisos(emailRaw, secciones) {
       lista:      s("lista"),
       informes:   s("informes"),
       lanzaderas: s("lanzaderas"),
+      // Palets pendientes en almacenes externos: mismo permiso que
+      // Lanzaderas, no tiene seccion propia (esta muy ligado a ese flujo).
+      pedidos:    s("lanzaderas"),
       cargas:     s("cargas"),
       merca:      s("merca"),
       bizerba:    s("bizerba"),
@@ -610,7 +621,7 @@ function aplicarRol() {
   if (btnDespertador) btnDespertador.style.display = _perms.esAdmin ? "" : "none";
 
   // Abrir la primera vista disponible
-  const orden = ["rejilla", "lista", "lanzaderas", "bizerba", "cargas", "merca", "informes", "costes", "config"];
+  const orden = ["rejilla", "lista", "lanzaderas", "pedidos", "bizerba", "cargas", "merca", "informes", "costes", "config"];
   const primera = orden.find(v => _perms.ver[v]);
   if (primera) switchVista(primera);
 }
@@ -618,7 +629,7 @@ function aplicarRol() {
 function switchVista(vista) {
   // No permitir entrar en una vista sin permiso
   if (_perms.ver && _perms.ver[vista] === false) return;
-  ["rejilla", "lista", "informes", "lanzaderas", "cargas", "merca", "bizerba", "config", "costes"].forEach(v => {
+  ["rejilla", "lista", "informes", "lanzaderas", "pedidos", "cargas", "merca", "bizerba", "config", "costes"].forEach(v => {
     document.getElementById("vista-" + v).style.display = vista === v ? "block" : "none";
     document.getElementById("btn-vista-" + v).classList.toggle("active", vista === v);
   });
@@ -639,6 +650,7 @@ function switchVista(vista) {
     renderMapaLanzaderas();
     setTimeout(() => { if (_leafletMap) _leafletMap.invalidateSize(); }, 60);
   }
+  if (vista === "pedidos")    cargarPedidos();
   if (vista === "cargas")     cargarCargas();
   if (vista === "merca")      cargarMerca();
   if (vista === "bizerba")    cargarBizerba();
@@ -862,6 +874,105 @@ function renderMapaLanzaderas() {
       ? "Sin ubicacion conocida todavia: " + sinGps.map(n => "Lanzadera " + n).join(", ")
       : "";
   }
+}
+
+// ── Palets pendientes en almacenes externos ─────────────────────────────────
+// El saldo (almacenes_pendientes) lo calcula solo el servidor a partir de
+// pedidos_transferencia (sumas) y recogidas_palets (restas); aqui solo se
+// lee y se sube el archivo, nunca se escribe el saldo directamente.
+
+const ALMACENES_PEDIDOS = [
+  { id: "avitrans", nombre: "Avitrans" },
+  { id: "caserfri", nombre: "Caserfri" },
+  { id: "txt",      nombre: "Txt" }
+];
+let _almacenSubidaSel = null;
+let _dropZonePedidosInit = false;
+
+function cargarPedidos() {
+  renderPedidosCards();
+  if (!_dropZonePedidosInit) { initDropZonePedidos(); _dropZonePedidosInit = true; }
+}
+
+function renderPedidosCards() {
+  const cont = document.getElementById("pedidos-grid");
+  if (!cont) return;
+  const datos = window._almacenesPend || {};
+  cont.innerHTML = ALMACENES_PEDIDOS.map(a => {
+    const d = datos[a.id] || {};
+    const pedido = d.pedido || 0;
+    const recogido = d.recogido || 0;
+    const pendiente = Math.max(pedido - recogido, 0);
+    const pct = pedido > 0 ? Math.min(100, Math.round((recogido / pedido) * 100)) : 0;
+    const completado = pedido > 0 && pendiente === 0;
+    const color = completado ? "#1D9E75" : (pendiente > pedido / 2 ? "#D41F3A" : "#F59E0B");
+    return "<div class='pedido-card' style='border-top-color:" + color + "'>" +
+      "<div class='pedido-nombre'>" + esc(a.nombre) + "</div>" +
+      "<div class='pedido-num tnum' style='color:" + color + "'>" + pendiente + "</div>" +
+      "<div class='pedido-lbl'>palets pendientes" + (completado ? " — completado" : "") + "</div>" +
+      "<div class='pedido-barra'><div style='width:" + pct + "%;background:" + color + "'></div></div>" +
+      "<div class='pedido-detalle'><span>Pedido: <b class='tnum'>" + pedido + "</b></span>" +
+      "<span>Recogido: <b class='tnum'>" + recogido + "</b></span></div>" +
+      "</div>";
+  }).join("");
+}
+
+function seleccionarAlmacenPedido(id) {
+  _almacenSubidaSel = id;
+  document.querySelectorAll(".sitio-btn").forEach(b => b.classList.toggle("sel", b.dataset.almacen === id));
+}
+
+function initDropZonePedidos() {
+  const zona  = document.getElementById("pedido-drop");
+  const input = document.getElementById("pedido-file-input");
+  if (!zona || !input) return;
+  zona.addEventListener("click", () => input.click());
+  zona.addEventListener("dragover", e => { e.preventDefault(); zona.classList.add("sobre"); });
+  zona.addEventListener("dragleave", () => zona.classList.remove("sobre"));
+  zona.addEventListener("drop", e => {
+    e.preventDefault();
+    zona.classList.remove("sobre");
+    const f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) subirArchivoPedido(f);
+  });
+  input.addEventListener("change", () => {
+    const f = input.files && input.files[0];
+    if (f) subirArchivoPedido(f);
+    input.value = "";
+  });
+}
+
+function estadoPedido(texto, clase) {
+  const el = document.getElementById("pedido-estado");
+  if (!el) return;
+  el.textContent = texto;
+  el.className = "pedido-estado" + (clase ? " " + clase : "");
+}
+
+function subirArchivoPedido(file) {
+  if (!_almacenSubidaSel) { estadoPedido("Elige antes a que almacen corresponde.", "err"); return; }
+  if (!/\.(xlsx|xls|pdf)$/i.test(file.name)) { estadoPedido("Solo se admite Excel (.xlsx) o PDF.", "err"); return; }
+
+  estadoPedido("Procesando " + file.name + "...");
+
+  const reader = new FileReader();
+  reader.onload = async () => {
+    const base64 = String(reader.result).split(",")[1] || "";
+    try {
+      const fn = firebase.functions().httpsCallable("procesarPedidoTransferencia", { timeout: 60000 });
+      const res = await fn({ almacen: _almacenSubidaSel, nombreArchivo: file.name, contenidoBase64: base64 });
+      if (res.data && res.data.ok) {
+        estadoPedido("Añadido " + res.data.pt + ": " + res.data.palets + " palets.", "ok");
+      } else {
+        estadoPedido((res.data && res.data.error) || "No se pudo procesar el archivo.", "err");
+      }
+    } catch (e) {
+      console.error("subirArchivoPedido:", e);
+      estadoPedido("No se pudo procesar el archivo.", "err");
+    }
+  };
+  reader.onerror = () => estadoPedido("No se pudo leer el archivo.", "err");
+  reader.readAsDataURL(file);
 }
 
 function cargarLanzaderas() {

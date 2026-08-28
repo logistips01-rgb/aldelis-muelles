@@ -57,6 +57,19 @@ body {
   letter-spacing: 0.05em;
 }
 
+.resumen-pend { background: #FFF8E8; border: 1px solid #F3D98B; border-radius: 10px; padding: 10px 14px; margin-bottom: 16px; font-size: 12.5px; }
+.resumen-pend-tit { font-weight: 700; color: #92620A; margin-bottom: 6px; }
+.resumen-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.resumen-chip { background: #fff; border-radius: 16px; padding: 4px 10px; font-weight: 600; color: #1A1A1A; border: 1px solid #EEDFB0; }
+.resumen-chip b { color: #D41F3A; }
+
+.pt-fila { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid #F0F0F0; }
+.pt-fila:last-child { border-bottom: none; }
+.pt-check { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.pt-check input { width: 18px; height: 18px; }
+.pt-pend { font-size: 12px; color: #9CA3AF; font-weight: 400; }
+.pt-num { width: 70px; padding: 8px; border: 1px solid #E0E0E0; border-radius: 8px; font-size: 14px; text-align: center; background: #D8DCE5; font-family: 'Inter', sans-serif; }
+
 h2 {
   font-size: 20px;
   font-weight: 600;

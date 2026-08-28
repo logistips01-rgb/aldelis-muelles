@@ -358,13 +358,47 @@ function renderHecho(estado) {
 }
 
 function cabecera() {
+  // El hueco del resumen de pendientes se rellena aparte (pintarResumenChip):
+  // cabecera() solo devuelve el texto, no puede tocar el DOM porque el nodo
+  // todavia no existe hasta que se asigna a app.innerHTML.
+  setTimeout(pintarResumenChip, 0);
   return "<div class='step-indicator'>Lanzadera " + sel.numero +
     (chofer.nombre ? " &middot; " + escTexto(chofer.nombre) : "") + "</div>" +
     (chofer.nombre
       ? "<div style='text-align:center;margin:-6px 0 10px'>" +
         "<a href='#' onclick='editarChofer();return false' " +
         "style='font-size:12px;color:#9CA3AF;text-decoration:none'>No soy yo, cambiar conductor</a></div>"
-      : "");
+      : "") +
+    "<div id='resumen-chip-slot'></div>";
+}
+
+// ── Resumen de palets pendientes (Avitrans/Caserfri/Txt), visible en todas
+// las pantallas que usan cabecera() para que cualquier chofer pueda
+// organizarse sin tener que entrar a mirarlo aparte.
+let _pendResumen = { avitrans: 0, caserfri: 0, txt: 0 };
+
+db.collection("almacenes_pendientes").onSnapshot(s => {
+  const nuevo = { avitrans: 0, caserfri: 0, txt: 0 };
+  s.forEach(d => {
+    if (!nuevo.hasOwnProperty(d.id)) return;
+    const v = d.data();
+    nuevo[d.id] = Math.max((v.pedido || 0) - (v.recogido || 0), 0);
+  });
+  _pendResumen = nuevo;
+  pintarResumenChip();
+}, () => {});
+
+function pintarResumenChip() {
+  const el = document.getElementById("resumen-chip-slot");
+  if (!el) return;
+  const total = _pendResumen.avitrans + _pendResumen.caserfri + _pendResumen.txt;
+  el.innerHTML = !total ? "" :
+    "<div class='resumen-pend'><div class='resumen-pend-tit'>📦 Pendiente por recoger</div>" +
+    "<div class='resumen-chips'>" +
+    "<span class='resumen-chip'>Avitrans <b>" + _pendResumen.avitrans + "</b></span>" +
+    "<span class='resumen-chip'>Caserfri <b>" + _pendResumen.caserfri + "</b></span>" +
+    "<span class='resumen-chip'>Txt <b>" + _pendResumen.txt + "</b></span>" +
+    "</div></div>";
 }
 
 function pickLanzadera(n) { sel.numero = n; cargarChoferLocal(); sincronizarChofer(); precalentarPermisoUbicacion(); recuperarEstadoActivo(); }
@@ -495,13 +529,95 @@ async function registrar() { // llegada / actividad en una nave
   catch (e) { console.error(e); alert("No se pudo registrar. Reintenta."); }
 }
 
-async function salir() { // al salir, muestra la indicacion/urgencia (si hay) y elige destino
+// En estos tres almacenes se recogen palets de pedidos de transferencia; en
+// el resto de naves (Plaza, Merca, otras externas) no aplica.
+const ALMACENES_PALETS = ["avitrans", "caserfri", "txt"];
+
+async function salir() { // al salir, primero palets (si aplica), luego indicacion/urgencia y destino
+  if (ALMACENES_PALETS.indexOf(sel.nave) !== -1) { await renderPaletsPT(); return; }
+  await continuarTrasSalir();
+}
+
+async function continuarTrasSalir() {
   let nota = "", urgente = false;
   try {
     const d = await db.collection("lanzaderas_nota").doc(String(sel.numero)).get();
     if (d.exists) { nota = d.data().nota || ""; urgente = !!d.data().urgente; }
   } catch (e) {}
   renderDestino(nota, urgente);
+}
+
+// ── Palets al salir de un almacen externo (Avitrans/Caserfri/Txt) ─────────
+let _ptsAbiertos = [];
+
+async function renderPaletsPT() {
+  app.innerHTML = "<div class='card text-center'><div class='temp-icon' style='font-size:32px'>⏳</div><h2>Cargando pedidos...</h2></div>";
+  try {
+    const snap = await db.collection("pedidos_transferencia")
+      .where("almacen", "==", sel.nave).where("cerrado", "==", false).get();
+    _ptsAbiertos = [];
+    snap.forEach(d => _ptsAbiertos.push({ id: d.id, ...d.data() }));
+  } catch (e) {
+    console.error("renderPaletsPT:", e);
+    _ptsAbiertos = [];
+  }
+  pintarPaletsPT();
+}
+
+function pintarPaletsPT() {
+  const filas = _ptsAbiertos.map(p => {
+    const pendiente = Math.max((p.palets || 0) - (p.recogido || 0), 0);
+    return "<div class='pt-fila'>" +
+      "<label class='pt-check'><input type='checkbox' class='pt-chk' data-pt='" + p.id + "' checked> " +
+      "<b>" + escTexto(p.id) + "</b> <span class='pt-pend'>(" + pendiente + " pendientes)</span></label>" +
+      "<input type='number' class='pt-num' data-pt='" + p.id + "' min='0' max='" + pendiente + "' value='" + pendiente + "'>" +
+      "</div>";
+  }).join("");
+
+  app.innerHTML =
+    "<div class='card'>" + cabecera() +
+    "<h2>¿Que te llevas?</h2>" +
+    "<p class='card-desc'>Marca los pedidos que recoges en " + escTexto(NOMBRE_NAVE[sel.nave] || sel.nave) +
+    " y cuantos palets de cada uno. Si no cargaste todo, cambia el numero.</p>" +
+    (_ptsAbiertos.length
+      ? "<div id='pt-lista'>" + filas + "</div>"
+      : "<p class='card-desc'>No hay pedidos pendientes registrados aqui.</p>") +
+    "<div class='field'><label>Otros palets sin pedido asociado (opcional)</label>" +
+    "<input type='number' id='pt-otros' min='0' value='0'></div>" +
+    "<div id='pt-error' style='color:#D41F3A;font-size:13px;margin-bottom:10px;display:none'></div>" +
+    "<button class='btn-primary' style='width:100%' onclick='confirmarPaletsPT()'>Continuar</button>" +
+    "<button class='btn-back' style='width:100%;margin-top:8px' onclick='render()'>&#8592; Atras</button>" +
+    "</div>";
+}
+
+async function confirmarPaletsPT() {
+  const pts = [];
+  let total = 0;
+  document.querySelectorAll(".pt-chk").forEach(chk => {
+    if (!chk.checked) return;
+    const pt = chk.dataset.pt;
+    const numInp = document.querySelector(".pt-num[data-pt='" + pt + "']");
+    const n = parseInt(numInp.value, 10);
+    if (n > 0) { pts.push({ pt: pt, palets: n }); total += n; }
+  });
+  const otrosInp = document.getElementById("pt-otros");
+  const otros = otrosInp ? (parseInt(otrosInp.value, 10) || 0) : 0;
+  total += otros;
+
+  const err = document.getElementById("pt-error");
+  if (total <= 0) { err.textContent = "Indica al menos un palet."; err.style.display = "block"; return; }
+
+  try {
+    await db.collection("recogidas_palets").add({
+      numero: sel.numero, almacen: sel.nave, palets: total, pts: pts,
+      ts: firebase.firestore.Timestamp.now()
+    });
+  } catch (e) {
+    console.error("confirmarPaletsPT:", e);
+    alert("No se pudo registrar la recogida. Reintenta.");
+    return;
+  }
+  await continuarTrasSalir();
 }
 
 function renderDestino(nota, urgente) {

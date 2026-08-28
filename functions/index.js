@@ -1133,3 +1133,271 @@ exports.notifChat = onDocumentCreated("mensajes/{msgId}", async (event) => {
   }
   if (caducados.length) console.log("Tokens caducados eliminados:", caducados.length);
 });
+
+// ── Palets pendientes en almacenes externos (Avitrans/Caserfri/Txt) ────────
+//
+// Modelo: cada pedido de transferencia (codigo "PT......") es un documento
+// en pedidos_transferencia con cuantos palets trae. Al crearse, se SUMA al
+// saldo pendiente de su almacen (almacenes_pendientes). Cada vez que un
+// chofer sale de ese almacen y dice cuantos palets se lleva, se crea un
+// documento en recogidas_palets, que RESTA de ese mismo saldo. El saldo en
+// si (almacenes_pendientes) solo lo toca el servidor, nunca el cliente,
+// para que sea siempre la suma real de lo dado de alta menos lo recogido.
+
+const ALMACENES_PT = ["avitrans", "caserfri", "txt"];
+
+exports.sumarPedidoTransferencia = onDocumentCreated("pedidos_transferencia/{id}", async (event) => {
+  const d = event.data ? event.data.data() : null;
+  if (!d || !ALMACENES_PT.includes(d.almacen)) return;
+  await db.collection("almacenes_pendientes").doc(d.almacen).set({
+    pedido: admin.firestore.FieldValue.increment(d.palets || 0)
+  }, { merge: true });
+});
+
+exports.restarRecogidaPalets = onDocumentCreated("recogidas_palets/{id}", async (event) => {
+  const d = event.data ? event.data.data() : null;
+  if (!d || !ALMACENES_PT.includes(d.almacen)) return;
+  await db.collection("almacenes_pendientes").doc(d.almacen).set({
+    recogido: admin.firestore.FieldValue.increment(d.palets || 0)
+  }, { merge: true });
+
+  // El chofer marca que PT concretos se lleva y cuantos palets de CADA uno
+  // (no siempre cargan el pedido completo), asi que cada item de "pts" trae
+  // su propia cantidad en vez de repartir el total a partes iguales.
+  if (Array.isArray(d.pts) && d.pts.length) {
+    for (const item of d.pts) {
+      const ptCode = item && item.pt;
+      const palets = item && item.palets;
+      if (!ptCode || !(palets > 0)) continue;
+      try {
+        const ref = db.collection("pedidos_transferencia").doc(ptCode);
+        await db.runTransaction(async (tx) => {
+          const doc = await tx.get(ref);
+          if (!doc.exists) return;
+          const actual = doc.data();
+          const recogidoNuevo = (actual.recogido || 0) + palets;
+          tx.update(ref, {
+            recogido: recogidoNuevo,
+            cerrado: recogidoNuevo >= (actual.palets || 0)
+          });
+        });
+      } catch (e) { console.error("marcar PT recogido:", ptCode, e.message); }
+    }
+  }
+});
+
+// ── Lectura automatica del correo de pedidos ────────────────────────────────
+//
+// Revisa cada 10 minutos el buzon indicado (Microsoft Graph, misma app que
+// ya usamos para enviar correos) en busca de mensajes nuevos con adjunto.
+// Identifica el almacen mirando el dominio de los destinatarios (Para/CC):
+// si alguno termina en "@avitrans.com" (etc.), ese es el almacen del
+// pedido. Procesa el Excel si lo hay; si solo mandan PDF, procesa el PDF.
+// Cada linea del archivo (cada SSCC) cuenta como un palet.
+//
+// Requiere que la app de Microsoft 365 tenga concedido el permiso de
+// aplicacion "Mail.Read" sobre el buzon indicado (ver README). Sin eso, la
+// funcion no falla ni avisa por email, simplemente no encuentra nada que
+// procesar cada vez que se ejecuta.
+
+const BUZON_PEDIDOS = "avitrans@aldelis.com"; // ajustar aqui si se decide otro buzon
+
+// Dominio de correo de cada almacen externo. "avitrans.com" confirmado por
+// el usuario; caserfri.com y txt.com son un supuesto razonable a falta de
+// confirmarlos - hay que revisarlos con un correo real de cada uno antes de
+// confiar en la deteccion automatica para esos dos.
+const DOMINIOS_ALMACEN = {
+  "avitrans.com": "avitrans",
+  "caserfri.com": "caserfri",
+  "txt.com":      "txt"
+};
+
+async function graphGet(token, url) {
+  const res = await fetch(url, { headers: { Authorization: "Bearer " + token } });
+  if (!res.ok) throw new Error("Graph GET " + res.status + ": " + (await res.text()).slice(0, 300));
+  return res.json();
+}
+
+async function graphMarcarLeido(token, msgId) {
+  await fetch("https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS + "/messages/" + msgId, {
+    method: "PATCH",
+    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+    body: JSON.stringify({ isRead: true })
+  });
+}
+
+function detectarAlmacenPorDestinatarios(msg) {
+  const direcciones = []
+    .concat((msg.toRecipients || []).map(r => r.emailAddress && r.emailAddress.address))
+    .concat((msg.ccRecipients || []).map(r => r.emailAddress && r.emailAddress.address))
+    .filter(Boolean)
+    .map(a => a.toLowerCase());
+  for (const dir of direcciones) {
+    for (const dominio in DOMINIOS_ALMACEN) {
+      if (dir.endsWith("@" + dominio)) return DOMINIOS_ALMACEN[dominio];
+    }
+  }
+  return null;
+}
+
+// Cada fila con SSCC es un palet. Busca la columna "SSCC" en la primera fila
+// que la tenga (por si el archivo trae cabeceras u otras filas antes) y
+// cuenta valores distintos en esa columna.
+function contarPaletsExcel(buffer) {
+  const XLSX = require("xlsx");
+  const wb = XLSX.read(buffer, { type: "buffer" });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const filas = XLSX.utils.sheet_to_json(ws, { header: 1 });
+  let colSscc = -1, inicio = 0;
+  for (let i = 0; i < filas.length; i++) {
+    const idx = (filas[i] || []).findIndex(c => String(c || "").toUpperCase().trim() === "SSCC");
+    if (idx !== -1) { colSscc = idx; inicio = i + 1; break; }
+  }
+  if (colSscc === -1) return { palets: 0, lineas: [] };
+  const ssccs = new Set();
+  for (let i = inicio; i < filas.length; i++) {
+    const v = (filas[i] || [])[colSscc];
+    if (v) ssccs.add(String(v).trim());
+  }
+  return { palets: ssccs.size, lineas: [...ssccs].map(sscc => ({ sscc })) };
+}
+
+// El PDF no trae columnas fiables al extraer el texto, pero el SSCC son
+// siempre 18 digitos seguidos: contar esos patrones (sin repetir) da el
+// numero de palets sin depender del formato exacto de la plantilla.
+async function contarPaletsPdf(buffer) {
+  const { PDFParse } = require("pdf-parse");
+  const parser = new PDFParse({ data: buffer });
+  let texto = "";
+  try {
+    const resultado = await parser.getText();
+    texto = resultado.text || "";
+  } finally {
+    await parser.destroy();
+  }
+  const ssccs = [...new Set(texto.match(/\b\d{18}\b/g) || [])];
+  const ptMatch = texto.match(/PT\d{6}/);
+  return { palets: ssccs.length, lineas: ssccs.map(sscc => ({ sscc })), pt: ptMatch ? ptMatch[0] : null };
+}
+
+async function crearPedidoTransferencia(pt, almacen, resultado, origen) {
+  if (!resultado.palets) return;
+  const ref = db.collection("pedidos_transferencia").doc(pt);
+  try {
+    await ref.create({
+      almacen, palets: resultado.palets, recogido: 0, cerrado: false,
+      lineas: resultado.lineas || [], origen,
+      creado: admin.firestore.Timestamp.now()
+    });
+  } catch (e) {
+    // Ya existe (mismo PT procesado antes, p.ej. el correo llego duplicado):
+    // no se pisa el progreso de recogida que ya pudiera tener.
+    if (e.code !== 6 /* ALREADY_EXISTS */) throw e;
+    console.log("PT ya existia, no se repite:", pt);
+  }
+}
+
+// Subida manual desde el panel (arrastrar/elegir archivo). Pasa por el
+// servidor en vez de leerse en el navegador para reutilizar exactamente el
+// mismo analisis de Excel/PDF que usa la lectura automatica del correo, sin
+// duplicar la logica ni depender de una libreria de PDF en el cliente.
+exports.procesarPedidoTransferencia = functions.https.onCall(async (request, context) => {
+  const esV2 = !!(request && typeof request === "object" && request.data !== undefined);
+  const data = esV2 ? request.data : request;
+  const ctx  = esV2 ? request : (context || {});
+
+  if (!ctx.app) return { ok: false, error: "No autorizado" };
+  const email = (ctx.auth && ctx.auth.token && ctx.auth.token.email || "").toLowerCase();
+  if (!email || !(await puedeSeccion(email, "lanzaderas"))) return { ok: false, error: "Sin permiso" };
+
+  if (!data || typeof data !== "object") return { ok: false, error: "Faltan datos" };
+  const almacen = data.almacen;
+  const nombreArchivo = String(data.nombreArchivo || "");
+  const contenidoBase64 = data.contenidoBase64;
+  if (!ALMACENES_PT.includes(almacen)) return { ok: false, error: "Almacen no valido" };
+  if (typeof contenidoBase64 !== "string" || !contenidoBase64) return { ok: false, error: "Falta el archivo" };
+  if (contenidoBase64.length > 15 * 1024 * 1024) return { ok: false, error: "Archivo demasiado grande" };
+
+  let buffer;
+  try { buffer = Buffer.from(contenidoBase64, "base64"); }
+  catch (e) { return { ok: false, error: "Archivo no valido" }; }
+
+  const esExcel = /\.xlsx?$/i.test(nombreArchivo);
+  const esPdf   = /\.pdf$/i.test(nombreArchivo);
+  if (!esExcel && !esPdf) return { ok: false, error: "Solo se admite Excel o PDF" };
+
+  let resultado;
+  try {
+    resultado = esExcel ? contarPaletsExcel(buffer) : await contarPaletsPdf(buffer);
+  } catch (e) {
+    console.error("procesarPedidoTransferencia: parseo:", e.message);
+    return { ok: false, error: "No se pudo leer el archivo" };
+  }
+
+  if (!resultado.palets) return { ok: false, error: "No se encontraron palets (SSCC) en el archivo" };
+
+  const pt = resultado.pt
+    || (nombreArchivo.match(/PT\d{6}/) || [])[0]
+    || ("SINPT-" + Date.now().toString(36).toUpperCase());
+
+  try {
+    await crearPedidoTransferencia(pt, almacen, resultado, "manual");
+  } catch (e) {
+    console.error("procesarPedidoTransferencia: guardar:", e.message);
+    return { ok: false, error: "No se pudo guardar el pedido" };
+  }
+
+  return { ok: true, pt, palets: resultado.palets };
+});
+
+exports.revisarCorreoPedidos = onSchedule(
+  { schedule: "every 10 minutes", timeZone: "Europe/Madrid" },
+  async () => {
+    if (!MS_SECRET) { console.warn("revisarCorreoPedidos: falta MS_SECRET"); return; }
+
+    let token;
+    try { token = await obtenerTokenMS(); }
+    catch (e) { console.error("revisarCorreoPedidos: token:", e.message); return; }
+
+    let data;
+    try {
+      data = await graphGet(token,
+        "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS +
+        "/mailFolders/inbox/messages?$filter=isRead eq false&$top=25" +
+        "&$select=id,subject,toRecipients,ccRecipients,hasAttachments");
+    } catch (e) { console.error("revisarCorreoPedidos: listar mensajes:", e.message); return; }
+
+    for (const msg of (data.value || [])) {
+      try {
+        if (!msg.hasAttachments) { await graphMarcarLeido(token, msg.id); continue; }
+
+        const almacen = detectarAlmacenPorDestinatarios(msg);
+        if (!almacen) {
+          console.log("revisarCorreoPedidos: sin almacen reconocido en", msg.subject);
+          await graphMarcarLeido(token, msg.id);
+          continue;
+        }
+
+        const adjuntos = await graphGet(token,
+          "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS + "/messages/" + msg.id + "/attachments");
+        const conContenido = (adjuntos.value || []).filter(a => a.contentBytes);
+        const excel = conContenido.find(a => /\.xlsx?$/i.test(a.name || ""));
+        const pdfAdj = conContenido.find(a => /\.pdf$/i.test(a.name || ""));
+        const elegido = excel || pdfAdj;
+        if (!elegido) { await graphMarcarLeido(token, msg.id); continue; }
+
+        const buffer = Buffer.from(elegido.contentBytes, "base64");
+        const resultado = elegido === excel ? contarPaletsExcel(buffer) : await contarPaletsPdf(buffer);
+        const pt = (resultado.pt)
+          || (elegido.name.match(/PT\d{6}/) || [])[0]
+          || ((msg.subject || "").match(/PT\d{6}/) || [])[0]
+          || ("SINPT-" + msg.id.slice(-8));
+
+        await crearPedidoTransferencia(pt, almacen, resultado, "email");
+        await graphMarcarLeido(token, msg.id);
+      } catch (e) {
+        console.error("revisarCorreoPedidos: mensaje", msg.id, e.message);
+      }
+    }
+  }
+);
