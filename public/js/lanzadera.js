@@ -565,24 +565,27 @@ async function renderPaletsPT() {
 }
 
 function pintarPaletsPT() {
+  // Sin casilla: un pedido cuenta si le pones un numero mayor que 0, y
+  // empieza en 0 (no en el total pendiente) para que el chofer siempre tenga
+  // que escribir a proposito cuanto se lleva de cada uno. Asi el campo de
+  // "Otros" no puede solaparse con un pedido que ya esta en la lista.
   const filas = _ptsAbiertos.map(p => {
     const pendiente = Math.max((p.palets || 0) - (p.recogido || 0), 0);
     return "<div class='pt-fila'>" +
-      "<label class='pt-check'><input type='checkbox' class='pt-chk' data-pt='" + p.id + "' checked> " +
-      "<b>" + escTexto(p.id) + "</b> <span class='pt-pend'>(" + pendiente + " pendientes)</span></label>" +
-      "<input type='number' class='pt-num' data-pt='" + p.id + "' min='0' max='" + pendiente + "' value='" + pendiente + "'>" +
+      "<div class='pt-check'><b>" + escTexto(p.id) + "</b> <span class='pt-pend'>(" + pendiente + " pendientes)</span></div>" +
+      "<input type='number' class='pt-num' data-pt='" + p.id + "' min='0' max='" + pendiente + "' value='0' placeholder='0'>" +
       "</div>";
   }).join("");
 
   app.innerHTML =
     "<div class='card'>" + cabecera() +
     "<h2>¿Que te llevas?</h2>" +
-    "<p class='card-desc'>Marca los pedidos que recoges en " + escTexto(NOMBRE_NAVE[sel.nave] || sel.nave) +
-    " y cuantos palets de cada uno. Si no cargaste todo, cambia el numero.</p>" +
+    "<p class='card-desc'>Escribe cuantos palets te llevas de cada pedido de " + escTexto(NOMBRE_NAVE[sel.nave] || sel.nave) +
+    ". Deja en 0 los que no recoges hoy.</p>" +
     (_ptsAbiertos.length
       ? "<div id='pt-lista'>" + filas + "</div>"
       : "<p class='card-desc'>No hay pedidos pendientes registrados aqui.</p>") +
-    "<div class='field'><label>Otros palets sin pedido asociado (opcional)</label>" +
+    "<div class='field'><label>Otros palets, SIN pedido en la lista de arriba <span class='opt'>(opcional)</span></label>" +
     "<input type='number' id='pt-otros' min='0' value='0'></div>" +
     "<div id='pt-error' style='color:#D41F3A;font-size:13px;margin-bottom:10px;display:none'></div>" +
     "<button class='btn-primary' id='pt-continuar' style='width:100%' onclick='confirmarPaletsPT()'>Continuar</button>" +
@@ -599,12 +602,9 @@ async function confirmarPaletsPT() {
   if (_enviandoPT) return;
   const pts = [];
   let total = 0;
-  document.querySelectorAll(".pt-chk").forEach(chk => {
-    if (!chk.checked) return;
-    const pt = chk.dataset.pt;
-    const numInp = document.querySelector(".pt-num[data-pt='" + pt + "']");
+  document.querySelectorAll(".pt-num").forEach(numInp => {
     const n = parseInt(numInp.value, 10);
-    if (n > 0) { pts.push({ pt: pt, palets: n }); total += n; }
+    if (n > 0) { pts.push({ pt: numInp.dataset.pt, palets: n }); total += n; }
   });
   const otrosInp = document.getElementById("pt-otros");
   const otros = otrosInp ? (parseInt(otrosInp.value, 10) || 0) : 0;
