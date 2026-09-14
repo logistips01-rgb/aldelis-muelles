@@ -562,6 +562,10 @@ async function renderPaletsPT() {
     console.error("renderPaletsPT:", e);
     _ptsAbiertos = [];
   }
+  // Si no hay ningun pedido pendiente registrado aqui, no tiene sentido
+  // pararle a marcar nada (puede estar llevando cosas igualmente, solo que
+  // no las tenemos registradas como pedido): que siga directo a destino.
+  if (!_ptsAbiertos.length) { await continuarTrasSalir(); return; }
   pintarPaletsPT();
 }
 
