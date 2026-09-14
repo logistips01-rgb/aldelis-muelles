@@ -1196,9 +1196,18 @@ exports.activarPedidosProgramados = onSchedule(
 exports.restarRecogidaPalets = onDocumentCreated("recogidas_palets/{id}", async (event) => {
   const d = event.data ? event.data.data() : null;
   if (!d || !ALMACENES_PT.includes(d.almacen)) return;
-  await db.collection("almacenes_pendientes").doc(d.almacen).set({
-    recogido: admin.firestore.FieldValue.increment(d.palets || 0)
-  }, { merge: true });
+
+  // Los palets "sin pedido asociado" (campo Otros) no corresponden a ningun
+  // pedido nuestro, asi que NO deben restar del pendiente por pedidos: solo
+  // cuenta lo que el chofer marca contra un PT concreto. Si no, el pendiente
+  // del almacen bajaria sin que ningun pedido real avance.
+  const totalPts = (Array.isArray(d.pts) ? d.pts : [])
+    .reduce((s, item) => s + (item && item.palets > 0 ? item.palets : 0), 0);
+  if (totalPts > 0) {
+    await db.collection("almacenes_pendientes").doc(d.almacen).set({
+      recogido: admin.firestore.FieldValue.increment(totalPts)
+    }, { merge: true });
+  }
 
   // El chofer marca que PT concretos se lleva y cuantos palets de CADA uno
   // (no siempre cargan el pedido completo), asi que cada item de "pts" trae
