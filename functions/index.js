@@ -1200,7 +1200,7 @@ exports.restarRecogidaPalets = onDocumentCreated("recogidas_palets/{id}", async 
 // funcion no falla ni avisa por email, simplemente no encuentra nada que
 // procesar cada vez que se ejecuta.
 
-const BUZON_PEDIDOS = "avitrans@aldelis.com"; // ajustar aqui si se decide otro buzon
+const BUZON_PEDIDOS = MS_SENDER; // mismo buzon que ya usa el envio de correos (reservas@aldelis.com)
 
 // Dominio de correo de cada almacen externo. "avitrans.com" confirmado por
 // el usuario; caserfri.com y txt.com son un supuesto razonable a falta de
