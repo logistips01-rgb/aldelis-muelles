@@ -7,6 +7,14 @@
         { "fieldPath": "lanzadera", "order": "ASCENDING" },
         { "fieldPath": "ts", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "pedidos_transferencia",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "activado", "order": "ASCENDING" },
+        { "fieldPath": "fecha", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

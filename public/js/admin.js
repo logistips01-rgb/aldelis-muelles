@@ -885,7 +885,28 @@ let _dropZonePedidosInit = false;
 function cargarPedidos() {
   renderPedidosCards();
   renderPedidosLista();
+  const inFecha = document.getElementById("pedido-fecha");
+  if (inFecha && !inFecha.value) inFecha.value = new Date().toLocaleDateString("sv-SE");
   if (!_dropZonePedidosInit) { initDropZonePedidos(); _dropZonePedidosInit = true; }
+}
+
+function fechaPedidoSel() {
+  const in_ = document.getElementById("pedido-fecha");
+  return (in_ && in_.value) || new Date().toLocaleDateString("sv-SE");
+}
+
+// TEMPORAL, para las pruebas del modulo: borra pedidos, recogidas y deja los
+// saldos a cero. Quitar este boton y la funcion del servidor cuando se
+// termine de probar.
+function resetPedidosPruebas() {
+  if (!confirm("¿Borrar TODOS los pedidos y recogidas de prueba y dejar los saldos a cero?")) return;
+  estadoPedido("Reseteando...");
+  firebase.functions().httpsCallable("resetPedidosPendientes")()
+    .then(res => {
+      if (res.data && res.data.ok) estadoPedido("Reseteado.", "ok");
+      else estadoPedido((res.data && res.data.error) || "No se pudo resetear.", "err");
+    })
+    .catch(e => { console.error("resetPedidosPruebas:", e); estadoPedido("No se pudo resetear.", "err"); });
 }
 
 function renderPedidosCards() {
@@ -934,10 +955,13 @@ function renderPedidosLista() {
       "<div class='pt-admin-tit'>" + esc(a.nombre) + "</div>" +
       lista.map(p => {
         const pendiente = Math.max((p.palets || 0) - (p.recogido || 0), 0);
+        const programado = p.activado === false;
         return "<div class='pt-admin-row' onclick=\"abrirPtDetalle('" + p.id + "')\">" +
           "<span><span class='pt-admin-codigo'>" + esc(p.id) + "</span>" +
           "<span class='pt-admin-origen'>" + esc(origenPedidoLabel(p.origen)) + "</span></span>" +
-          "<span class='pt-admin-pend tnum'>" + pendiente + " pend.</span>" +
+          (programado
+            ? "<span class='pt-admin-origen'>programado " + esc(p.fecha || "") + "</span>"
+            : "<span class='pt-admin-pend tnum'>" + pendiente + " pend.</span>") +
           "</div>";
       }).join("") +
       "</div>";
@@ -953,6 +977,8 @@ function abrirPtDetalle(id) {
   document.getElementById("ptd-titulo").textContent = id;
   document.getElementById("ptd-sub").textContent = (almacen ? almacen.nombre : p.almacen) + " · " + origenPedidoLabel(p.origen);
   document.getElementById("ptd-datos").innerHTML =
+    "<div class='resumen-row'><span class='resumen-label'>Fecha de recogida</span><span class='resumen-value'>" + esc(p.fecha || "—") +
+      (p.activado === false ? " (aun no cuenta como pendiente)" : "") + "</span></div>" +
     "<div class='resumen-row'><span class='resumen-label'>Palets del pedido</span><span class='resumen-value tnum'>" + (p.palets || 0) + "</span></div>" +
     "<div class='resumen-row'><span class='resumen-label'>Recogidos</span><span class='resumen-value tnum'>" + (p.recogido || 0) + "</span></div>" +
     "<div class='resumen-row'><span class='resumen-label'>Pendientes</span><span class='resumen-value tnum'>" + pendiente + "</span></div>";
@@ -1017,7 +1043,7 @@ function subirArchivoPedido(file) {
     const base64 = String(reader.result).split(",")[1] || "";
     try {
       const fn = firebase.functions().httpsCallable("procesarPedidoTransferencia", { timeout: 60000 });
-      const res = await fn({ almacen: _almacenSubidaSel, nombreArchivo: file.name, contenidoBase64: base64 });
+      const res = await fn({ almacen: _almacenSubidaSel, nombreArchivo: file.name, contenidoBase64: base64, fecha: fechaPedidoSel() });
       if (res.data && res.data.ok) {
         estadoPedido("Añadido " + res.data.pt + ": " + res.data.palets + " palets.", "ok");
       } else {
@@ -1045,7 +1071,7 @@ function enviarPedidoEnvases() {
   if (normal <= 0 && europool <= 0) { estadoPedido("Pon al menos una cantidad.", "err"); return; }
 
   estadoPedido("Guardando pedido de envases...");
-  firebase.functions().httpsCallable("registrarPedidoEnvases")({ almacen: _almacenSubidaSel, normal, europool })
+  firebase.functions().httpsCallable("registrarPedidoEnvases")({ almacen: _almacenSubidaSel, normal, europool, fecha: fechaPedidoSel() })
     .then(res => {
       if (res.data && res.data.ok) {
         estadoPedido("Anadido " + res.data.pt + ": " + res.data.palets + " huecos de camion.", "ok");

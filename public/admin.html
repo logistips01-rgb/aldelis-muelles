@@ -224,6 +224,7 @@
     <div id="vista-pedidos" class="reservas-wrap" style="display:none">
       <div class="informe-header">
         <div class="section-title" style="margin-bottom:0">Palets pendientes por recoger</div>
+        <button class="btn-ghost" style="width:auto;padding:6px 14px;color:#D41F3A;border-color:#F5C0C8" onclick="resetPedidosPruebas()">🧪 Reset (pruebas)</button>
       </div>
 
       <div id="pedidos-grid" class="pedido-grid"></div>
@@ -236,6 +237,12 @@
         <div class="sitio-btn" data-almacen="avitrans" onclick="seleccionarAlmacenPedido('avitrans')">Avitrans</div>
         <div class="sitio-btn" data-almacen="caserfri" onclick="seleccionarAlmacenPedido('caserfri')">Caserfri</div>
         <div class="sitio-btn" data-almacen="txt" onclick="seleccionarAlmacenPedido('txt')">Txt</div>
+      </div>
+
+      <div class="field" style="max-width:220px">
+        <label>¿Para que fecha es la recogida?</label>
+        <input type="date" id="pedido-fecha">
+        <span class="opt">Si es para mas adelante, no cuenta como pendiente hasta ese dia.</span>
       </div>
 
       <div class="sitio-elegir">2. Suelta el archivo (vale Excel o PDF)</div>

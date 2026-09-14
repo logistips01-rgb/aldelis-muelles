@@ -554,7 +554,8 @@ async function renderPaletsPT() {
   app.innerHTML = "<div class='card text-center'><div class='temp-icon' style='font-size:32px'>⏳</div><h2>Cargando pedidos...</h2></div>";
   try {
     const snap = await db.collection("pedidos_transferencia")
-      .where("almacen", "==", sel.nave).where("cerrado", "==", false).get();
+      .where("almacen", "==", sel.nave).where("cerrado", "==", false)
+      .where("activado", "==", true).get();
     _ptsAbiertos = [];
     snap.forEach(d => _ptsAbiertos.push({ id: d.id, ...d.data() }));
   } catch (e) {

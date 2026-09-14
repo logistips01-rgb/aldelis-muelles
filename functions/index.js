@@ -1146,13 +1146,52 @@ exports.notifChat = onDocumentCreated("mensajes/{msgId}", async (event) => {
 
 const ALMACENES_PT = ["avitrans", "caserfri", "txt"];
 
+// "YYYY-MM-DD" de hoy en la zona horaria de la empresa, para poder comparar
+// fechas como texto (ordenan igual que cronologicamente).
+function fechaHoyMadrid() {
+  return new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Madrid" });
+}
+
+// Un pedido con fecha futura (p.ej. metido hoy pero para recoger manana) no
+// debe sumar todavia al pendiente de hoy: se guarda con activado=false y lo
+// activa activarPedidosProgramados() en cuanto llega su fecha.
 exports.sumarPedidoTransferencia = onDocumentCreated("pedidos_transferencia/{id}", async (event) => {
   const d = event.data ? event.data.data() : null;
-  if (!d || !ALMACENES_PT.includes(d.almacen)) return;
+  if (!d || !ALMACENES_PT.includes(d.almacen) || !d.activado) return;
   await db.collection("almacenes_pendientes").doc(d.almacen).set({
     pedido: admin.firestore.FieldValue.increment(d.palets || 0)
   }, { merge: true });
 });
+
+// Cada dia activa los pedidos cuya fecha ya ha llegado (los de fecha futura
+// se quedan esperando). Corre varias veces al dia por si se entra un pedido
+// "para hoy" pasada la primera pasada del dia.
+exports.activarPedidosProgramados = onSchedule(
+  { schedule: "every 60 minutes", timeZone: "Europe/Madrid" },
+  async () => {
+    const hoy = fechaHoyMadrid();
+    let snap;
+    try {
+      snap = await db.collection("pedidos_transferencia")
+        .where("activado", "==", false).where("fecha", "<=", hoy).get();
+    } catch (e) { console.error("activarPedidosProgramados: consulta:", e.message); return; }
+
+    for (const doc of snap.docs) {
+      const d = doc.data();
+      if (!ALMACENES_PT.includes(d.almacen)) continue;
+      try {
+        await db.runTransaction(async (tx) => {
+          const fresh = await tx.get(doc.ref);
+          if (!fresh.exists || fresh.data().activado) return;
+          tx.update(doc.ref, { activado: true });
+          tx.set(db.collection("almacenes_pendientes").doc(d.almacen), {
+            pedido: admin.firestore.FieldValue.increment(d.palets || 0)
+          }, { merge: true });
+        });
+      } catch (e) { console.error("activarPedidosProgramados: activar:", doc.id, e.message); }
+    }
+  }
+);
 
 exports.restarRecogidaPalets = onDocumentCreated("recogidas_palets/{id}", async (event) => {
   const d = event.data ? event.data.data() : null;
@@ -1280,13 +1319,16 @@ async function contarPaletsPdf(buffer) {
   return { palets: ssccs.length, lineas: ssccs.map(sscc => ({ sscc })), pt: ptMatch ? ptMatch[0] : null };
 }
 
-async function crearPedidoTransferencia(pt, almacen, resultado, origen) {
+async function crearPedidoTransferencia(pt, almacen, resultado, origen, fecha) {
   if (!resultado.palets) return;
+  const hoy = fechaHoyMadrid();
+  const fechaFinal = (fecha && /^\d{4}-\d{2}-\d{2}$/.test(fecha)) ? fecha : hoy;
   const ref = db.collection("pedidos_transferencia").doc(pt);
   try {
     await ref.create({
       almacen, palets: resultado.palets, recogido: 0, cerrado: false,
       lineas: resultado.lineas || [], origen,
+      fecha: fechaFinal, activado: fechaFinal <= hoy,
       creado: admin.firestore.Timestamp.now()
     });
   } catch (e) {
@@ -1314,6 +1356,7 @@ exports.procesarPedidoTransferencia = functions.https.onCall(async (request, con
   const almacen = data.almacen;
   const nombreArchivo = String(data.nombreArchivo || "");
   const contenidoBase64 = data.contenidoBase64;
+  const fecha = data.fecha;
   if (!ALMACENES_PT.includes(almacen)) return { ok: false, error: "Almacen no valido" };
   if (typeof contenidoBase64 !== "string" || !contenidoBase64) return { ok: false, error: "Falta el archivo" };
   if (contenidoBase64.length > 15 * 1024 * 1024) return { ok: false, error: "Archivo demasiado grande" };
@@ -1341,7 +1384,7 @@ exports.procesarPedidoTransferencia = functions.https.onCall(async (request, con
     || ("SINPT-" + Date.now().toString(36).toUpperCase());
 
   try {
-    await crearPedidoTransferencia(pt, almacen, resultado, "manual");
+    await crearPedidoTransferencia(pt, almacen, resultado, "manual", fecha);
   } catch (e) {
     console.error("procesarPedidoTransferencia: guardar:", e.message);
     return { ok: false, error: "No se pudo guardar el pedido" };
@@ -1378,13 +1421,42 @@ exports.registrarPedidoEnvases = functions.https.onCall(async (request, context)
 
   const pt = "ENV-" + Date.now().toString(36).toUpperCase();
   try {
-    await crearPedidoTransferencia(pt, almacen, { palets: total, lineas: [] }, "manual-envases");
+    await crearPedidoTransferencia(pt, almacen, { palets: total, lineas: [] }, "manual-envases", data.fecha);
   } catch (e) {
     console.error("registrarPedidoEnvases: guardar:", e.message);
     return { ok: false, error: "No se pudo guardar el pedido" };
   }
 
   return { ok: true, pt, palets: total };
+});
+
+// TEMPORAL, para las pruebas: borra todos los pedidos y recogidas, y deja
+// los saldos de los 3 almacenes a cero. Solo el admin puede llamarlo.
+// Quitar esta funcion y su boton en el panel cuando se termine de probar.
+exports.resetPedidosPendientes = functions.https.onCall(async (request, context) => {
+  const esV2 = !!(request && typeof request === "object" && request.data !== undefined);
+  const ctx  = esV2 ? request : (context || {});
+  if (!ctx.app) return { ok: false, error: "No autorizado" };
+  const email = (ctx.auth && ctx.auth.token && ctx.auth.token.email || "").toLowerCase();
+  if (!ADMINS_APP.includes(email)) return { ok: false, error: "Solo el admin puede resetear" };
+
+  for (const nombre of ["pedidos_transferencia", "recogidas_palets"]) {
+    const snap = await db.collection(nombre).get();
+    let batch = db.batch();
+    let n = 0;
+    for (const doc of snap.docs) {
+      batch.delete(doc.ref);
+      n++;
+      if (n === 450) { await batch.commit(); batch = db.batch(); n = 0; }
+    }
+    if (n) await batch.commit();
+  }
+
+  const batchSaldos = db.batch();
+  ALMACENES_PT.forEach(a => batchSaldos.set(db.collection("almacenes_pendientes").doc(a), { pedido: 0, recogido: 0 }));
+  await batchSaldos.commit();
+
+  return { ok: true };
 });
 
 exports.revisarCorreoPedidos = onSchedule(
