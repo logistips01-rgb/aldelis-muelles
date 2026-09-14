@@ -1288,31 +1288,53 @@ function detectarAlmacenPorDestinatarios(msg) {
   return null;
 }
 
+// El documento de control de transporte trae su propio campo "Origen" con
+// el almacen de verdad (visto en un PDF real: "CASERFRI"), mucho mas fiable
+// que adivinar por el dominio del correo. Se usa siempre que este presente.
+function normalizarAlmacen(valor) {
+  const v = String(valor || "").trim().toUpperCase();
+  if (v === "AVITRANS") return "avitrans";
+  if (v === "CASERFRI") return "caserfri";
+  if (v === "TXT") return "txt";
+  return null;
+}
+
 // Cada fila con SSCC es un palet. Busca la columna "SSCC" en la primera fila
 // que la tenga (por si el archivo trae cabeceras u otras filas antes) y
-// cuenta valores distintos en esa columna.
+// cuenta valores distintos en esa columna. Si tambien hay una columna
+// "Origen", se toma el almacen de ahi.
 function contarPaletsExcel(buffer) {
   const XLSX = require("xlsx");
   const wb = XLSX.read(buffer, { type: "buffer" });
   const ws = wb.Sheets[wb.SheetNames[0]];
   const filas = XLSX.utils.sheet_to_json(ws, { header: 1 });
-  let colSscc = -1, inicio = 0;
+  let colSscc = -1, colOrigen = -1, inicio = 0;
   for (let i = 0; i < filas.length; i++) {
-    const idx = (filas[i] || []).findIndex(c => String(c || "").toUpperCase().trim() === "SSCC");
-    if (idx !== -1) { colSscc = idx; inicio = i + 1; break; }
+    const fila = filas[i] || [];
+    const idxSscc = fila.findIndex(c => String(c || "").toUpperCase().trim() === "SSCC");
+    const idxOrigen = fila.findIndex(c => String(c || "").toUpperCase().trim() === "ORIGEN");
+    if (idxOrigen !== -1) colOrigen = idxOrigen;
+    if (idxSscc !== -1) { colSscc = idxSscc; inicio = i + 1; break; }
   }
   if (colSscc === -1) return { palets: 0, lineas: [] };
   const ssccs = new Set();
+  let almacenDetectado = null;
   for (let i = inicio; i < filas.length; i++) {
-    const v = (filas[i] || [])[colSscc];
+    const fila = filas[i] || [];
+    const v = fila[colSscc];
     if (v) ssccs.add(String(v).trim());
+    if (!almacenDetectado && colOrigen !== -1 && fila[colOrigen]) {
+      almacenDetectado = normalizarAlmacen(fila[colOrigen]);
+    }
   }
-  return { palets: ssccs.size, lineas: [...ssccs].map(sscc => ({ sscc })) };
+  return { palets: ssccs.size, lineas: [...ssccs].map(sscc => ({ sscc })), almacenDetectado };
 }
 
 // El PDF no trae columnas fiables al extraer el texto, pero el SSCC son
 // siempre 18 digitos seguidos: contar esos patrones (sin repetir) da el
-// numero de palets sin depender del formato exacto de la plantilla.
+// numero de palets sin depender del formato exacto de la plantilla. El
+// texto SI conserva el orden visual de la cabecera "Origen ... " seguida de
+// la fila de datos, asi que el almacen se saca de ahi.
 async function contarPaletsPdf(buffer) {
   const { PDFParse } = require("pdf-parse");
   const parser = new PDFParse({ data: buffer });
@@ -1325,7 +1347,13 @@ async function contarPaletsPdf(buffer) {
   }
   const ssccs = [...new Set(texto.match(/\b\d{18}\b/g) || [])];
   const ptMatch = texto.match(/PT\d{6}/);
-  return { palets: ssccs.length, lineas: ssccs.map(sscc => ({ sscc })), pt: ptMatch ? ptMatch[0] : null };
+  const origenMatch = texto.match(/Origen\b[^\n]*\n([A-ZÁÉÍÓÚÑ]+)\b/);
+  return {
+    palets: ssccs.length,
+    lineas: ssccs.map(sscc => ({ sscc })),
+    pt: ptMatch ? ptMatch[0] : null,
+    almacenDetectado: origenMatch ? normalizarAlmacen(origenMatch[1]) : null
+  };
 }
 
 async function crearPedidoTransferencia(pt, almacen, resultado, origen, fecha) {
@@ -1392,14 +1420,18 @@ exports.procesarPedidoTransferencia = functions.https.onCall(async (request, con
     || (nombreArchivo.match(/PT\d{6}/) || [])[0]
     || ("SINPT-" + Date.now().toString(36).toUpperCase());
 
+  // El "Origen" del propio documento manda sobre el almacen elegido a mano
+  // en el boton: es un dato real del pedido, no una suposicion.
+  const almacenFinal = resultado.almacenDetectado || almacen;
+
   try {
-    await crearPedidoTransferencia(pt, almacen, resultado, "manual", fecha);
+    await crearPedidoTransferencia(pt, almacenFinal, resultado, "manual", fecha);
   } catch (e) {
     console.error("procesarPedidoTransferencia: guardar:", e.message);
     return { ok: false, error: "No se pudo guardar el pedido" };
   }
 
-  return { ok: true, pt, palets: resultado.palets };
+  return { ok: true, pt, palets: resultado.palets, almacen: almacenFinal, detectado: !!resultado.almacenDetectado };
 });
 
 // Pedidos de envases (IFCO, europool, logifruit, palet, chep...) que llegan
@@ -1538,13 +1570,6 @@ exports.revisarCorreoPedidos = onSchedule(
       try {
         if (!msg.hasAttachments) { await graphMarcarLeido(token, msg.id); continue; }
 
-        const almacen = detectarAlmacenPorDestinatarios(msg);
-        if (!almacen) {
-          console.log("revisarCorreoPedidos: sin almacen reconocido en", msg.subject);
-          await graphMarcarLeido(token, msg.id);
-          continue;
-        }
-
         const adjuntos = await graphGet(token,
           "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS + "/messages/" + msg.id + "/attachments");
         const conContenido = (adjuntos.value || []).filter(a => a.contentBytes);
@@ -1555,6 +1580,16 @@ exports.revisarCorreoPedidos = onSchedule(
 
         const buffer = Buffer.from(elegido.contentBytes, "base64");
         const resultado = elegido === excel ? contarPaletsExcel(buffer) : await contarPaletsPdf(buffer);
+
+        // El "Origen" del propio documento manda; el dominio del correo
+        // (Para/CC) queda solo como reserva si el documento no lo trae.
+        const almacen = resultado.almacenDetectado || detectarAlmacenPorDestinatarios(msg);
+        if (!almacen) {
+          console.log("revisarCorreoPedidos: sin almacen reconocido en", msg.subject);
+          await graphMarcarLeido(token, msg.id);
+          continue;
+        }
+
         const pt = (resultado.pt)
           || (elegido.name.match(/PT\d{6}/) || [])[0]
           || ((msg.subject || "").match(/PT\d{6}/) || [])[0]

@@ -1059,7 +1059,11 @@ function subirArchivoPedido(file) {
       const fn = firebase.functions().httpsCallable("procesarPedidoTransferencia", { timeout: 60000 });
       const res = await fn({ almacen: _almacenSubidaSel, nombreArchivo: file.name, contenidoBase64: base64, fecha: fechaPedidoSel() });
       if (res.data && res.data.ok) {
-        estadoPedido("Añadido " + res.data.pt + ": " + res.data.palets + " palets.", "ok");
+        const almacenNombre = (ALMACENES_PEDIDOS.find(a => a.id === res.data.almacen) || {}).nombre || res.data.almacen;
+        const aviso = (res.data.detectado && res.data.almacen !== _almacenSubidaSel)
+          ? " (el documento indica " + almacenNombre + ", se ha usado ese en vez del boton elegido)"
+          : "";
+        estadoPedido("Añadido " + res.data.pt + ": " + res.data.palets + " palets." + aviso, "ok");
       } else {
         estadoPedido((res.data && res.data.error) || "No se pudo procesar el archivo.", "err");
       }
