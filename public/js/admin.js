@@ -895,6 +895,20 @@ function fechaPedidoSel() {
   return (in_ && in_.value) || new Date().toLocaleDateString("sv-SE");
 }
 
+// El contador de saldos (almacenes_pendientes) se va sumando/restando con
+// cada pedido y cada recogida: si alguna vez se queda descuadrado (p.ej.
+// tras corregir algo a mano en la consola de Firestore) esto lo recalcula
+// desde cero sumando los pedidos reales, sin borrar ni tocar ningun pedido.
+function recalcularSaldosPedidos() {
+  estadoPedido("Recalculando...");
+  firebase.functions().httpsCallable("recalcularAlmacenesPendientes")()
+    .then(res => {
+      if (res.data && res.data.ok) estadoPedido("Saldos recalculados.", "ok");
+      else estadoPedido((res.data && res.data.error) || "No se pudo recalcular.", "err");
+    })
+    .catch(e => { console.error("recalcularSaldosPedidos:", e); estadoPedido("No se pudo recalcular.", "err"); });
+}
+
 // TEMPORAL, para las pruebas del modulo: borra pedidos, recogidas y deja los
 // saldos a cero. Quitar este boton y la funcion del servidor cuando se
 // termine de probar.

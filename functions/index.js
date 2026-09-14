@@ -1459,6 +1459,36 @@ exports.resetPedidosPendientes = functions.https.onCall(async (request, context)
   return { ok: true };
 });
 
+// almacenes_pendientes es un contador que se va sumando/restando con cada
+// pedido y cada recogida: si alguna vez queda descuadrado (p.ej. por una
+// correccion a mano en la consola, como paso con el 47->25 de un almacen
+// equivocado) esto lo recalcula desde cero sumando los pedidos_transferencia
+// activados de verdad, sin borrar ni tocar ningun pedido. Solo el admin.
+exports.recalcularAlmacenesPendientes = functions.https.onCall(async (request, context) => {
+  const esV2 = !!(request && typeof request === "object" && request.data !== undefined);
+  const ctx  = esV2 ? request : (context || {});
+  if (!ctx.app) return { ok: false, error: "No autorizado" };
+  const email = (ctx.auth && ctx.auth.token && ctx.auth.token.email || "").toLowerCase();
+  if (!ADMINS_APP.includes(email)) return { ok: false, error: "Solo el admin puede recalcular" };
+
+  const sumas = {};
+  ALMACENES_PT.forEach(a => { sumas[a] = { pedido: 0, recogido: 0 }; });
+
+  const snap = await db.collection("pedidos_transferencia").where("activado", "==", true).get();
+  snap.forEach(doc => {
+    const d = doc.data();
+    if (!ALMACENES_PT.includes(d.almacen)) return;
+    sumas[d.almacen].pedido   += d.palets   || 0;
+    sumas[d.almacen].recogido += d.recogido || 0;
+  });
+
+  const batch = db.batch();
+  ALMACENES_PT.forEach(a => batch.set(db.collection("almacenes_pendientes").doc(a), sumas[a]));
+  await batch.commit();
+
+  return { ok: true, sumas };
+});
+
 exports.revisarCorreoPedidos = onSchedule(
   { schedule: "every 10 minutes", timeZone: "Europe/Madrid" },
   async () => {

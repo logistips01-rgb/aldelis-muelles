@@ -224,7 +224,10 @@
     <div id="vista-pedidos" class="reservas-wrap" style="display:none">
       <div class="informe-header">
         <div class="section-title" style="margin-bottom:0">Palets pendientes por recoger</div>
-        <button class="btn-ghost" style="width:auto;padding:6px 14px;color:#D41F3A;border-color:#F5C0C8" onclick="resetPedidosPruebas()">🧪 Reset (pruebas)</button>
+        <div style="display:flex;gap:8px">
+          <button class="btn-ghost" style="width:auto;padding:6px 14px" onclick="recalcularSaldosPedidos()">🔄 Recalcular saldos</button>
+          <button class="btn-ghost" style="width:auto;padding:6px 14px;color:#D41F3A;border-color:#F5C0C8" onclick="resetPedidosPruebas()">🧪 Reset (pruebas)</button>
+        </div>
       </div>
 
       <div id="pedidos-grid" class="pedido-grid"></div>
