@@ -366,6 +366,15 @@
 .pedido-estado { font-size: 13px; margin-top: 10px; min-height: 18px; }
 .pedido-estado.ok { color: #1D9E75; font-weight: 600; }
 .pedido-estado.err { color: #D41F3A; font-weight: 600; }
+
+.pt-admin-grupo { margin-bottom: 16px; }
+.pt-admin-tit { font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: #6B7280; margin: 0 0 6px; }
+.pt-admin-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: #fff; border: 1px solid #E5E7EB; border-radius: 10px; padding: 10px 14px; margin-bottom: 6px; cursor: pointer; transition: border-color .12s; }
+.pt-admin-row:hover { border-color: #D41F3A; }
+.pt-admin-codigo { font-weight: 600; font-size: 13.5px; color: #1A1A1A; }
+.pt-admin-origen { font-size: 11px; color: #9CA3AF; margin-left: 8px; }
+.pt-admin-pend { font-size: 13px; font-weight: 700; color: #D41F3A; white-space: nowrap; }
+.pt-admin-vacio { font-size: 13px; color: #9CA3AF; padding: 6px 0 18px; }
 .btn-excel { background: #1D9E75; color: #fff; border: none; border-radius: 20px; padding: 8px 16px; font-size: 13px; font-weight: 500; font-family: 'Inter', sans-serif; cursor: pointer; transition: background 0.12s ease; }
 .btn-excel:hover { background: #178a64; }
 .informe-metricas { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
@@ -658,6 +667,10 @@ body.dark .sitio-btn.sel { border-color: #D41F3A; background: #2A1015; color: #F
 body.dark .drop-zone { background: #1B1B1F; border-color: #3C3C42; color: #888F9B; }
 body.dark .drop-zone b { color: #E8E8EA; }
 body.dark .drop-zone.sobre { border-color: #D41F3A; background: #2A1015; }
+body.dark .pt-admin-tit { color: #888F9B; }
+body.dark .pt-admin-row { background: #1B1B1F; border-color: #3C3C42; }
+body.dark .pt-admin-codigo { color: #E8E8EA; }
+body.dark .pt-admin-vacio { color: #7A8494; }
 
 /* SUB-PESTAÑAS Y MAPA */
 body.dark .lanz-subtab { border-color: #3C3C42; color: #888F9B; }

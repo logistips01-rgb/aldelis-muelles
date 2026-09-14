@@ -228,7 +228,10 @@
 
       <div id="pedidos-grid" class="pedido-grid"></div>
 
-      <div class="sitio-elegir">1. ¿Para que almacen es este pedido?</div>
+      <div class="section-title" style="margin-top:24px">Pedidos pendientes de recoger</div>
+      <div id="pedidos-lista"></div>
+
+      <div class="sitio-elegir" style="margin-top:24px">1. ¿Para que almacen es este pedido?</div>
       <div class="sitio-btns">
         <div class="sitio-btn" data-almacen="avitrans" onclick="seleccionarAlmacenPedido('avitrans')">Avitrans</div>
         <div class="sitio-btn" data-almacen="caserfri" onclick="seleccionarAlmacenPedido('caserfri')">Caserfri</div>
@@ -450,6 +453,19 @@
       <div class="modal-body">
         <div id="cd-datos" class="resumen"></div>
         <div id="cd-acciones" style="margin-top:16px"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="pt-detalle-modal" class="modal-overlay" style="display:none" onclick="cerrarPtDetalle(event)">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div><div class="modal-title" id="ptd-titulo">Pedido</div><div class="modal-sub" id="ptd-sub"></div></div>
+        <button class="close-btn" onclick="cerrarPtDetalle()">x</button>
+      </div>
+      <div class="modal-body">
+        <div id="ptd-datos" class="resumen"></div>
+        <div id="ptd-lineas" style="margin-top:14px"></div>
       </div>
     </div>
   </div>

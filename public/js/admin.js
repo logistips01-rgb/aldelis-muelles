@@ -387,6 +387,13 @@ function iniciarListeners() {
       s.forEach(d => { window._almacenesPend[d.id] = d.data(); });
       renderPedidosCards();
     }, e => console.error("almacenes_pendientes:", e)));
+
+    // Pedidos (PT) todavia abiertos, para poder listarlos y ver su contenido.
+    _unsubs.push(db.collection("pedidos_transferencia").where("cerrado", "==", false).onSnapshot(s => {
+      window._ptsAbiertosAdmin = [];
+      s.forEach(d => window._ptsAbiertosAdmin.push({ id: d.id, ...d.data() }));
+      renderPedidosLista();
+    }, e => console.error("pedidos_transferencia:", e)));
   }
 
   if (_perms.incidencias) {
@@ -877,6 +884,7 @@ let _dropZonePedidosInit = false;
 
 function cargarPedidos() {
   renderPedidosCards();
+  renderPedidosLista();
   if (!_dropZonePedidosInit) { initDropZonePedidos(); _dropZonePedidosInit = true; }
 }
 
@@ -901,6 +909,69 @@ function renderPedidosCards() {
       "<span>Recogido: <b class='tnum'>" + recogido + "</b></span></div>" +
       "</div>";
   }).join("");
+}
+
+function origenPedidoLabel(o) {
+  if (o === "email") return "por correo";
+  if (o === "manual-envases") return "envases";
+  return "manual";
+}
+
+function renderPedidosLista() {
+  const cont = document.getElementById("pedidos-lista");
+  if (!cont) return;
+  const pts = window._ptsAbiertosAdmin || [];
+  if (!pts.length) { cont.innerHTML = "<div class='pt-admin-vacio'>No hay pedidos pendientes de recoger.</div>"; return; }
+
+  const porAlmacen = {};
+  pts.forEach(p => { (porAlmacen[p.almacen] = porAlmacen[p.almacen] || []).push(p); });
+
+  cont.innerHTML = ALMACENES_PEDIDOS.map(a => {
+    const lista = (porAlmacen[a.id] || []).sort((x, y) =>
+      (y.creado && y.creado.toMillis ? y.creado.toMillis() : 0) - (x.creado && x.creado.toMillis ? x.creado.toMillis() : 0));
+    if (!lista.length) return "";
+    return "<div class='pt-admin-grupo'>" +
+      "<div class='pt-admin-tit'>" + esc(a.nombre) + "</div>" +
+      lista.map(p => {
+        const pendiente = Math.max((p.palets || 0) - (p.recogido || 0), 0);
+        return "<div class='pt-admin-row' onclick=\"abrirPtDetalle('" + p.id + "')\">" +
+          "<span><span class='pt-admin-codigo'>" + esc(p.id) + "</span>" +
+          "<span class='pt-admin-origen'>" + esc(origenPedidoLabel(p.origen)) + "</span></span>" +
+          "<span class='pt-admin-pend tnum'>" + pendiente + " pend.</span>" +
+          "</div>";
+      }).join("") +
+      "</div>";
+  }).join("");
+}
+
+function abrirPtDetalle(id) {
+  const p = (window._ptsAbiertosAdmin || []).find(x => x.id === id);
+  if (!p) return;
+  const almacen = ALMACENES_PEDIDOS.find(a => a.id === p.almacen);
+  const pendiente = Math.max((p.palets || 0) - (p.recogido || 0), 0);
+
+  document.getElementById("ptd-titulo").textContent = id;
+  document.getElementById("ptd-sub").textContent = (almacen ? almacen.nombre : p.almacen) + " · " + origenPedidoLabel(p.origen);
+  document.getElementById("ptd-datos").innerHTML =
+    "<div class='resumen-row'><span class='resumen-label'>Palets del pedido</span><span class='resumen-value tnum'>" + (p.palets || 0) + "</span></div>" +
+    "<div class='resumen-row'><span class='resumen-label'>Recogidos</span><span class='resumen-value tnum'>" + (p.recogido || 0) + "</span></div>" +
+    "<div class='resumen-row'><span class='resumen-label'>Pendientes</span><span class='resumen-value tnum'>" + pendiente + "</span></div>";
+
+  const lineas = p.lineas || [];
+  const lineasEl = document.getElementById("ptd-lineas");
+  if (lineas.length) {
+    lineasEl.innerHTML = "<div class='pt-admin-tit'>Contenido (" + lineas.length + " SSCC)</div>" +
+      "<div style='max-height:220px;overflow-y:auto'>" +
+      lineas.map(l => "<div class='pt-admin-row' style='cursor:default'><span class='tnum'>" + esc(l.sscc || "") + "</span></div>").join("") +
+      "</div>";
+  } else {
+    lineasEl.innerHTML = "<p class='card-desc'>Pedido de envases sin lineas SSCC: el total es por huecos de camion, no por bulto.</p>";
+  }
+  document.getElementById("pt-detalle-modal").style.display = "flex";
+}
+
+function cerrarPtDetalle(e) {
+  if (!e || e.target.id === "pt-detalle-modal") document.getElementById("pt-detalle-modal").style.display = "none";
 }
 
 function seleccionarAlmacenPedido(id) {
