@@ -566,32 +566,40 @@ async function renderPaletsPT() {
 }
 
 function pintarPaletsPT() {
-  // Sin casilla: un pedido cuenta si le pones un numero mayor que 0, y
-  // empieza en 0 (no en el total pendiente) para que el chofer siempre tenga
-  // que escribir a proposito cuanto se lleva de cada uno. Asi el campo de
-  // "Otros" no puede solaparse con un pedido que ya esta en la lista.
+  // El numero de palets solo se puede tocar si el pedido esta marcado: asi
+  // no se puede restar nada que no vaya contra un pedido real (antes existia
+  // un campo "Otros" para eso, y acababa restando del pendiente aunque no
+  // correspondiera a ningun pedido).
   const filas = _ptsAbiertos.map(p => {
     const pendiente = Math.max((p.palets || 0) - (p.recogido || 0), 0);
     return "<div class='pt-fila'>" +
-      "<div class='pt-check'><b>" + escTexto(p.id) + "</b> <span class='pt-pend'>(" + pendiente + " pendientes)</span></div>" +
-      "<input type='number' class='pt-num' data-pt='" + p.id + "' min='0' max='" + pendiente + "' value='0' placeholder='0'>" +
+      "<label class='pt-check'><input type='checkbox' class='pt-chk' data-pt='" + p.id + "' onchange='togglePtNum(this)'> " +
+      "<b>" + escTexto(p.id) + "</b> <span class='pt-pend'>(" + pendiente + " pendientes)</span></label>" +
+      "<input type='number' class='pt-num' data-pt='" + p.id + "' min='1' max='" + pendiente + "' value='" + pendiente + "' disabled>" +
       "</div>";
   }).join("");
 
   app.innerHTML =
     "<div class='card'>" + cabecera() +
     "<h2>¿Que te llevas?</h2>" +
-    "<p class='card-desc'>Escribe cuantos palets te llevas de cada pedido de " + escTexto(NOMBRE_NAVE[sel.nave] || sel.nave) +
-    ". Deja en 0 los que no recoges hoy.</p>" +
+    "<p class='card-desc'>Marca los pedidos que recoges en " + escTexto(NOMBRE_NAVE[sel.nave] || sel.nave) +
+    " y cuantos palets de cada uno. Si no cargaste todo, cambia el numero.</p>" +
     (_ptsAbiertos.length
       ? "<div id='pt-lista'>" + filas + "</div>"
       : "<p class='card-desc'>No hay pedidos pendientes registrados aqui.</p>") +
-    "<div class='field'><label>Otros palets, SIN pedido en la lista de arriba <span class='opt'>(opcional)</span></label>" +
-    "<input type='number' id='pt-otros' min='0' value='0'></div>" +
     "<div id='pt-error' style='color:#D41F3A;font-size:13px;margin-bottom:10px;display:none'></div>" +
     "<button class='btn-primary' id='pt-continuar' style='width:100%' onclick='confirmarPaletsPT()'>Continuar</button>" +
     "<button class='btn-back' style='width:100%;margin-top:8px' onclick='render()'>&#8592; Atras</button>" +
     "</div>";
+}
+
+// El numero solo se puede editar si el pedido esta marcado; al desmarcar se
+// vuelve a bloquear para que no quede un numero suelto sin marcar.
+function togglePtNum(chk) {
+  const numInp = document.querySelector(".pt-num[data-pt='" + chk.dataset.pt + "']");
+  if (!numInp) return;
+  numInp.disabled = !chk.checked;
+  if (chk.checked) numInp.focus();
 }
 
 // Evita que un doble toque (tipico con poca cobertura en el almacen, donde el
@@ -603,16 +611,16 @@ async function confirmarPaletsPT() {
   if (_enviandoPT) return;
   const pts = [];
   let total = 0;
-  document.querySelectorAll(".pt-num").forEach(numInp => {
+  document.querySelectorAll(".pt-chk").forEach(chk => {
+    if (!chk.checked) return;
+    const pt = chk.dataset.pt;
+    const numInp = document.querySelector(".pt-num[data-pt='" + pt + "']");
     const n = parseInt(numInp.value, 10);
-    if (n > 0) { pts.push({ pt: numInp.dataset.pt, palets: n }); total += n; }
+    if (n > 0) { pts.push({ pt: pt, palets: n }); total += n; }
   });
-  const otrosInp = document.getElementById("pt-otros");
-  const otros = otrosInp ? (parseInt(otrosInp.value, 10) || 0) : 0;
-  total += otros;
 
   const err = document.getElementById("pt-error");
-  if (total <= 0) { err.textContent = "Indica al menos un palet."; err.style.display = "block"; return; }
+  if (total <= 0) { err.textContent = "Marca al menos un pedido."; err.style.display = "block"; return; }
 
   _enviandoPT = true;
   const btn = document.getElementById("pt-continuar");
