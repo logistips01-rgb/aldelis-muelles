@@ -1350,6 +1350,43 @@ exports.procesarPedidoTransferencia = functions.https.onCall(async (request, con
   return { ok: true, pt, palets: resultado.palets };
 });
 
+// Pedidos de envases (IFCO, europool, logifruit, palet, chep...) que llegan
+// solo por correo, con la tabla en el propio cuerpo del mensaje y sin ningun
+// archivo adjunto que se pueda procesar. Se registran a mano desde el panel:
+// el europool va remontado (dos unidades por hueco de camion), el resto
+// cuenta 1 a 1. Se guarda como un pedido_transferencia mas, con un codigo
+// sintetico, para que sume igual en almacenes_pendientes y el chofer pueda
+// marcarlo como cualquier otro PT al recogerlo.
+exports.registrarPedidoEnvases = functions.https.onCall(async (request, context) => {
+  const esV2 = !!(request && typeof request === "object" && request.data !== undefined);
+  const data = esV2 ? request.data : request;
+  const ctx  = esV2 ? request : (context || {});
+
+  if (!ctx.app) return { ok: false, error: "No autorizado" };
+  const email = (ctx.auth && ctx.auth.token && ctx.auth.token.email || "").toLowerCase();
+  if (!email || !(await puedeSeccion(email, "lanzaderas"))) return { ok: false, error: "Sin permiso" };
+
+  if (!data || typeof data !== "object") return { ok: false, error: "Faltan datos" };
+  const almacen = data.almacen;
+  const normal = Number(data.normal) || 0;
+  const europool = Number(data.europool) || 0;
+  if (!ALMACENES_PT.includes(almacen)) return { ok: false, error: "Almacen no valido" };
+  if (normal < 0 || europool < 0) return { ok: false, error: "Cantidad no valida" };
+
+  const total = normal + Math.ceil(europool / 2);
+  if (!total) return { ok: false, error: "Pon al menos una cantidad" };
+
+  const pt = "ENV-" + Date.now().toString(36).toUpperCase();
+  try {
+    await crearPedidoTransferencia(pt, almacen, { palets: total, lineas: [] }, "manual-envases");
+  } catch (e) {
+    console.error("registrarPedidoEnvases: guardar:", e.message);
+    return { ok: false, error: "No se pudo guardar el pedido" };
+  }
+
+  return { ok: true, pt, palets: total };
+});
+
 exports.revisarCorreoPedidos = onSchedule(
   { schedule: "every 10 minutes", timeZone: "Europe/Madrid" },
   async () => {

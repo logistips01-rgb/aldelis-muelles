@@ -961,6 +961,31 @@ function subirArchivoPedido(file) {
   reader.readAsDataURL(file);
 }
 
+// Pedidos que llegan solo por correo, sin archivo adjunto (texto/tabla en el
+// cuerpo): en vez de intentar leer una captura de pantalla, se meten los dos
+// totales a mano y el servidor hace la cuenta (europool va remontado, cuenta
+// como medio hueco cada uno).
+function enviarPedidoEnvases() {
+  if (!_almacenSubidaSel) { estadoPedido("Elige antes a que almacen corresponde.", "err"); return; }
+  const inNormal = document.getElementById("pedido-envases-normal");
+  const inEuropool = document.getElementById("pedido-envases-europool");
+  const normal = parseInt(inNormal.value, 10) || 0;
+  const europool = parseInt(inEuropool.value, 10) || 0;
+  if (normal <= 0 && europool <= 0) { estadoPedido("Pon al menos una cantidad.", "err"); return; }
+
+  estadoPedido("Guardando pedido de envases...");
+  firebase.functions().httpsCallable("registrarPedidoEnvases")({ almacen: _almacenSubidaSel, normal, europool })
+    .then(res => {
+      if (res.data && res.data.ok) {
+        estadoPedido("Anadido " + res.data.pt + ": " + res.data.palets + " huecos de camion.", "ok");
+        inNormal.value = ""; inEuropool.value = "";
+      } else {
+        estadoPedido((res.data && res.data.error) || "No se pudo guardar el pedido.", "err");
+      }
+    })
+    .catch(e => { console.error("enviarPedidoEnvases:", e); estadoPedido("No se pudo guardar el pedido.", "err"); });
+}
+
 function cargarLanzaderas() {
   const fecha = document.getElementById("fecha-dashboard").value;
   const dayStart = new Date(fecha + "T00:00:00").getTime();

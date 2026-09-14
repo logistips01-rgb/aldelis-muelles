@@ -244,6 +244,19 @@
       </div>
       <input type="file" id="pedido-file-input" accept=".xlsx,.xls,.pdf" style="display:none">
       <div id="pedido-estado" class="pedido-estado"></div>
+
+      <div class="sitio-elegir">3. O registra un pedido de envases (sin archivo, por correo)</div>
+      <div class="field-row">
+        <div class="field">
+          <label>Envases normales <span class="opt">(huecos de camion, 1 a 1)</span></label>
+          <input type="number" id="pedido-envases-normal" min="0" step="1" placeholder="0">
+        </div>
+        <div class="field">
+          <label>Europool <span class="opt">(remontados, se dividen entre 2)</span></label>
+          <input type="number" id="pedido-envases-europool" min="0" step="1" placeholder="0">
+        </div>
+      </div>
+      <button class="btn-primary" style="width:auto;padding:9px 20px" onclick="enviarPedidoEnvases()">Anadir pedido de envases</button>
     </div>
 
     <div id="vista-cargas" class="reservas-wrap" style="display:none">
