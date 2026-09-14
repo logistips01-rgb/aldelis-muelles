@@ -1489,6 +1489,25 @@ exports.recalcularAlmacenesPendientes = functions.https.onCall(async (request, c
   return { ok: true, sumas };
 });
 
+// Un correo que llega a partir de las 15:00 ya no da tiempo a organizarlo
+// para hoy, asi que cuenta como pedido de mañana. Se mira la hora real de
+// llegada del correo (no la hora en que se procesa, que puede ir 10 min
+// por detras), en la zona horaria de la empresa.
+function fechaPedidoParaCorreo(receivedDateTime) {
+  const recibido = receivedDateTime ? new Date(receivedDateTime) : new Date();
+  const fmt = new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Europe/Madrid", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hour12: false
+  });
+  const partes = fmt.formatToParts(recibido).reduce((o, p) => { o[p.type] = p.value; return o; }, {});
+  let fecha = partes.year + "-" + partes.month + "-" + partes.day;
+  if (Number(partes.hour) >= 15) {
+    const d = new Date(fecha + "T00:00:00Z");
+    d.setUTCDate(d.getUTCDate() + 1);
+    fecha = d.toISOString().slice(0, 10);
+  }
+  return fecha;
+}
+
 exports.revisarCorreoPedidos = onSchedule(
   { schedule: "every 10 minutes", timeZone: "Europe/Madrid" },
   async () => {
@@ -1503,7 +1522,7 @@ exports.revisarCorreoPedidos = onSchedule(
       data = await graphGet(token,
         "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS +
         "/mailFolders/inbox/messages?$filter=isRead eq false&$top=25" +
-        "&$select=id,subject,toRecipients,ccRecipients,hasAttachments");
+        "&$select=id,subject,toRecipients,ccRecipients,hasAttachments,receivedDateTime");
     } catch (e) { console.error("revisarCorreoPedidos: listar mensajes:", e.message); return; }
 
     for (const msg of (data.value || [])) {
@@ -1532,7 +1551,7 @@ exports.revisarCorreoPedidos = onSchedule(
           || ((msg.subject || "").match(/PT\d{6}/) || [])[0]
           || ("SINPT-" + msg.id.slice(-8));
 
-        await crearPedidoTransferencia(pt, almacen, resultado, "email");
+        await crearPedidoTransferencia(pt, almacen, resultado, "email", fechaPedidoParaCorreo(msg.receivedDateTime));
         await graphMarcarLeido(token, msg.id);
       } catch (e) {
         console.error("revisarCorreoPedidos: mensaje", msg.id, e.message);
