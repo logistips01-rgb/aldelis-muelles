@@ -585,12 +585,18 @@ function pintarPaletsPT() {
     "<div class='field'><label>Otros palets sin pedido asociado (opcional)</label>" +
     "<input type='number' id='pt-otros' min='0' value='0'></div>" +
     "<div id='pt-error' style='color:#D41F3A;font-size:13px;margin-bottom:10px;display:none'></div>" +
-    "<button class='btn-primary' style='width:100%' onclick='confirmarPaletsPT()'>Continuar</button>" +
+    "<button class='btn-primary' id='pt-continuar' style='width:100%' onclick='confirmarPaletsPT()'>Continuar</button>" +
     "<button class='btn-back' style='width:100%;margin-top:8px' onclick='render()'>&#8592; Atras</button>" +
     "</div>";
 }
 
+// Evita que un doble toque (tipico con poca cobertura en el almacen, donde el
+// primer toque parece no responder) mande la misma recogida dos veces: se
+// bloquea el boton nada mas pulsar y hasta que la escritura termine.
+let _enviandoPT = false;
+
 async function confirmarPaletsPT() {
+  if (_enviandoPT) return;
   const pts = [];
   let total = 0;
   document.querySelectorAll(".pt-chk").forEach(chk => {
@@ -607,6 +613,10 @@ async function confirmarPaletsPT() {
   const err = document.getElementById("pt-error");
   if (total <= 0) { err.textContent = "Indica al menos un palet."; err.style.display = "block"; return; }
 
+  _enviandoPT = true;
+  const btn = document.getElementById("pt-continuar");
+  if (btn) { btn.disabled = true; btn.textContent = "Guardando..."; }
+
   try {
     await db.collection("recogidas_palets").add({
       numero: sel.numero, almacen: sel.nave, palets: total, pts: pts,
@@ -615,6 +625,8 @@ async function confirmarPaletsPT() {
   } catch (e) {
     console.error("confirmarPaletsPT:", e);
     alert("No se pudo registrar la recogida. Reintenta.");
+    _enviandoPT = false;
+    if (btn) { btn.disabled = false; btn.textContent = "Continuar"; }
     return;
   }
   await continuarTrasSalir();
