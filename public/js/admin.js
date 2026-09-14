@@ -518,8 +518,7 @@ const SECCIONES = [
   { id: "bizerba",    label: "Incidencias Bizerba" },
   { id: "costes",     label: "Costes de lanzaderas" },
   { id: "chat",       label: "Chat con lanzaderas" },
-  { id: "config",     label: "Configuracion" },
-  { id: "ubicacion",  label: "Ubicacion de palets" }
+  { id: "config",     label: "Configuracion" }
 ];
 
 // Listas antiguas: se usan como valor por defecto mientras el usuario no
@@ -588,10 +587,7 @@ function calcularPermisos(emailRaw, secciones) {
     incidencias: s("bizerba"),
     costes:      s("costes"),
     bizerba:     s("bizerba"),
-    config:      s("config"),
-    // Modulo aparte (ubicacion.html), no una vista de este panel: solo hace
-    // falta saber si se muestra el enlace de la barra superior.
-    ubicacion:   s("ubicacion")
+    config:      s("config")
   };
 }
 
@@ -609,12 +605,6 @@ function aplicarRol() {
   // El chat solo si tiene permiso
   const fab = document.getElementById("chat-fab");
   if (fab && !_perms.mensajes) fab.style.display = "none";
-
-  // Modulo de ubicacion de palets: enlace aparte, visible con permiso "ubicacion"
-  // (o para el admin). Vive en su propia pagina (ubicacion.html) a proposito,
-  // para que un fallo ahi no pueda afectar al resto del panel.
-  const btnUbic = document.getElementById("btn-ubicacion");
-  if (btnUbic) btnUbic.style.display = (_perms.esAdmin || _perms.ubicacion) ? "" : "none";
 
   // Abrir la primera vista disponible
   const orden = ["rejilla", "lista", "lanzaderas", "pedidos", "bizerba", "cargas", "merca", "informes", "costes", "config"];
