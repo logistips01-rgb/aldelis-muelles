@@ -12,11 +12,16 @@
     ],
     "headers": [
       {
+        "comment": "no-cache = siempre revalida con el servidor antes de usar la copia guardada, para que un cambio de codigo no tarde en llegar a los moviles por culpa de la cache del navegador (nos paso justo esto con movil.js).",
         "source": "**/*.js",
         "headers": [
           {
             "key": "Content-Type",
             "value": "application/javascript"
+          },
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
           }
         ]
       },
