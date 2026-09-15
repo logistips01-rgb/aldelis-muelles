@@ -1540,6 +1540,55 @@ exports.cerrarPedidoManual = functions.https.onCall(async (request, context) => 
   return { ok: true };
 });
 
+// Mover la fecha de un pedido ya creado (p.ej. llego antes de las 15:00 pero
+// en realidad es para mañana). Si ya estaba activado (sumado al pendiente de
+// hoy), se descuenta del contador al posponerlo; si la nueva fecha ya es hoy
+// o pasada, se vuelve a sumar. Solo si no se ha recogido nada todavia: mover
+// la fecha de un pedido a medio recoger complicaria mas que ayudaria.
+exports.posponerPedido = functions.https.onCall(async (request, context) => {
+  const esV2 = !!(request && typeof request === "object" && request.data !== undefined);
+  const data = esV2 ? request.data : request;
+  const ctx  = esV2 ? request : (context || {});
+
+  if (!ctx.app) return { ok: false, error: "No autorizado" };
+  const email = (ctx.auth && ctx.auth.token && ctx.auth.token.email || "").toLowerCase();
+  if (!email || !(await puedeSeccion(email, "lanzaderas"))) return { ok: false, error: "Sin permiso" };
+
+  if (!data || typeof data !== "object") return { ok: false, error: "Faltan datos" };
+  const pt = String(data.pt || "");
+  const nuevaFecha = String(data.fecha || "");
+  if (!pt || !/^\d{4}-\d{2}-\d{2}$/.test(nuevaFecha)) return { ok: false, error: "Datos no validos" };
+
+  const ref = db.collection("pedidos_transferencia").doc(pt);
+  try {
+    await db.runTransaction(async (tx) => {
+      const doc = await tx.get(ref);
+      if (!doc.exists) throw new Error("Pedido no encontrado");
+      const d = doc.data();
+      if (!ALMACENES_PT.includes(d.almacen)) throw new Error("Almacen no valido");
+      if ((d.recogido || 0) > 0) throw new Error("Ya se ha recogido algo de este pedido, no se puede posponer");
+
+      const hoy = fechaHoyMadrid();
+      const activadoAntes = !!d.activado;
+      const activadoAhora = nuevaFecha <= hoy;
+
+      tx.update(ref, { fecha: nuevaFecha, activado: activadoAhora });
+
+      if (activadoAntes !== activadoAhora) {
+        const delta = activadoAhora ? (d.palets || 0) : -(d.palets || 0);
+        tx.set(db.collection("almacenes_pendientes").doc(d.almacen), {
+          pedido: admin.firestore.FieldValue.increment(delta)
+        }, { merge: true });
+      }
+    });
+  } catch (e) {
+    console.error("posponerPedido:", e.message);
+    return { ok: false, error: e.message || "No se pudo cambiar la fecha" };
+  }
+
+  return { ok: true };
+});
+
 // TEMPORAL, para las pruebas: borra todos los pedidos y recogidas, y deja
 // los saldos de los 3 almacenes a cero. Solo el admin puede llamarlo.
 // Quitar esta funcion y su boton en el panel cuando se termine de probar.

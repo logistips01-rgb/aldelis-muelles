@@ -1013,6 +1013,9 @@ function abrirPtDetalle(id) {
   const accionesEl = document.getElementById("ptd-acciones");
   accionesEl.innerHTML = pendiente > 0
     ? "<button class='btn-ghost' style='width:100%' onclick=\"cerrarPedidoManualUI('" + id + "', " + pendiente + ")\">Marcar recogido (el chofer no lo registro)</button>" +
+      ((p.recogido || 0) === 0
+        ? "<button class='btn-ghost' style='width:100%;margin-top:8px' onclick=\"posponerPedidoUI('" + id + "')\">Cambiar fecha (posponer)</button>"
+        : "") +
       "<div id='ptd-accion-estado' style='font-size:12px;margin-top:6px'></div>"
     : "";
 
@@ -1040,6 +1043,29 @@ function cerrarPedidoManualUI(pt, pendiente) {
       }
     })
     .catch(e => { console.error("cerrarPedidoManualUI:", e); if (estado) estado.textContent = "No se pudo registrar."; });
+}
+
+// Mover la fecha de un pedido ya creado (p.ej. llego antes de las 15:00 pero
+// es en realidad para mañana). Solo tiene sentido si no se ha recogido nada
+// todavia (el boton ya no aparece si no es asi).
+function posponerPedidoUI(pt) {
+  const manana = new Date(Date.now() + 24 * 3600 * 1000).toLocaleDateString("sv-SE");
+  const texto = prompt("Nueva fecha para " + pt + " (AAAA-MM-DD):", manana);
+  if (texto === null) return;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(texto)) { alert("Fecha no valida, usa el formato AAAA-MM-DD."); return; }
+
+  const estado = document.getElementById("ptd-accion-estado");
+  if (estado) estado.textContent = "Guardando...";
+  firebase.functions().httpsCallable("posponerPedido")({ pt, fecha: texto })
+    .then(res => {
+      if (res.data && res.data.ok) {
+        if (estado) estado.textContent = "Fecha cambiada.";
+        cerrarPtDetalle();
+      } else if (estado) {
+        estado.textContent = (res.data && res.data.error) || "No se pudo cambiar la fecha.";
+      }
+    })
+    .catch(e => { console.error("posponerPedidoUI:", e); if (estado) estado.textContent = "No se pudo cambiar la fecha."; });
 }
 
 function cerrarPtDetalle(e) {
