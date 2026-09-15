@@ -952,14 +952,20 @@ function renderPedidosCards() {
     const pct = pedido > 0 ? Math.min(100, Math.round((recogido / pedido) * 100)) : 0;
     const completado = pedido > 0 && pendiente === 0;
     const color = completado ? "#1D9E75" : (pendiente > pedido / 2 ? "#D41F3A" : "#F59E0B");
+    const donutBg = pedido > 0
+      ? "conic-gradient(" + color + " 0% " + pct + "%, #E5E7EB " + pct + "% 100%)"
+      : "#E5E7EB";
     return "<div class='pedido-card' style='border-top-color:" + color + "'>" +
       "<div class='pedido-nombre'>" + esc(a.nombre) + "</div>" +
-      "<div class='pedido-num tnum' style='color:" + color + "'>" + pendiente + "</div>" +
+      "<div class='pedido-cuerpo'>" +
+      "<div class='pedido-donut' style='background:" + donutBg + "'>" +
+      "<div class='pedido-donut-hueco'><span class='tnum' style='color:" + color + "'>" + pendiente + "</span></div>" +
+      "</div>" +
+      "<div class='pedido-info'>" +
       "<div class='pedido-lbl'>palets pendientes" + (completado ? " — completado" : "") + "</div>" +
-      "<div class='pedido-barra'><div style='width:" + pct + "%;background:" + color + "'></div></div>" +
       "<div class='pedido-detalle'><span>Pedido: <b class='tnum'>" + pedido + "</b></span>" +
       "<span>Recogido: <b class='tnum'>" + recogido + "</b></span></div>" +
-      "</div>";
+      "</div></div></div>";
   }).join("");
 }
 
