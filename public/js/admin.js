@@ -394,6 +394,16 @@ function iniciarListeners() {
       s.forEach(d => window._ptsAbiertosAdmin.push({ id: d.id, ...d.data() }));
       renderPedidosLista();
     }, e => console.error("pedidos_transferencia:", e)));
+
+    // Recogidas de hoy, solo para el contador en vivo "recogidos hoy" (el
+    // desglose de verdad va en el informe de costes de lanzaderas).
+    const inicioHoy = new Date(); inicioHoy.setHours(0, 0, 0, 0);
+    _unsubs.push(db.collection("recogidas_palets").where("ts", ">=", Ts.fromDate(inicioHoy)).onSnapshot(s => {
+      let total = 0;
+      s.forEach(d => { total += (d.data().palets || 0); });
+      const el = document.getElementById("pedidos-hoy");
+      if (el) el.textContent = "📦 Recogidos hoy (todos los almacenes): " + total + " palets";
+    }, e => console.error("recogidas_palets hoy:", e)));
   }
 
   if (_perms.incidencias) {
