@@ -414,6 +414,7 @@ function iniciarListeners() {
       window._pedidoHoyPorAlmacen = { avitrans: 0, caserfri: 0, txt: 0 };
       s.forEach(d => {
         const v = d.data();
+        if (v.activado === false) return; // programado para otro dia, no cuenta como "hoy"
         if (window._pedidoHoyPorAlmacen.hasOwnProperty(v.almacen)) {
           window._pedidoHoyPorAlmacen[v.almacen] += (v.palets || 0);
         }
@@ -973,13 +974,17 @@ function renderPedidosCards() {
     const pedido = d.pedido || 0;
     const recogidoAbierto = d.recogido || 0;
     const pendiente = Math.max(pedido - recogidoAbierto, 0);
-    const pct = pedido > 0 ? Math.min(100, Math.round((recogidoAbierto / pedido) * 100)) : 0;
-    const completado = pedido > 0 && pendiente === 0;
+    const hoyRecogido = recogidoHoy[a.id] || 0;
+    const completado = pendiente === 0;
     const color = completado ? "#1D9E75" : (pendiente > pedido / 2 ? "#D41F3A" : "#F59E0B");
-    // Dos colores con significado, no relleno + gris: verde lo ya recogido,
-    // el color de estado lo que queda pendiente.
+    // El aro reparte los dos numeros que ya se ven en la tarjeta: verde lo
+    // recogido hoy, el color de estado lo que queda pendiente ahora mismo.
+    // Si no queda nada pendiente, el aro sale todo verde (aunque no haya
+    // habido ningun pedido abierto hoy, como en un almacen ya al dia).
     const colorRecogido = "#1D9E75";
-    const donutBg = pedido > 0
+    const totalAro = hoyRecogido + pendiente;
+    const pct = totalAro > 0 ? Math.min(100, Math.round((hoyRecogido / totalAro) * 100)) : (completado ? 100 : 0);
+    const donutBg = (totalAro > 0 || completado)
       ? "conic-gradient(" + colorRecogido + " 0% " + pct + "%, " + color + " " + pct + "% 100%)"
       : "#E5E7EB";
     return "<div class='pedido-card' style='border-top-color:" + color + "'>" +
