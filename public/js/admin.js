@@ -407,14 +407,19 @@ function iniciarListeners() {
       renderPedidosCards();
     }, e => console.error("recogidas_palets hoy:", e)));
 
-    // Solo para el total historico de palets pedidos alguna vez (informativo,
-    // no se usa para calcular pendientes: eso sale siempre de los pedidos
-    // abiertos de verdad, ver renderPedidosCards).
-    _unsubs.push(db.collection("almacenes_pendientes").onSnapshot(s => {
-      window._pedidoHistorico = {};
-      s.forEach(d => { window._pedidoHistorico[d.id] = d.data().pedido || 0; });
+    // Total pedido HOY por almacen (se resetea solo cada dia, al calcularse
+    // por fecha de creacion en vez de con un contador acumulado). Puramente
+    // informativo, no se usa para calcular pendientes.
+    _unsubs.push(db.collection("pedidos_transferencia").where("creado", ">=", Ts.fromDate(inicioHoy)).onSnapshot(s => {
+      window._pedidoHoyPorAlmacen = { avitrans: 0, caserfri: 0, txt: 0 };
+      s.forEach(d => {
+        const v = d.data();
+        if (window._pedidoHoyPorAlmacen.hasOwnProperty(v.almacen)) {
+          window._pedidoHoyPorAlmacen[v.almacen] += (v.palets || 0);
+        }
+      });
       renderPedidosCards();
-    }, e => console.error("almacenes_pendientes:", e)));
+    }, e => console.error("pedidos_transferencia hoy:", e)));
   }
 
   if (_perms.incidencias) {
@@ -962,7 +967,7 @@ function renderPedidosCards() {
     datos[p.almacen].recogido += (p.recogido || 0);
   });
   const recogidoHoy = window._recogidoHoyPorAlmacen || {};
-  const historico = window._pedidoHistorico || {};
+  const pedidoHoy = window._pedidoHoyPorAlmacen || {};
   cont.innerHTML = ALMACENES_PEDIDOS.map(a => {
     const d = datos[a.id] || {};
     const pedido = d.pedido || 0;
@@ -986,7 +991,7 @@ function renderPedidosCards() {
       "<div class='pedido-info'>" +
       "<div class='pedido-lbl'>palets pendientes" + (completado ? " — completado" : "") + "</div>" +
       "<div class='pedido-detalle'><span>Recogido hoy: <b class='tnum'>" + (recogidoHoy[a.id] || 0) + "</b></span>" +
-      "<span>Total pedido: <b class='tnum'>" + (historico[a.id] || 0) + "</b></span></div>" +
+      "<span>Pedido hoy: <b class='tnum'>" + (pedidoHoy[a.id] || 0) + "</b></span></div>" +
       "</div></div></div>";
   }).join("");
 }
