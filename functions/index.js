@@ -1302,32 +1302,42 @@ function normalizarAlmacen(valor) {
 // Cada fila con SSCC es un palet. Busca la columna "SSCC" en la primera fila
 // que la tenga (por si el archivo trae cabeceras u otras filas antes) y
 // cuenta valores distintos en esa columna. Si tambien hay una columna
-// "Origen", se toma el almacen de ahi.
+// "Origen", se toma el almacen de ahi; si hay "Referencia"/"Descripcion"/
+// "Producto", se guarda como descripcion de cada palet.
 function contarPaletsExcel(buffer) {
   const XLSX = require("xlsx");
   const wb = XLSX.read(buffer, { type: "buffer" });
   const ws = wb.Sheets[wb.SheetNames[0]];
   const filas = XLSX.utils.sheet_to_json(ws, { header: 1 });
-  let colSscc = -1, colOrigen = -1, inicio = 0;
+  const NOMBRES_DESCRIPCION = ["DESCRIPCION", "REFERENCIA", "PRODUCTO"];
+  let colSscc = -1, colOrigen = -1, colDesc = -1, inicio = 0;
   for (let i = 0; i < filas.length; i++) {
     const fila = filas[i] || [];
     const idxSscc = fila.findIndex(c => String(c || "").toUpperCase().trim() === "SSCC");
     const idxOrigen = fila.findIndex(c => String(c || "").toUpperCase().trim() === "ORIGEN");
+    const idxDesc = fila.findIndex(c => NOMBRES_DESCRIPCION.includes(String(c || "").toUpperCase().trim()));
     if (idxOrigen !== -1) colOrigen = idxOrigen;
+    if (idxDesc !== -1) colDesc = idxDesc;
     if (idxSscc !== -1) { colSscc = idxSscc; inicio = i + 1; break; }
   }
   if (colSscc === -1) return { palets: 0, lineas: [] };
-  const ssccs = new Set();
+  const porSscc = new Map();
   let almacenDetectado = null;
   for (let i = inicio; i < filas.length; i++) {
     const fila = filas[i] || [];
     const v = fila[colSscc];
-    if (v) ssccs.add(String(v).trim());
+    if (v) {
+      const sscc = String(v).trim();
+      if (!porSscc.has(sscc)) {
+        porSscc.set(sscc, colDesc !== -1 && fila[colDesc] ? String(fila[colDesc]).trim() : "");
+      }
+    }
     if (!almacenDetectado && colOrigen !== -1 && fila[colOrigen]) {
       almacenDetectado = normalizarAlmacen(fila[colOrigen]);
     }
   }
-  return { palets: ssccs.size, lineas: [...ssccs].map(sscc => ({ sscc })), almacenDetectado };
+  const lineas = [...porSscc].map(([sscc, descripcion]) => ({ sscc, descripcion }));
+  return { palets: lineas.length, lineas, almacenDetectado };
 }
 
 // El PDF no trae columnas fiables al extraer el texto, pero el SSCC son
@@ -1348,9 +1358,27 @@ async function contarPaletsPdf(buffer) {
   const ssccs = [...new Set(texto.match(/\b\d{18}\b/g) || [])];
   const ptMatch = texto.match(/PT\d{6}/);
   const origenMatch = texto.match(/Origen\b[^\n]*\n([A-ZÁÉÍÓÚÑ]+)\b/);
+
+  // Cada fila de producto trae "Descripcion Lote Peso KG Cajas SSCC
+  // Caducidad": se recorta el texto para no empezar antes de la cabecera de
+  // esa tabla, y para cada SSCC se toma el texto anterior (hasta el peso en
+  // KG), quitando el ultimo trozo (el Lote) para quedarse solo con el
+  // producto. En filas donde el texto se corta por salto de linea puede
+  // quedar algo de mas al final: es un mejor esfuerzo, no perfecto.
+  const descPorSscc = new Map();
+  const cabecera = texto.match(/Producto\s+Lote\s+Peso[\s\S]*?Caducidad/);
+  const cuerpo = cabecera ? texto.slice(cabecera.index + cabecera[0].length) : texto;
+  const filaRe = /([\s\S]+?)\s+[\d.,]+\s*KG\s+\d+\s+(\d{18})\s+\d{2}\/\d{2}\/\d{4}/g;
+  let fm;
+  while ((fm = filaRe.exec(cuerpo))) {
+    const partes = fm[1].replace(/\s+/g, " ").trim().split(" ");
+    partes.pop(); // el lote
+    if (!descPorSscc.has(fm[2])) descPorSscc.set(fm[2], partes.join(" "));
+  }
+
   return {
     palets: ssccs.length,
-    lineas: ssccs.map(sscc => ({ sscc })),
+    lineas: ssccs.map(sscc => ({ sscc, descripcion: descPorSscc.get(sscc) || "" })),
     pt: ptMatch ? ptMatch[0] : null,
     almacenDetectado: origenMatch ? normalizarAlmacen(origenMatch[1]) : null
   };

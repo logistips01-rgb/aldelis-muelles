@@ -1002,7 +1002,9 @@ function abrirPtDetalle(id) {
   if (lineas.length) {
     lineasEl.innerHTML = "<div class='pt-admin-tit'>Contenido (" + lineas.length + " SSCC)</div>" +
       "<div style='max-height:220px;overflow-y:auto'>" +
-      lineas.map(l => "<div class='pt-admin-row' style='cursor:default'><span class='tnum'>" + esc(l.sscc || "") + "</span></div>").join("") +
+      lineas.map(l => "<div class='pt-admin-row' style='cursor:default;flex-direction:column;align-items:flex-start;gap:2px'>" +
+        (l.descripcion ? "<span>" + esc(l.descripcion) + "</span>" : "") +
+        "<span class='tnum' style='color:#9CA3AF;font-size:12px'>" + esc(l.sscc || "") + "</span></div>").join("") +
       "</div>";
   } else {
     lineasEl.innerHTML = "<p class='card-desc'>Pedido de envases sin lineas SSCC: el total es por huecos de camion, no por bulto.</p>";
