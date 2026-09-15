@@ -680,6 +680,70 @@ async function generarYEnviarInforme(label) {
       const TH = "padding:5px 8px;text-align:left;font-size:11px;color:#888;font-weight:600";
       const TD = "padding:5px 8px;font-size:12px;border-bottom:1px solid #f5f5f5";
 
+      // Palets recogidos hoy en los almacenes externos (Avitrans/Caserfri/
+      // Txt): resumen por almacen y detalle por pedido, con las lineas
+      // (SSCC + descripcion) de los pedidos que se han cerrado del todo hoy.
+      // En una recogida parcial no sabemos que SSCC exactos se llevaron
+      // (el chofer solo dice cuantos, no cuales), asi que esos se listan
+      // solo con la cantidad, sin lineas.
+      let recogidasHoyHtml = "";
+      try {
+        const recogSnap = await db.collection("recogidas_palets")
+          .where("ts", ">=", tsStart).where("ts", "<", tsEnd).get();
+        const recogidasHoy = [];
+        recogSnap.forEach(doc => recogidasHoy.push(doc.data()));
+
+        if (recogidasHoy.length) {
+          const porAlmacen = {};
+          const ptsUsados = new Set();
+          recogidasHoy.forEach(r => {
+            porAlmacen[r.almacen] = (porAlmacen[r.almacen] || 0) + (r.palets || 0);
+            (r.pts || []).forEach(item => { if (item && item.pt) ptsUsados.add(item.pt); });
+          });
+
+          const ptDocs = {};
+          await Promise.all([...ptsUsados].map(async pt => {
+            const d = await db.collection("pedidos_transferencia").doc(pt).get();
+            if (d.exists) ptDocs[pt] = d.data();
+          }));
+
+          const NOMBRE_ALMACEN = { avitrans: "Avitrans", caserfri: "Caserfri", txt: "Txt" };
+          const resumenRows = Object.entries(porAlmacen)
+            .sort((a, b) => b[1] - a[1])
+            .map(([alm, n]) => dataRow(NOMBRE_ALMACEN[alm] || alm, n + " palets"))
+            .join("");
+
+          const detalleRows = recogidasHoy.flatMap(r => (r.pts || []).map(item => {
+            const ptDoc = ptDocs[item.pt];
+            const lineas = ptDoc && Array.isArray(ptDoc.lineas) ? ptDoc.lineas : [];
+            const cerradoDelTodo = ptDoc && ptDoc.cerrado;
+            const detalleLineas = (cerradoDelTodo && lineas.length)
+              ? lineas.map(l => esc(l.descripcion || "") + (l.sscc ? " <span style='color:#999'>(" + esc(l.sscc) + ")</span>" : "")).join("<br>")
+              : (lineas.length ? "<span style='color:#999'>recogida parcial, sin SSCC concretos</span>" : "<span style='color:#999'>envases, sin SSCC</span>");
+            return "<tr>" +
+              "<td style='" + TD + "'>" + (NOMBRE_ALMACEN[r.almacen] || r.almacen) + "</td>" +
+              "<td style='" + TD + "'>" + esc(item.pt) + "</td>" +
+              "<td style='" + TD + "'>" + (item.palets || 0) + "</td>" +
+              "<td style='" + TD + "'>" + detalleLineas + "</td>" +
+              "</tr>";
+          })).join("");
+
+          recogidasHoyHtml =
+            "<div style='height:10px'></div>" +
+            "<div style='" + CARD + ";padding:14px'>" +
+            "<div style='font-size:12px;font-weight:700;color:#1A1A1A;margin-bottom:10px'>Palets recogidos hoy en almacenes externos</div>" +
+            "<table width='100%' cellpadding='0' cellspacing='0'>" + resumenRows + "</table>" +
+            "<div style='height:12px'></div>" +
+            "<table width='100%' cellpadding='0' cellspacing='0'>" +
+            "<tr style='background:#f5f5f5'>" +
+            "<th style='" + TH + "'>Almacen</th><th style='" + TH + "'>Pedido</th>" +
+            "<th style='" + TH + "'>Palets</th><th style='" + TH + "'>Contenido</th></tr>" +
+            detalleRows + "</table></div>";
+        }
+      } catch (e) {
+        console.error("generarYEnviarInforme: recogidas:", e.message);
+      }
+
       const detalleLanz = [1, 2, 3, 4].map(n => {
         const segsN = allSegs.filter(s => s.numero === n).sort((a, b) => a.startMs - b.startMs);
         if (!segsN.length) return "";
@@ -754,6 +818,8 @@ async function generarYEnviarInforme(label) {
         "</div>" +
 
         detalleLanz +
+
+        recogidasHoyHtml +
 
         "<div style='height:14px'></div>" +
         "<div style='text-align:center;font-size:11px;color:#aaa'>Costes de operacion del dia, no importe fijo del contrato &middot; " + diasLaborables + " dias laborables configurados</div>" +
