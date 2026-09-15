@@ -1697,7 +1697,7 @@ function parseIncidenciaUsieto(texto) {
 }
 
 exports.revisarCorreoIncidencias = onSchedule(
-  { schedule: "every 10 minutes", timeZone: "Europe/Madrid" },
+  { schedule: "every 4 hours", timeZone: "Europe/Madrid" },
   async () => {
     if (!MS_SECRET) { console.warn("revisarCorreoIncidencias: falta MS_SECRET"); return; }
 
