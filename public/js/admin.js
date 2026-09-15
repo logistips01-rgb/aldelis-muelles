@@ -971,8 +971,11 @@ function renderPedidosCards() {
     const pct = pedido > 0 ? Math.min(100, Math.round((recogidoAbierto / pedido) * 100)) : 0;
     const completado = pedido > 0 && pendiente === 0;
     const color = completado ? "#1D9E75" : (pendiente > pedido / 2 ? "#D41F3A" : "#F59E0B");
+    // Dos colores con significado, no relleno + gris: verde lo ya recogido,
+    // el color de estado lo que queda pendiente.
+    const colorRecogido = "#1D9E75";
     const donutBg = pedido > 0
-      ? "conic-gradient(" + color + " 0% " + pct + "%, #E5E7EB " + pct + "% 100%)"
+      ? "conic-gradient(" + colorRecogido + " 0% " + pct + "%, " + color + " " + pct + "% 100%)"
       : "#E5E7EB";
     return "<div class='pedido-card' style='border-top-color:" + color + "'>" +
       "<div class='pedido-nombre'>" + esc(a.nombre) + "</div>" +
