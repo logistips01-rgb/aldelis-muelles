@@ -377,12 +377,18 @@ function cabecera() {
 // organizarse sin tener que entrar a mirarlo aparte.
 let _pendResumen = { avitrans: 0, caserfri: 0, txt: 0 };
 
-db.collection("almacenes_pendientes").onSnapshot(s => {
+// Se calcula en vivo sumando los pedidos realmente abiertos (igual que en el
+// panel de admin), en vez de leer un contador aparte que se va sumando y
+// restando con el tiempo: ese contador puede arrastrar pedidos ya cerrados
+// hace dias y desincronizarse, esto no puede porque siempre se recalcula del
+// dato real.
+db.collection("pedidos_transferencia").where("cerrado", "==", false).onSnapshot(s => {
   const nuevo = { avitrans: 0, caserfri: 0, txt: 0 };
   s.forEach(d => {
-    if (!nuevo.hasOwnProperty(d.id)) return;
     const v = d.data();
-    nuevo[d.id] = Math.max((v.pedido || 0) - (v.recogido || 0), 0);
+    if (v.activado === false) return; // programado a futuro, no cuenta todavia
+    if (!nuevo.hasOwnProperty(v.almacen)) return;
+    nuevo[v.almacen] += Math.max((v.palets || 0) - (v.recogido || 0), 0);
   });
   _pendResumen = nuevo;
   pintarResumenChip();

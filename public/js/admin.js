@@ -380,18 +380,12 @@ function iniciarListeners() {
       if (_vistaLanzSub === "mapa") renderMapaLanzaderas();
     }, e => console.error("ubicaciones_naves:", e)));
 
-    // Saldo pendiente por almacen externo (3 documentos): lo mantiene el
-    // servidor solo, aqui solo se lee para pintar las tarjetas.
-    _unsubs.push(db.collection("almacenes_pendientes").onSnapshot(s => {
-      window._almacenesPend = {};
-      s.forEach(d => { window._almacenesPend[d.id] = d.data(); });
-      renderPedidosCards();
-    }, e => console.error("almacenes_pendientes:", e)));
-
-    // Pedidos (PT) todavia abiertos, para poder listarlos y ver su contenido.
+    // Pedidos (PT) todavia abiertos: de aqui salen tanto el listado como las
+    // tarjetas de resumen (sumadas en vivo, ver renderPedidosCards).
     _unsubs.push(db.collection("pedidos_transferencia").where("cerrado", "==", false).onSnapshot(s => {
       window._ptsAbiertosAdmin = [];
       s.forEach(d => window._ptsAbiertosAdmin.push({ id: d.id, ...d.data() }));
+      renderPedidosCards();
       renderPedidosLista();
     }, e => console.error("pedidos_transferencia:", e)));
 
@@ -933,10 +927,23 @@ function resetPedidosPruebas() {
     .catch(e => { console.error("resetPedidosPruebas:", e); estadoPedido("No se pudo resetear.", "err"); });
 }
 
+// Se calcula en vivo sumando los pedidos realmente abiertos (cerrado=false,
+// activado=true), en vez de leer el contador acumulado de almacenes_pendientes:
+// ese contador arrastra TODO lo que ha pasado alguna vez (incluidos pedidos
+// ya cerrados hace dias), asi que con el tiempo "Pedido"/"Recogido" dejan de
+// representar lo que hay abierto ahora mismo, aunque la resta (pendiente)
+// siga siendo correcta. Calculandolo asi nunca puede desincronizarse.
 function renderPedidosCards() {
   const cont = document.getElementById("pedidos-grid");
   if (!cont) return;
-  const datos = window._almacenesPend || {};
+  const datos = {};
+  ALMACENES_PEDIDOS.forEach(a => { datos[a.id] = { pedido: 0, recogido: 0 }; });
+  (window._ptsAbiertosAdmin || []).forEach(p => {
+    if (p.activado === false) return; // programado a futuro, no cuenta todavia
+    if (!datos[p.almacen]) return;
+    datos[p.almacen].pedido += (p.palets || 0);
+    datos[p.almacen].recogido += (p.recogido || 0);
+  });
   cont.innerHTML = ALMACENES_PEDIDOS.map(a => {
     const d = datos[a.id] || {};
     const pedido = d.pedido || 0;
