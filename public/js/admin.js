@@ -394,10 +394,27 @@ function iniciarListeners() {
     const inicioHoy = new Date(); inicioHoy.setHours(0, 0, 0, 0);
     _unsubs.push(db.collection("recogidas_palets").where("ts", ">=", Ts.fromDate(inicioHoy)).onSnapshot(s => {
       let total = 0;
-      s.forEach(d => { total += (d.data().palets || 0); });
+      window._recogidoHoyPorAlmacen = { avitrans: 0, caserfri: 0, txt: 0 };
+      s.forEach(d => {
+        const v = d.data();
+        total += (v.palets || 0);
+        if (window._recogidoHoyPorAlmacen.hasOwnProperty(v.almacen)) {
+          window._recogidoHoyPorAlmacen[v.almacen] += (v.palets || 0);
+        }
+      });
       const el = document.getElementById("pedidos-hoy");
       if (el) el.textContent = "📦 Recogidos hoy (todos los almacenes): " + total + " palets";
+      renderPedidosCards();
     }, e => console.error("recogidas_palets hoy:", e)));
+
+    // Solo para el total historico de palets pedidos alguna vez (informativo,
+    // no se usa para calcular pendientes: eso sale siempre de los pedidos
+    // abiertos de verdad, ver renderPedidosCards).
+    _unsubs.push(db.collection("almacenes_pendientes").onSnapshot(s => {
+      window._pedidoHistorico = {};
+      s.forEach(d => { window._pedidoHistorico[d.id] = d.data().pedido || 0; });
+      renderPedidosCards();
+    }, e => console.error("almacenes_pendientes:", e)));
   }
 
   if (_perms.incidencias) {
@@ -944,12 +961,14 @@ function renderPedidosCards() {
     datos[p.almacen].pedido += (p.palets || 0);
     datos[p.almacen].recogido += (p.recogido || 0);
   });
+  const recogidoHoy = window._recogidoHoyPorAlmacen || {};
+  const historico = window._pedidoHistorico || {};
   cont.innerHTML = ALMACENES_PEDIDOS.map(a => {
     const d = datos[a.id] || {};
     const pedido = d.pedido || 0;
-    const recogido = d.recogido || 0;
-    const pendiente = Math.max(pedido - recogido, 0);
-    const pct = pedido > 0 ? Math.min(100, Math.round((recogido / pedido) * 100)) : 0;
+    const recogidoAbierto = d.recogido || 0;
+    const pendiente = Math.max(pedido - recogidoAbierto, 0);
+    const pct = pedido > 0 ? Math.min(100, Math.round((recogidoAbierto / pedido) * 100)) : 0;
     const completado = pedido > 0 && pendiente === 0;
     const color = completado ? "#1D9E75" : (pendiente > pedido / 2 ? "#D41F3A" : "#F59E0B");
     const donutBg = pedido > 0
@@ -963,8 +982,8 @@ function renderPedidosCards() {
       "</div>" +
       "<div class='pedido-info'>" +
       "<div class='pedido-lbl'>palets pendientes" + (completado ? " — completado" : "") + "</div>" +
-      "<div class='pedido-detalle'><span>Pedido: <b class='tnum'>" + pedido + "</b></span>" +
-      "<span>Recogido: <b class='tnum'>" + recogido + "</b></span></div>" +
+      "<div class='pedido-detalle'><span>Recogido hoy: <b class='tnum'>" + (recogidoHoy[a.id] || 0) + "</b></span>" +
+      "<span>Total pedido: <b class='tnum'>" + (historico[a.id] || 0) + "</b></span></div>" +
       "</div></div></div>";
   }).join("");
 }
