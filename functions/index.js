@@ -1591,11 +1591,16 @@ exports.revisarCorreoPedidos = onSchedule(
       data = await graphGet(token,
         "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS +
         "/mailFolders/inbox/messages?$filter=isRead eq false&$top=25" +
-        "&$select=id,subject,toRecipients,ccRecipients,hasAttachments,receivedDateTime");
+        "&$select=id,subject,from,toRecipients,ccRecipients,hasAttachments,receivedDateTime");
     } catch (e) { console.error("revisarCorreoPedidos: listar mensajes:", e.message); return; }
 
     for (const msg of (data.value || [])) {
       try {
+        // Los correos de incidencias de transporte (Usieto) los procesa
+        // revisarCorreoIncidencias: si tambien se tocan aqui, cualquiera de
+        // las dos funciones podria marcarlos como leidos antes de que la
+        // otra llegue a verlos.
+        if (remitenteDeUsieto(msg)) continue;
         if (!msg.hasAttachments) { await graphMarcarLeido(token, msg.id); continue; }
 
         const adjuntos = await graphGet(token,
@@ -1628,6 +1633,180 @@ exports.revisarCorreoPedidos = onSchedule(
       } catch (e) {
         console.error("revisarCorreoPedidos: mensaje", msg.id, e.message);
       }
+    }
+  }
+);
+
+// ── Incidencias de transporte (D.I.R.E. USIETO) ─────────────────────────────
+//
+// Cada correo de @grupousieto.com en el buzon de pedidos puede traer un PDF
+// "Comunicado de Incidencia". Si el adjunto no encaja con esa plantilla se
+// descarta sin mas (tarde o temprano lo reenvian bien formateado): no hay
+// forma fiable de leer un albaran escaneado con anotaciones a mano.
+//
+// Las incidencias reconocidas se guardan segun llegan, y una vez al dia se
+// manda un correo resumen con las de las ultimas 24h.
+
+const DOMINIO_INCIDENCIAS = "grupousieto.com";
+const DESTINATARIOS_INCIDENCIAS = ["mlorente@aldelis.com", "jreyes@aldelis.com", "dgamarra@aldelis.com"];
+
+function remitenteDeUsieto(msg) {
+  const dir = (msg.from && msg.from.emailAddress && msg.from.emailAddress.address || "").toLowerCase();
+  return dir.endsWith("@" + DOMINIO_INCIDENCIAS) ? dir : null;
+}
+
+// La plantilla es una tabla: al extraer el texto, todas las etiquetas salen
+// juntas y luego todos los valores juntos (no en el mismo orden visual), asi
+// que en vez de intentar reconstruir la tabla se buscan anclas fijas del
+// propio texto (el "0US..." de la posicion, las fechas, y el bloque fijo
+// "Aldelis (Aves Nobles y Derivados)" que precede siempre a Destinatario/
+// Localidad/Provincia).
+function parseIncidenciaUsieto(texto) {
+  if (!/COMUNICADO DE INCIDENCIA/i.test(texto)) return null;
+
+  const posicionMatch = texto.match(/\b0US\d{9}\b/);
+  const fechas = texto.match(/\d{2}\/\d{2}\/\d{4}/g) || [];
+  const fechaExp = fechas[0] || null;
+  const fechaIncidencia = fechas[1] || null;
+
+  const expedidorIdx = texto.indexOf("Aldelis (Aves Nobles y Derivados)");
+  let destinatario = null, localidad = null, provincia = null;
+  if (expedidorIdx !== -1) {
+    const resto = texto.slice(expedidorIdx).split("\n").map(l => l.trim()).filter(Boolean);
+    destinatario = resto[1] || null;
+    localidad = resto[2] || null;
+    provincia = resto[3] || null;
+  }
+
+  let descripcion = null;
+  if (fechaIncidencia) {
+    const idxIncidenciaSec = texto.indexOf("INCIDENCIA A LA ENTREGA");
+    const idxFechaInc = texto.indexOf(fechaIncidencia, idxIncidenciaSec !== -1 ? idxIncidenciaSec : 0);
+    const finIdx = texto.indexOf("RESPUESTA A LA INCIDENCIA");
+    const bloque = texto.slice(idxFechaInc + fechaIncidencia.length, finIdx !== -1 ? finIdx : undefined);
+    const lineas = bloque.split("\n").map(l => l.trim()).filter(Boolean);
+    descripcion = lineas.filter(l => !/^\d+$/.test(l)).join(" ") || null;
+  }
+
+  if (!posicionMatch && !descripcion) return null;
+
+  return {
+    posicion: posicionMatch ? posicionMatch[0] : null,
+    fechaExp, fechaIncidencia, destinatario, localidad, provincia, descripcion
+  };
+}
+
+exports.revisarCorreoIncidencias = onSchedule(
+  { schedule: "every 10 minutes", timeZone: "Europe/Madrid" },
+  async () => {
+    if (!MS_SECRET) { console.warn("revisarCorreoIncidencias: falta MS_SECRET"); return; }
+
+    let token;
+    try { token = await obtenerTokenMS(); }
+    catch (e) { console.error("revisarCorreoIncidencias: token:", e.message); return; }
+
+    let data;
+    try {
+      data = await graphGet(token,
+        "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS +
+        "/mailFolders/inbox/messages?$filter=isRead eq false&$top=25" +
+        "&$select=id,subject,from,hasAttachments,receivedDateTime");
+    } catch (e) { console.error("revisarCorreoIncidencias: listar mensajes:", e.message); return; }
+
+    for (const msg of (data.value || [])) {
+      try {
+        const remitente = remitenteDeUsieto(msg);
+        if (!remitente || !msg.hasAttachments) continue; // no marca leido: lo puede querer procesar revisarCorreoPedidos
+
+        const adjuntos = await graphGet(token,
+          "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS + "/messages/" + msg.id + "/attachments");
+        const pdfs = (adjuntos.value || []).filter(a => a.contentBytes && /\.pdf$/i.test(a.name || ""));
+        if (!pdfs.length) { await graphMarcarLeido(token, msg.id); continue; }
+
+        let algunaReconocida = false;
+        for (const pdf of pdfs) {
+          const buffer = Buffer.from(pdf.contentBytes, "base64");
+          const { PDFParse } = require("pdf-parse");
+          const parser = new PDFParse({ data: buffer });
+          let texto = "";
+          try { texto = (await parser.getText()).text || ""; }
+          finally { await parser.destroy(); }
+
+          const incidencia = parseIncidenciaUsieto(texto);
+          if (!incidencia) continue;
+          algunaReconocida = true;
+
+          await db.collection("incidencias_transporte").add({
+            ...incidencia,
+            remitente, asunto: msg.subject || "",
+            creado: admin.firestore.Timestamp.now()
+          });
+        }
+
+        if (!algunaReconocida) {
+          console.log("revisarCorreoIncidencias: PDF sin formato reconocido, descartado:", msg.subject);
+        }
+        await graphMarcarLeido(token, msg.id);
+      } catch (e) {
+        console.error("revisarCorreoIncidencias: mensaje", msg.id, e.message);
+      }
+    }
+  }
+);
+
+// Cada dia a las 16:00 (Europe/Madrid), recopilatorio de lo recibido desde
+// las 16:00 del dia anterior.
+exports.enviarResumenIncidencias = onSchedule(
+  { schedule: "0 16 * * *", timeZone: "Europe/Madrid" },
+  async () => {
+    const ahora = admin.firestore.Timestamp.now();
+    const desde = admin.firestore.Timestamp.fromMillis(ahora.toMillis() - 24 * 3600 * 1000);
+
+    let snap;
+    try {
+      snap = await db.collection("incidencias_transporte")
+        .where("creado", ">=", desde).where("creado", "<", ahora)
+        .orderBy("creado", "asc").get();
+    } catch (e) { console.error("enviarResumenIncidencias: consulta:", e.message); return; }
+
+    const filas = [];
+    snap.forEach(d => filas.push(d.data()));
+
+    const fechaFmt = new Date(ahora.toMillis()).toLocaleDateString("es-ES", { timeZone: "Europe/Madrid" });
+    const asunto = "Incidencias de transporte — " + fechaFmt + " (" + filas.length + ")";
+
+    const filasHtml = filas.length
+      ? filas.map(f =>
+          "<tr>" +
+          "<td style='padding:6px 10px;border-bottom:1px solid #eee'>" + (f.posicion || "-") + "</td>" +
+          "<td style='padding:6px 10px;border-bottom:1px solid #eee'>" + (f.fechaExp || "-") + "</td>" +
+          "<td style='padding:6px 10px;border-bottom:1px solid #eee'>" + (f.destinatario || "-") + (f.localidad ? " (" + f.localidad + (f.provincia ? ", " + f.provincia : "") + ")" : "") + "</td>" +
+          "<td style='padding:6px 10px;border-bottom:1px solid #eee'>" + (f.descripcion || "-") + "</td>" +
+          "</tr>"
+        ).join("")
+      : "<tr><td colspan='4' style='padding:10px'>Sin incidencias en las ultimas 24 horas.</td></tr>";
+
+    const html =
+      "<html><body style='font-family:Arial,sans-serif;font-size:13px;color:#1A1A1A'>" +
+      "<h2 style='margin-bottom:4px'>Incidencias de transporte — " + fechaFmt + "</h2>" +
+      "<p style='color:#6B7280;margin-top:0'>Recibidas entre las 16:00 del dia anterior y las 16:00 de hoy.</p>" +
+      "<table style='border-collapse:collapse;width:100%'>" +
+      "<thead><tr style='text-align:left;background:#F5F5F5'>" +
+      "<th style='padding:6px 10px'>Posicion</th><th style='padding:6px 10px'>Fecha exp.</th>" +
+      "<th style='padding:6px 10px'>Destinatario</th><th style='padding:6px 10px'>Incidencia</th>" +
+      "</tr></thead><tbody>" + filasHtml + "</tbody></table>" +
+      "</body></html>";
+
+    const cuerpo = "Incidencias de transporte " + fechaFmt + ": " + filas.length + " recibidas.";
+
+    try {
+      const token = await obtenerTokenMS();
+      for (const email of DESTINATARIOS_INCIDENCIAS) {
+        await enviarConGraph(token, email, asunto, html, cuerpo, null);
+      }
+      console.log("Resumen de incidencias enviado:", filas.length, "incidencias.");
+    } catch (e) {
+      console.error("enviarResumenIncidencias: envio:", e.message);
     }
   }
 );
