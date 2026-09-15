@@ -10,6 +10,12 @@
 (function () {
   "use strict";
 
+  var ALMACENES_PEDIDOS = [
+    { id: "avitrans", nombre: "Avitrans" },
+    { id: "caserfri", nombre: "Caserfri" },
+    { id: "txt",      nombre: "Txt" }
+  ];
+
   var NAVE_NOMBRE = {
     caserfri: "Caserfri", merca: "Merca", arento: "Arento", avitrans: "Avitrans",
     txt: "Txt", upasa: "Upasa", sabeco: "Sabeco", plaza: "Plaza",
@@ -29,6 +35,11 @@
   var _reloj       = null;
   var _beepInit    = false;
   var _ultimoMsgTs = 0;
+
+  var _ptsAbiertos = [];   // pedidos_transferencia con cerrado=false
+  var _recogidoHoy = { avitrans: 0, caserfri: 0, txt: 0 };
+  var _pedidoHoy   = { avitrans: 0, caserfri: 0, txt: 0 };
+  var _ptExpandido = null; // codigo de PT con el detalle desplegado, o null
 
   var ADMINS = ["mlorente@aldelis.com"];
 
@@ -137,6 +148,8 @@
       if (!p.lanzaderas) {
         el("vista-lanz").innerHTML =
           "<div class='vacio'>Tu usuario no tiene acceso a lanzaderas.<br>Pideselo a un administrador.</div>";
+        el("tab-recog").style.display = "none";
+        if (_vista === "recog") irA("lanz");
       }
       arrancar();
     });
@@ -175,6 +188,34 @@
         s.forEach(function (d) { _choferes[d.id] = d.data(); });
         pintar();
       }, function (e) { console.error("choferes:", e); }));
+
+      // Pedidos pendientes de recoger en almacenes externos (misma logica que
+      // el panel de admin, resumida para movil).
+      _unsubs.push(db.collection("pedidos_transferencia").where("cerrado", "==", false).onSnapshot(function (s) {
+        _ptsAbiertos = [];
+        s.forEach(function (d) { _ptsAbiertos.push(Object.assign({ id: d.id }, d.data())); });
+        pintar();
+      }, function (e) { console.error("pedidos_transferencia:", e); }));
+
+      var hoyRec0 = new Date(); hoyRec0.setHours(0, 0, 0, 0);
+      _unsubs.push(db.collection("recogidas_palets").where("ts", ">=", firebase.firestore.Timestamp.fromDate(hoyRec0)).onSnapshot(function (s) {
+        _recogidoHoy = { avitrans: 0, caserfri: 0, txt: 0 };
+        s.forEach(function (d) {
+          var v = d.data();
+          if (_recogidoHoy.hasOwnProperty(v.almacen)) _recogidoHoy[v.almacen] += (v.palets || 0);
+        });
+        pintar();
+      }, function (e) { console.error("recogidas_palets:", e); }));
+
+      _unsubs.push(db.collection("pedidos_transferencia").where("creado", ">=", firebase.firestore.Timestamp.fromDate(hoyRec0)).onSnapshot(function (s) {
+        _pedidoHoy = { avitrans: 0, caserfri: 0, txt: 0 };
+        s.forEach(function (d) {
+          var v = d.data();
+          if (v.activado === false) return; // programado para otro dia
+          if (_pedidoHoy.hasOwnProperty(v.almacen)) _pedidoHoy[v.almacen] += (v.palets || 0);
+        });
+        pintar();
+      }, function (e) { console.error("pedidos_transferencia hoy:", e); }));
     }
 
     if (_perms.chat) {
@@ -334,23 +375,97 @@
     if (ult) localStorage.setItem("movilVisto_" + _hilo, String(ult));
   }
 
+  function origenPtLabel(o) {
+    if (o === "email") return "por correo";
+    if (o === "manual-envases") return "envases";
+    return "manual";
+  }
+
+  function pintarRecogidas() {
+    var cont = el("vista-recog");
+    if (!cont || !_perms.lanzaderas) return;
+
+    var porAlmacen = {};
+    ALMACENES_PEDIDOS.forEach(function (a) { porAlmacen[a.id] = { pedido: 0, recogido: 0, pts: [] }; });
+    _ptsAbiertos.forEach(function (p) {
+      if (p.activado === false) return; // programado a futuro
+      if (!porAlmacen[p.almacen]) return;
+      porAlmacen[p.almacen].pedido += (p.palets || 0);
+      porAlmacen[p.almacen].recogido += (p.recogido || 0);
+      porAlmacen[p.almacen].pts.push(p);
+    });
+
+    cont.innerHTML = ALMACENES_PEDIDOS.map(function (a) {
+      var d = porAlmacen[a.id];
+      var pendiente = Math.max(d.pedido - d.recogido, 0);
+      var hoyRecogido = _recogidoHoy[a.id] || 0;
+      var completado = pendiente === 0;
+      var color = completado ? "#1D9E75" : (pendiente > d.pedido / 2 ? "#D41F3A" : "#E08A00");
+      var totalAro = hoyRecogido + pendiente;
+      var pct = totalAro > 0 ? Math.min(100, Math.round((hoyRecogido / totalAro) * 100)) : (completado ? 100 : 0);
+      var donutBg = (totalAro > 0 || completado)
+        ? "conic-gradient(#1D9E75 0% " + pct + "%, " + color + " " + pct + "% 100%)"
+        : "#E5E7EB";
+
+      var lista = d.pts.slice().sort(function (x, y) {
+        return Math.max((y.palets || 0) - (y.recogido || 0), 0) - Math.max((x.palets || 0) - (x.recogido || 0), 0);
+      }).map(function (p) {
+        var pend = Math.max((p.palets || 0) - (p.recogido || 0), 0);
+        var abierto = _ptExpandido === p.id;
+        var lineas = Array.isArray(p.lineas) ? p.lineas : [];
+        var detalle = abierto
+          ? "<div class='rec-detalle'>" + (lineas.length
+              ? lineas.map(function (l) { return "<div>" + esc(l.descripcion || "") +
+                  (l.sscc ? " <span style='color:#B0B4BB'>(" + esc(l.sscc) + ")</span>" : "") + "</div>"; }).join("")
+              : "<div>Pedido de envases sin lineas SSCC (huecos de camion).</div>") + "</div>"
+          : "";
+        return "<div class='rec-pt' onclick=\"toggleRecogidaDetalle('" + p.id + "')\">" +
+          "<div class='rec-pt-fila'><span><span class='rec-pt-codigo'>" + esc(p.id) + "</span>" +
+          "<span class='rec-pt-origen'>" + esc(origenPtLabel(p.origen)) + "</span></span>" +
+          "<span class='rec-pt-pend'>" + pend + " pend.</span></div>" + detalle + "</div>";
+      }).join("");
+
+      return "<div class='rec-card'>" +
+        "<div class='rec-nombre'>" + esc(a.nombre) + "</div>" +
+        "<div class='rec-top'>" +
+        "<div class='rec-donut' style='background:" + donutBg + "'>" +
+        "<div class='rec-donut-hueco' style='color:" + color + "'>" + pendiente + "</div></div>" +
+        "<div class='rec-info'>palets pendientes" + (completado ? " — completado" : "") + "<br>" +
+        "Recogido hoy: <b>" + hoyRecogido + "</b><br>" +
+        "Pedido hoy: <b>" + (_pedidoHoy[a.id] || 0) + "</b></div>" +
+        "</div>" +
+        (lista || "<div class='rec-pt' style='color:#9CA3AF'>Sin pedidos pendientes.</div>") +
+        "</div>";
+    }).join("");
+  }
+
+  window.toggleRecogidaDetalle = function (pt) {
+    _ptExpandido = (_ptExpandido === pt) ? null : pt;
+    pintarRecogidas();
+  };
+
   function pintar() {
     var r = el("reloj");
     if (r) r.textContent = "Actualizado " + hhmm(firebase.firestore.Timestamp.now());
-    if (_vista === "lanz") pintarLanzaderas(); else pintarChat();
+    if (_vista === "lanz") pintarLanzaderas();
+    else if (_vista === "recog") pintarRecogidas();
+    else pintarChat();
   }
 
   // ── Navegacion ────────────────────────────────────────────────────────────
 
   window.irA = function (v) {
     if (v === "chat" && !_perms.chat) return;
+    if (v === "recog" && !_perms.lanzaderas) return;
     _vista = v;
     el("vista-lanz").style.display = v === "lanz" ? "" : "none";
+    el("vista-recog").style.display = v === "recog" ? "" : "none";
     el("vista-chat").style.display = v === "chat" ? "" : "none";
     el("barra-escribir").style.display = v === "chat" ? "flex" : "none";
     el("tab-lanz").className = "tab" + (v === "lanz" ? " on" : "");
+    el("tab-recog").className = "tab" + (v === "recog" ? " on" : "");
     el("tab-chat").className = "tab" + (v === "chat" ? " on" : "");
-    el("titulo").textContent = v === "lanz" ? "Lanzaderas" : "Chat";
+    el("titulo").textContent = v === "lanz" ? "Lanzaderas" : v === "recog" ? "Recogidas" : "Chat";
     pintar();
     if (v === "chat") window.scrollTo(0, document.body.scrollHeight);
   };

@@ -122,6 +122,23 @@
       padding: 10px 18px; font-size: 14px; font-weight: 600; font-family: 'Inter', sans-serif;
     }
 
+    /* ── Recogidas (palets pendientes en almacenes externos) ─────────────── */
+    .rec-card { background: #fff; border-radius: 14px; padding: 14px; margin-bottom: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.07); }
+    .rec-top { display: flex; align-items: center; gap: 14px; }
+    .rec-donut { width: 72px; height: 72px; min-width: 72px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+    .rec-donut-hueco { width: 52px; height: 52px; border-radius: 50%; background: #fff; display: flex; align-items: center; justify-content: center; font-size: 19px; font-weight: 800; }
+    .rec-nombre { font-size: 13px; font-weight: 700; color: #374151; margin-bottom: 6px; text-transform: uppercase; letter-spacing: .02em; }
+    .rec-info { font-size: 12px; color: #9CA3AF; line-height: 1.6; }
+    .rec-info b { color: #374151; }
+    .rec-pt { padding: 10px 0; border-top: 1px solid #F0F0F0; }
+    .rec-pt-fila { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+    .rec-pt-codigo { font-weight: 600; font-size: 13px; }
+    .rec-pt-origen { font-size: 11px; color: #9CA3AF; margin-left: 6px; }
+    .rec-pt-pend { font-weight: 700; font-size: 13px; color: #D41F3A; white-space: nowrap; }
+    .rec-detalle { padding: 8px 0 2px; font-size: 12.5px; color: #6B7280; }
+    .rec-detalle div { padding: 5px 0; border-bottom: 1px dashed #F0F0F0; }
+    .rec-detalle div:last-child { border-bottom: none; }
+
     /* ── Pestañas ──────────────────────────────────────────────────────── */
     .tabs {
       position: fixed; bottom: 0; left: 0; right: 0; background: #fff;
@@ -157,6 +174,7 @@
 
     <div class="wrap">
       <div id="vista-lanz"></div>
+      <div id="vista-recog" style="display:none"></div>
       <div id="vista-chat" style="display:none"></div>
     </div>
 
@@ -172,6 +190,7 @@
 
     <div class="tabs">
       <div class="tab on" id="tab-lanz" onclick="irA('lanz')"><span class="i">&#128666;</span>Lanzaderas</div>
+      <div class="tab" id="tab-recog" onclick="irA('recog')"><span class="i">&#128230;</span>Recogidas</div>
       <div class="tab" id="tab-chat" onclick="irA('chat')"><span class="i">&#128172;</span>Chat</div>
       <div class="tab" onclick="salir()"><span class="i">&#9099;</span>Salir</div>
     </div>
