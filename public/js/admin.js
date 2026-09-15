@@ -1009,7 +1009,37 @@ function abrirPtDetalle(id) {
   } else {
     lineasEl.innerHTML = "<p class='card-desc'>Pedido de envases sin lineas SSCC: el total es por huecos de camion, no por bulto.</p>";
   }
+
+  const accionesEl = document.getElementById("ptd-acciones");
+  accionesEl.innerHTML = pendiente > 0
+    ? "<button class='btn-ghost' style='width:100%' onclick=\"cerrarPedidoManualUI('" + id + "', " + pendiente + ")\">Marcar recogido (el chofer no lo registro)</button>" +
+      "<div id='ptd-accion-estado' style='font-size:12px;margin-top:6px'></div>"
+    : "";
+
   document.getElementById("pt-detalle-modal").style.display = "flex";
+}
+
+// Para cuando el chofer se olvida de marcarlo al salir: registra la recogida
+// exactamente igual que si la hubiera hecho el (misma coleccion, mismo
+// trigger que actualiza el pedido y el saldo del almacen).
+function cerrarPedidoManualUI(pt, pendiente) {
+  const texto = prompt("¿Cuantos palets se han recogido de " + pt + "?", pendiente);
+  if (texto === null) return;
+  const palets = parseInt(texto, 10);
+  if (!(palets > 0)) { alert("Cantidad no valida."); return; }
+
+  const estado = document.getElementById("ptd-accion-estado");
+  if (estado) estado.textContent = "Guardando...";
+  firebase.functions().httpsCallable("cerrarPedidoManual")({ pt, palets })
+    .then(res => {
+      if (res.data && res.data.ok) {
+        if (estado) estado.textContent = "Registrado.";
+        cerrarPtDetalle();
+      } else if (estado) {
+        estado.textContent = (res.data && res.data.error) || "No se pudo registrar.";
+      }
+    })
+    .catch(e => { console.error("cerrarPedidoManualUI:", e); if (estado) estado.textContent = "No se pudo registrar."; });
 }
 
 function cerrarPtDetalle(e) {

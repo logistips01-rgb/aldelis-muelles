@@ -1499,6 +1499,47 @@ exports.registrarPedidoEnvases = functions.https.onCall(async (request, context)
   return { ok: true, pt, palets: total };
 });
 
+// A veces el chofer se olvida de marcarlo al salir: se registra a mano desde
+// el panel, exactamente igual que si lo hubiera marcado el (misma coleccion
+// recogidas_palets), para que el pedido y el saldo del almacen queden
+// consistentes sin logica aparte.
+exports.cerrarPedidoManual = functions.https.onCall(async (request, context) => {
+  const esV2 = !!(request && typeof request === "object" && request.data !== undefined);
+  const data = esV2 ? request.data : request;
+  const ctx  = esV2 ? request : (context || {});
+
+  if (!ctx.app) return { ok: false, error: "No autorizado" };
+  const email = (ctx.auth && ctx.auth.token && ctx.auth.token.email || "").toLowerCase();
+  if (!email || !(await puedeSeccion(email, "lanzaderas"))) return { ok: false, error: "Sin permiso" };
+
+  if (!data || typeof data !== "object") return { ok: false, error: "Faltan datos" };
+  const pt = String(data.pt || "");
+  const palets = Number(data.palets);
+  if (!pt) return { ok: false, error: "Falta el pedido" };
+  if (!(palets > 0)) return { ok: false, error: "Cantidad no valida" };
+
+  const ref = db.collection("pedidos_transferencia").doc(pt);
+  const doc = await ref.get();
+  if (!doc.exists) return { ok: false, error: "Pedido no encontrado" };
+  const d = doc.data();
+  if (!ALMACENES_PT.includes(d.almacen)) return { ok: false, error: "Almacen no valido" };
+  const pendiente = Math.max((d.palets || 0) - (d.recogido || 0), 0);
+  if (palets > pendiente) return { ok: false, error: "No puede ser mayor que lo pendiente (" + pendiente + ")" };
+
+  try {
+    await db.collection("recogidas_palets").add({
+      numero: 0, almacen: d.almacen, palets, pts: [{ pt, palets }],
+      manual: true, marcadoPor: email,
+      ts: admin.firestore.Timestamp.now()
+    });
+  } catch (e) {
+    console.error("cerrarPedidoManual: guardar:", e.message);
+    return { ok: false, error: "No se pudo registrar" };
+  }
+
+  return { ok: true };
+});
+
 // TEMPORAL, para las pruebas: borra todos los pedidos y recogidas, y deja
 // los saldos de los 3 almacenes a cero. Solo el admin puede llamarlo.
 // Quitar esta funcion y su boton en el panel cuando se termine de probar.
