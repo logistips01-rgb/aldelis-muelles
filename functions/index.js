@@ -1495,8 +1495,13 @@ async function sustituirOCrearPtCaserfri(pt, resultado) {
   const ssccPt = new Set((resultado.lineas || []).map(l => l.sscc));
   let propuesta = null;
   if (ssccPt.size) {
+    // Sin filtrar por cerrado: si el SSCC coincide con una propuesta que ya
+    // se recogio del todo (cerrada), el PT tiene que descartarse igual que
+    // si coincidiera con una abierta a medio recoger - si solo mirara las
+    // abiertas, una propuesta ya cerrada no se encontraria y se crearia un
+    // pedido nuevo por error para algo que ya esta hecho.
     const snap = await db.collection("pedidos_transferencia")
-      .where("almacen", "==", "caserfri").where("cerrado", "==", false).get();
+      .where("almacen", "==", "caserfri").get();
     for (const doc of snap.docs) {
       const d = doc.data();
       const ssccProp = (d.lineas || []).map(l => l.sscc);
@@ -1519,7 +1524,7 @@ async function sustituirOCrearPtCaserfri(pt, resultado) {
       if (!fresh.exists) return;
       const d = fresh.data();
       if ((d.recogido || 0) > 0) {
-        console.log("sustituirOCrearPtCaserfri: propuesta", ref.id, "ya tiene recogido, se descarta el PT", pt);
+        console.log("sustituirOCrearPtCaserfri: propuesta", ref.id, "ya tiene recogido (o esta cerrada), se descarta el PT", pt);
         return;
       }
       const delta = (resultado.palets || 0) - (d.palets || 0);
