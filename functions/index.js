@@ -2065,11 +2065,27 @@ exports.revisarCorreoIncidencias = onSchedule(
           if (!incidencia) continue;
           algunaReconocida = true;
 
-          await db.collection("incidencias_transporte").add({
+          const datos = {
             ...incidencia,
             remitente, asunto: msg.subject || "",
             creado: admin.firestore.Timestamp.now()
-          });
+          };
+
+          // Usieto reenvia a veces el mismo aviso (o esta funcion reprocesa el
+          // correo si no se llego a marcar como leido la vez anterior): con
+          // posicion se usa como ID del documento para no duplicar la misma
+          // incidencia en el informe. Sin posicion reconocida no hay clave
+          // fiable, se guarda igual que antes (puede repetirse en ese caso).
+          if (incidencia.posicion) {
+            try {
+              await db.collection("incidencias_transporte").doc(incidencia.posicion).create(datos);
+            } catch (e) {
+              if (e.code !== 6 /* ALREADY_EXISTS */) throw e;
+              console.log("revisarCorreoIncidencias: incidencia", incidencia.posicion, "ya registrada, no se repite.");
+            }
+          } else {
+            await db.collection("incidencias_transporte").add(datos);
+          }
         }
 
         if (!algunaReconocida) {
