@@ -1973,7 +1973,11 @@ exports.revisarCorreoPedidos = onSchedule(
 // manda un correo resumen con las de las ultimas 24h.
 
 const DOMINIO_INCIDENCIAS = "grupousieto.com";
-const DESTINATARIOS_INCIDENCIAS = ["mlorente@aldelis.com", "jreyes@aldelis.com", "dgamarra@aldelis.com"];
+const DESTINATARIOS_INCIDENCIAS = [
+  { email: "mlorente@aldelis.com", nombre: "Manuel" },
+  { email: "jreyes@aldelis.com", nombre: "Jessica" },
+  { email: "dgamarra@aldelis.com", nombre: "Daniel" }
+];
 
 function remitenteDeUsieto(msg) {
   const dir = (msg.from && msg.from.emailAddress && msg.from.emailAddress.address || "").toLowerCase();
@@ -2111,23 +2115,27 @@ exports.enviarResumenIncidencias = onSchedule(
         ).join("")
       : "<tr><td colspan='4' style='padding:10px'>Sin incidencias en las ultimas 24 horas.</td></tr>";
 
-    const html =
-      "<html><body style='font-family:Arial,sans-serif;font-size:13px;color:#1A1A1A'>" +
-      "<h2 style='margin-bottom:4px'>Incidencias de transporte — " + fechaFmt + "</h2>" +
-      "<p style='color:#6B7280;margin-top:0'>Recibidas entre las 16:00 del dia anterior y las 16:00 de hoy.</p>" +
-      "<table style='border-collapse:collapse;width:100%'>" +
-      "<thead><tr style='text-align:left;background:#F5F5F5'>" +
-      "<th style='padding:6px 10px'>Posicion</th><th style='padding:6px 10px'>Fecha exp.</th>" +
-      "<th style='padding:6px 10px'>Destinatario</th><th style='padding:6px 10px'>Incidencia</th>" +
-      "</tr></thead><tbody>" + filasHtml + "</tbody></table>" +
-      "</body></html>";
+    function htmlPara(nombre) {
+      return "<html><body style='font-family:Arial,sans-serif;font-size:13px;color:#1A1A1A'>" +
+        "<p>Hola " + esc(nombre) + ",</p>" +
+        "<h2 style='margin-bottom:4px'>Incidencias de transporte — " + fechaFmt + "</h2>" +
+        "<p style='color:#6B7280;margin-top:0'>Recibidas entre las 16:00 del dia anterior y las 16:00 de hoy.</p>" +
+        "<table style='border-collapse:collapse;width:100%'>" +
+        "<thead><tr style='text-align:left;background:#F5F5F5'>" +
+        "<th style='padding:6px 10px'>Posicion</th><th style='padding:6px 10px'>Fecha exp.</th>" +
+        "<th style='padding:6px 10px'>Destinatario</th><th style='padding:6px 10px'>Incidencia</th>" +
+        "</tr></thead><tbody>" + filasHtml + "</tbody></table>" +
+        "</body></html>";
+    }
 
-    const cuerpo = "Incidencias de transporte " + fechaFmt + ": " + filas.length + " recibidas.";
+    function cuerpoPara(nombre) {
+      return "Hola " + nombre + ",\n\nIncidencias de transporte " + fechaFmt + ": " + filas.length + " recibidas.";
+    }
 
     try {
       const token = await obtenerTokenMS();
-      for (const email of DESTINATARIOS_INCIDENCIAS) {
-        await enviarConGraph(token, email, asunto, html, cuerpo, null);
+      for (const dest of DESTINATARIOS_INCIDENCIAS) {
+        await enviarConGraph(token, dest.email, asunto, htmlPara(dest.nombre), cuerpoPara(dest.nombre), null);
       }
       console.log("Resumen de incidencias enviado:", filas.length, "incidencias.");
     } catch (e) {
