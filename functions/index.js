@@ -2099,6 +2099,56 @@ exports.revisarCorreoIncidencias = onSchedule(
   }
 );
 
+// Convierte una fecha/hora "de reloj" en Madrid al instante UTC real que le
+// corresponde, sin depender de si ese dia cae en horario de invierno o de
+// verano (CET/CEST) - hace falta para calcular con precision los limites de
+// un mes en el resumen mensual, igual que el diario ya calcula "hoy" con
+// toLocaleDateString.
+function madridADate(y, m, d, hh, mm, ss) {
+  const asUTC = Date.UTC(y, m - 1, d, hh, mm, ss);
+  const inv = new Date(new Date(asUTC).toLocaleString("en-US", { timeZone: "Europe/Madrid" }));
+  const diff = asUTC - inv.getTime();
+  return new Date(asUTC + diff);
+}
+
+function filasIncidenciasHtml(filas, mensajeVacio) {
+  return filas.length
+    ? filas.map(f =>
+        "<tr>" +
+        "<td style='padding:6px 10px;border-bottom:1px solid #eee'>" + (f.posicion || "-") + "</td>" +
+        "<td style='padding:6px 10px;border-bottom:1px solid #eee'>" + (f.fechaExp || "-") + "</td>" +
+        "<td style='padding:6px 10px;border-bottom:1px solid #eee'>" + (f.destinatario || "-") + (f.localidad ? " (" + f.localidad + (f.provincia ? ", " + f.provincia : "") + ")" : "") + "</td>" +
+        "<td style='padding:6px 10px;border-bottom:1px solid #eee'>" + (f.descripcion || "-") + "</td>" +
+        "</tr>"
+      ).join("")
+    : "<tr><td colspan='4' style='padding:10px'>" + mensajeVacio + "</td></tr>";
+}
+
+// Envia el mismo informe (tabla de incidencias) a todos los destinatarios,
+// cada uno con su propio saludo. Usado tanto por el resumen diario como por
+// el mensual.
+async function enviarInformeIncidenciasATodos(asunto, titulo, subtitulo, filasHtml) {
+  try {
+    const token = await obtenerTokenMS();
+    for (const dest of DESTINATARIOS_INCIDENCIAS) {
+      const html = "<html><body style='font-family:Arial,sans-serif;font-size:13px;color:#1A1A1A'>" +
+        "<p>Hola " + esc(dest.nombre) + ",</p>" +
+        "<h2 style='margin-bottom:4px'>" + titulo + "</h2>" +
+        "<p style='color:#6B7280;margin-top:0'>" + subtitulo + "</p>" +
+        "<table style='border-collapse:collapse;width:100%'>" +
+        "<thead><tr style='text-align:left;background:#F5F5F5'>" +
+        "<th style='padding:6px 10px'>Posicion</th><th style='padding:6px 10px'>Fecha exp.</th>" +
+        "<th style='padding:6px 10px'>Destinatario</th><th style='padding:6px 10px'>Incidencia</th>" +
+        "</tr></thead><tbody>" + filasHtml + "</tbody></table>" +
+        "</body></html>";
+      const cuerpo = "Hola " + dest.nombre + ",\n\n" + titulo + ".";
+      await enviarConGraph(token, dest.email, asunto, html, cuerpo, null);
+    }
+  } catch (e) {
+    console.error("enviarInformeIncidenciasATodos:", e.message);
+  }
+}
+
 // Cada dia a las 16:00 (Europe/Madrid), recopilatorio de lo recibido desde
 // las 16:00 del dia anterior.
 exports.enviarResumenIncidencias = onSchedule(
@@ -2119,44 +2169,52 @@ exports.enviarResumenIncidencias = onSchedule(
 
     const fechaFmt = new Date(ahora.toMillis()).toLocaleDateString("es-ES", { timeZone: "Europe/Madrid" });
     const asunto = "Incidencias de transporte — " + fechaFmt + " (" + filas.length + ")";
+    const filasHtml = filasIncidenciasHtml(filas, "Sin incidencias en las ultimas 24 horas.");
 
-    const filasHtml = filas.length
-      ? filas.map(f =>
-          "<tr>" +
-          "<td style='padding:6px 10px;border-bottom:1px solid #eee'>" + (f.posicion || "-") + "</td>" +
-          "<td style='padding:6px 10px;border-bottom:1px solid #eee'>" + (f.fechaExp || "-") + "</td>" +
-          "<td style='padding:6px 10px;border-bottom:1px solid #eee'>" + (f.destinatario || "-") + (f.localidad ? " (" + f.localidad + (f.provincia ? ", " + f.provincia : "") + ")" : "") + "</td>" +
-          "<td style='padding:6px 10px;border-bottom:1px solid #eee'>" + (f.descripcion || "-") + "</td>" +
-          "</tr>"
-        ).join("")
-      : "<tr><td colspan='4' style='padding:10px'>Sin incidencias en las ultimas 24 horas.</td></tr>";
+    await enviarInformeIncidenciasATodos(
+      asunto,
+      "Incidencias de transporte — " + fechaFmt,
+      "Recibidas entre las 16:00 del dia anterior y las 16:00 de hoy.",
+      filasHtml
+    );
+    console.log("Resumen de incidencias enviado:", filas.length, "incidencias.");
+  }
+);
 
-    function htmlPara(nombre) {
-      return "<html><body style='font-family:Arial,sans-serif;font-size:13px;color:#1A1A1A'>" +
-        "<p>Hola " + esc(nombre) + ",</p>" +
-        "<h2 style='margin-bottom:4px'>Incidencias de transporte — " + fechaFmt + "</h2>" +
-        "<p style='color:#6B7280;margin-top:0'>Recibidas entre las 16:00 del dia anterior y las 16:00 de hoy.</p>" +
-        "<table style='border-collapse:collapse;width:100%'>" +
-        "<thead><tr style='text-align:left;background:#F5F5F5'>" +
-        "<th style='padding:6px 10px'>Posicion</th><th style='padding:6px 10px'>Fecha exp.</th>" +
-        "<th style='padding:6px 10px'>Destinatario</th><th style='padding:6px 10px'>Incidencia</th>" +
-        "</tr></thead><tbody>" + filasHtml + "</tbody></table>" +
-        "</body></html>";
-    }
+// El dia 1 de cada mes a las 8:00 (Europe/Madrid), recopilatorio de todo lo
+// recibido durante el mes anterior completo.
+exports.enviarResumenIncidenciasMensual = onSchedule(
+  { schedule: "0 8 1 * *", timeZone: "Europe/Madrid" },
+  async () => {
+    const [y, m] = fechaHoyMadrid().split("-").map(Number);
+    const mesAntY = (m === 1) ? y - 1 : y;
+    const mesAntM = (m === 1) ? 12 : m - 1;
 
-    function cuerpoPara(nombre) {
-      return "Hola " + nombre + ",\n\nIncidencias de transporte " + fechaFmt + ": " + filas.length + " recibidas.";
-    }
+    const desde = admin.firestore.Timestamp.fromDate(madridADate(mesAntY, mesAntM, 1, 0, 0, 0));
+    const hasta = admin.firestore.Timestamp.fromDate(madridADate(y, m, 1, 0, 0, 0));
 
+    let snap;
     try {
-      const token = await obtenerTokenMS();
-      for (const dest of DESTINATARIOS_INCIDENCIAS) {
-        await enviarConGraph(token, dest.email, asunto, htmlPara(dest.nombre), cuerpoPara(dest.nombre), null);
-      }
-      console.log("Resumen de incidencias enviado:", filas.length, "incidencias.");
-    } catch (e) {
-      console.error("enviarResumenIncidencias: envio:", e.message);
-    }
+      snap = await db.collection("incidencias_transporte")
+        .where("creado", ">=", desde).where("creado", "<", hasta)
+        .orderBy("creado", "asc").get();
+    } catch (e) { console.error("enviarResumenIncidenciasMensual: consulta:", e.message); return; }
+
+    const filas = [];
+    snap.forEach(d => filas.push(d.data()));
+
+    const nombreMes = new Date(Date.UTC(mesAntY, mesAntM - 1, 1))
+      .toLocaleDateString("es-ES", { month: "long", year: "numeric", timeZone: "UTC" });
+    const asunto = "Incidencias de transporte — " + nombreMes + " (" + filas.length + ")";
+    const filasHtml = filasIncidenciasHtml(filas, "Sin incidencias en " + nombreMes + ".");
+
+    await enviarInformeIncidenciasATodos(
+      asunto,
+      "Incidencias de transporte — " + nombreMes,
+      "Resumen mensual: todas las incidencias recibidas durante " + nombreMes + ".",
+      filasHtml
+    );
+    console.log("Resumen mensual de incidencias enviado:", filas.length, "incidencias,", nombreMes);
   }
 );
 
