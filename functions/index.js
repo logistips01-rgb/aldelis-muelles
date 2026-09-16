@@ -2301,3 +2301,110 @@ exports.calcularEstimacionRecogidas = onSchedule(
     } catch (e) { console.error("calcularEstimacionRecogidas: guardar:", e.message); }
   }
 );
+
+// ── Alerta de cierre de almacen en riesgo ───────────────────────────────────
+//
+// Cada almacen externo cierra a una hora (configurable en config/cierres_
+// almacenes, editable desde el panel): si con el ritmo de hoy no vamos a
+// llegar a recoger todo antes de esa hora, se avisa para reaccionar a tiempo
+// (p.ej. contratando una cuarta lanzadera). Mismo calculo de "fin estimado"
+// que pinta el panel (estimacionFinTexto en admin.js), repetido aqui en el
+// servidor porque el aviso tiene que salir aunque nadie tenga el panel
+// abierto.
+const CIERRES_DEFECTO = { avitrans: "17:00", caserfri: "18:00", txt: "15:00" };
+
+function minutosDeHHMM(s) {
+  const m = typeof s === "string" && s.match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  return Number(m[1]) * 60 + Number(m[2]);
+}
+
+exports.revisarCierresAlmacenes = onSchedule(
+  { schedule: "*/15 7-20 * * *", timeZone: "Europe/Madrid" },
+  async () => {
+    const hoy = fechaHoyMadrid();
+
+    const [cierresSnap, estSnap, lanzSnap, ptsSnap] = await Promise.all([
+      db.collection("config").doc("cierres_almacenes").get(),
+      db.collection("config").doc("estimacion_recogidas").get(),
+      db.collection("lanzaderas").where("numero", "in", LANZ_RECOGIDAS_EXTERNAS).get(),
+      db.collection("pedidos_transferencia").where("cerrado", "==", false).get()
+    ]);
+
+    const cierres = Object.assign({}, CIERRES_DEFECTO, cierresSnap.exists ? cierresSnap.data() : {});
+    const est = estSnap.exists ? estSnap.data() : {};
+
+    const pendientePorAlmacen = {};
+    ALMACENES_PT.forEach(a => { pendientePorAlmacen[a] = 0; });
+    ptsSnap.forEach(doc => {
+      const d = doc.data();
+      if (d.activado === false) return;
+      if (!ALMACENES_PT.includes(d.almacen)) return;
+      pendientePorAlmacen[d.almacen] += Math.max((d.palets || 0) - (d.recogido || 0), 0);
+    });
+
+    const lanzEnNave = {};
+    lanzSnap.forEach(doc => {
+      const d = doc.data();
+      if (d.activa && d.estado === "en_nave" && ALMACENES_PT.includes(d.nave)) lanzEnNave[d.nave] = d;
+    });
+
+    const enRiesgo = [];
+    for (const almacen of ALMACENES_PT) {
+      const pendiente = pendientePorAlmacen[almacen] || 0;
+      if (pendiente <= 0) continue;
+
+      const e = est[almacen];
+      if (!e || e.finMedioMin == null) continue;
+
+      let finEstimadoMin = e.finMedioMin;
+      const lz = lanzEnNave[almacen];
+      if (lz && lz.desde) {
+        const llevaMin = (Date.now() - lz.desde.toMillis()) / 60000;
+        if (e.duracionMediaMin != null && llevaMin > e.duracionMediaMin) {
+          finEstimadoMin += (llevaMin - e.duracionMediaMin);
+        }
+      }
+
+      const cierreMin = minutosDeHHMM(cierres[almacen]);
+      if (cierreMin == null || finEstimadoMin <= cierreMin) continue;
+
+      enRiesgo.push({ almacen, pendiente, finEstimadoMin, cierreMin });
+    }
+
+    if (!enRiesgo.length) return;
+
+    const destinatarios = await emailsDeConfig("alertas", []);
+    if (!destinatarios.length) { console.log("revisarCierresAlmacenes: en riesgo pero sin destinatarios."); return; }
+
+    for (const r of enRiesgo) {
+      const dedupRef = db.collection("alertas_cierre").doc(r.almacen + "_" + hoy);
+      const dedup = await dedupRef.get();
+      if (dedup.exists) continue; // ya avisado hoy para este almacen
+
+      await dedupRef.set({ ts: admin.firestore.Timestamp.now(), finEstimadoMin: r.finEstimadoMin, pendiente: r.pendiente });
+
+      const nombre = r.almacen.charAt(0).toUpperCase() + r.almacen.slice(1);
+      const horaFin = minToHHMMServidor(r.finEstimadoMin);
+      const horaCierre = minToHHMMServidor(r.cierreMin);
+
+      await enviarALista(destinatarios,
+        "ALERTA Aldelis — Riesgo de no llegar a recoger en " + nombre + " antes del cierre",
+        "ALERTA de Aldelis Muelles\n\n" +
+        "Con el ritmo de hoy, la recogida en " + nombre + " no terminaria hasta las " +
+        horaFin + " aproximadamente, y " + nombre + " cierra a las " + horaCierre + ".\n\n" +
+        "Quedan " + r.pendiente + " palets pendientes.\n\n" +
+        "Revisa el panel y valora reforzar la recogida (p.ej. una cuarta lanzadera):\n" +
+        "https://aldelis-muelles.web.app/admin.html" + FIRMA,
+        null, null);
+
+      console.log("revisarCierresAlmacenes: alerta enviada,", r.almacen, "fin estimado", horaFin, "cierre", horaCierre);
+    }
+  }
+);
+
+function minToHHMMServidor(minutos) {
+  let m = Math.round(minutos) % 1440;
+  if (m < 0) m += 1440;
+  return String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0");
+}

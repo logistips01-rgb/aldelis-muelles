@@ -414,6 +414,14 @@ function iniciarListeners() {
       renderPedidosCards();
     }, e => console.error("estimacion_recogidas:", e)));
 
+    // Horarios de cierre de cada almacen, editables en Config (ver
+    // guardarCierresAlmacenes). Si no existe el documento aun, se sigue usando
+    // CIERRES_DEFECTO.
+    _unsubs.push(db.collection("config").doc("cierres_almacenes").onSnapshot(d => {
+      CIERRES_ALMACENES = Object.assign({}, CIERRES_DEFECTO, d.exists ? d.data() : {});
+      renderPedidosCards();
+    }, e => console.error("cierres_almacenes:", e)));
+
     // Recogidas de hoy, solo para el contador en vivo "recogidos hoy" (el
     // desglose de verdad va en el informe de costes de lanzaderas).
     const inicioHoy = new Date(); inicioHoy.setHours(0, 0, 0, 0);
@@ -1002,7 +1010,7 @@ function resetPedidosPruebas() {
 // vivo si hoy una lanzadera lleva en ese almacen mas tiempo del habitual.
 // Sin datos historicos todavia (primeros dias del modulo) no se muestra
 // nada, en vez de inventarse una hora.
-function estimacionFinTexto(almacenId) {
+function estimacionFinMinutos(almacenId) {
   const est = (window._estimacionRecogidas || {})[almacenId];
   if (!est || est.finMedioMin == null) return null;
 
@@ -1015,7 +1023,50 @@ function estimacionFinTexto(almacenId) {
       minutos += (llevaMin - est.duracionMediaMin);
     }
   }
-  return minToHHMM(minutos);
+  return minutos;
+}
+
+function estimacionFinTexto(almacenId) {
+  const minutos = estimacionFinMinutos(almacenId);
+  return minutos == null ? null : minToHHMM(minutos);
+}
+
+// Horarios de cierre de cada almacen externo (editables en Config, ver
+// guardarCierresAlmacenes). Si con el ritmo de hoy no se llega a tiempo,
+// revisarAlertasCierre() enciende el banner de la pestaña Pedidos. El aviso
+// por correo lo manda el servidor (revisarCierresAlmacenes en
+// functions/index.js), no el panel, para que salga aunque nadie lo tenga
+// abierto.
+const CIERRES_DEFECTO = { avitrans: "17:00", caserfri: "18:00", txt: "15:00" };
+let CIERRES_ALMACENES = Object.assign({}, CIERRES_DEFECTO);
+
+function minutosDeHHMM(s) {
+  const m = typeof s === "string" && s.match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  return Number(m[1]) * 60 + Number(m[2]);
+}
+
+function revisarAlertasCierre(pendientePorAlmacen) {
+  const banner = document.getElementById("alerta-cierres");
+  if (!banner) return;
+  const enRiesgo = [];
+  ALMACENES_PEDIDOS.forEach(a => {
+    if (!((pendientePorAlmacen || {})[a.id] > 0)) return;
+    const finMin = estimacionFinMinutos(a.id);
+    if (finMin == null) return;
+    const cierreMin = minutosDeHHMM(CIERRES_ALMACENES[a.id]);
+    if (cierreMin == null || finMin <= cierreMin) return;
+    enRiesgo.push({ id: a.id, nombre: a.nombre, finTxt: minToHHMM(finMin), cierreTxt: CIERRES_ALMACENES[a.id] });
+  });
+  if (enRiesgo.length) {
+    banner.innerHTML = enRiesgo.map(r =>
+      "🚨 ALERTA: " + esc(r.nombre) + " no llegaria a tiempo (fin estimado " +
+      r.finTxt + ", cierra a las " + r.cierreTxt + ")"
+    ).join("&nbsp;&nbsp;·&nbsp;&nbsp;");
+    banner.style.display = "block";
+  } else {
+    banner.style.display = "none";
+  }
 }
 
 function renderPedidosCards() {
@@ -1031,6 +1082,11 @@ function renderPedidosCards() {
   });
   const recogidoHoy = window._recogidoHoyPorAlmacen || {};
   const pedidoHoy = window._pedidoHoyPorAlmacen || {};
+  const pendientePorAlmacen = {};
+  ALMACENES_PEDIDOS.forEach(a => {
+    pendientePorAlmacen[a.id] = Math.max((datos[a.id].pedido || 0) - (datos[a.id].recogido || 0), 0);
+  });
+  revisarAlertasCierre(pendientePorAlmacen);
   cont.innerHTML = ALMACENES_PEDIDOS.map(a => {
     const d = datos[a.id] || {};
     const pedido = d.pedido || 0;
@@ -3442,7 +3498,25 @@ function cargarConfig() {
   if (elT) elT.value = _tiempoMaxLanz;
   const elD = document.getElementById("cfg-dias-lab");
   if (elD) elD.value = _diasLaborables;
+  ["avitrans", "caserfri", "txt"].forEach(id => {
+    const el = document.getElementById("cfg-cierre-" + id);
+    if (el) el.value = CIERRES_ALMACENES[id] || CIERRES_DEFECTO[id];
+  });
   cargarPermisosUsuarios();
+}
+
+async function guardarCierresAlmacenes() {
+  const datos = {};
+  for (const id of ["avitrans", "caserfri", "txt"]) {
+    const v = (document.getElementById("cfg-cierre-" + id) || {}).value;
+    if (!minutosDeHHMM(v)) { alert("Revisa la hora de cierre de " + id + "."); return; }
+    datos[id] = v;
+  }
+  try {
+    await db.collection("config").doc("cierres_almacenes").set(datos, { merge: true });
+    const ok = document.getElementById("cfg-cierres-ok");
+    if (ok) { ok.style.display = "inline"; setTimeout(() => ok.style.display = "none", 2500); }
+  } catch (e) { console.error(e); alert("Error al guardar. Intentalo de nuevo."); }
 }
 
 // ─── GESTION DE PERMISOS ─────────────────────────────────────────────────────

@@ -225,6 +225,8 @@
     </div>
 
     <div id="vista-pedidos" class="reservas-wrap" style="display:none">
+      <div id="alerta-cierres" class="alerta-nuclear" style="display:none"></div>
+
       <div class="informe-header">
         <div class="section-title" style="margin-bottom:0">Palets pendientes por recoger</div>
         <div style="display:flex;gap:8px">
@@ -399,6 +401,23 @@
           <span style="font-size:14px;color:#6B7280">minutos</span>
           <button class="btn-informe" onclick="guardarTiempoMax()">Guardar</button>
           <span id="cfg-tiempo-ok" style="font-size:13px;color:#1D9E75;display:none">Guardado correctamente</span>
+        </div>
+      </div>
+
+      <div class="informe-card" style="margin-top:16px">
+        <div class="informe-card-title">Horarios de cierre de almacenes</div>
+        <p style="font-size:13px;color:#6B7280;margin-bottom:12px">Si con el ritmo de hoy no se va a llegar a recoger todo antes de esta hora, se avisa por correo (a los mismos destinatarios de arriba) y con un aviso en el panel, en la pestaña Pedidos.</p>
+        <div style="display:flex;gap:16px;flex-wrap:wrap">
+          <div><label style="font-size:13px;color:#374151;display:block;margin-bottom:4px">Avitrans</label>
+            <input type="time" id="cfg-cierre-avitrans" style="padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit"></div>
+          <div><label style="font-size:13px;color:#374151;display:block;margin-bottom:4px">Caserfri</label>
+            <input type="time" id="cfg-cierre-caserfri" style="padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit"></div>
+          <div><label style="font-size:13px;color:#374151;display:block;margin-bottom:4px">Txt</label>
+            <input type="time" id="cfg-cierre-txt" style="padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit"></div>
+        </div>
+        <div style="margin-top:12px">
+          <button class="btn-informe" onclick="guardarCierresAlmacenes()">Guardar</button>
+          <span id="cfg-cierres-ok" style="font-size:13px;color:#1D9E75;display:none;margin-left:8px">Guardado correctamente</span>
         </div>
       </div>
 
