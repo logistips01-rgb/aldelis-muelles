@@ -25,6 +25,7 @@
 
   var _unsubs      = [];
   var _lanz        = {};   // estado en vivo, por numero
+  var _furgoneta   = null; // estado en vivo de la furgoneta (un unico doc)
   var _choferes    = {};
   var _mensajes    = [];
   var _tiempoMax   = 90;   // minutos; se lee de config/app
@@ -189,6 +190,13 @@
         pintar();
       }, function (e) { console.error("choferes:", e); }));
 
+      // La furgoneta es un modulo aparte (sin chofer/chat/GPS): un unico
+      // documento con su estado en vivo, se pinta como una tarjeta mas.
+      _unsubs.push(db.collection("furgoneta").doc("furgoneta").onSnapshot(function (d) {
+        _furgoneta = d.exists ? d.data() : null;
+        pintar();
+      }, function (e) { console.error("furgoneta:", e); }));
+
       // Pedidos pendientes de recoger en almacenes externos (misma logica que
       // el panel de admin, resumida para movil).
       _unsubs.push(db.collection("pedidos_transferencia").where("cerrado", "==", false).onSnapshot(function (s) {
@@ -343,7 +351,45 @@
         "</div>" + cronoHtml + "</div>" + pie + "</div>";
     }).join("");
 
+    html += tarjetaFurgoneta();
+
     cont.innerHTML = html;
+  }
+
+  // Tarjeta simplificada de la furgoneta: sin chofer, sin llamar, sin chat
+  // (ese modulo no los tiene), solo donde esta y desde cuando.
+  function tarjetaFurgoneta() {
+    var d = _furgoneta;
+    var activa = d && d.activa && d.estado !== "fuera";
+    var min = activa ? minutosDesde(d.desde) : null;
+    var clase = !activa ? "fuera" : (d.estado === "transito" ? "transito" : "");
+
+    var donde, sub, etiqueta;
+    if (!d) {
+      donde = "<div class='donde gris'>Sin registrar</div>";
+      sub = "<div class='sub'>Aun no ha fichado hoy</div>";
+      etiqueta = "";
+    } else if (!activa) {
+      donde = "<div class='donde gris'>Fuera de servicio</div>";
+      sub = "<div class='sub'>Ultimo registro " + hhmm(d.desde) + "</div>";
+      etiqueta = "";
+    } else if (d.estado === "transito") {
+      donde = "<div class='donde'>&rarr; " + esc(NAVE_NOMBRE[d.destino] || d.destino || "?") + "</div>";
+      sub = "<div class='sub'>En transito &middot; salio " + hhmm(d.desde) + "</div>";
+      etiqueta = "TRANSITO";
+    } else {
+      donde = "<div class='donde'>" + esc(NAVE_NOMBRE[d.nave] || d.nave || "?") + "</div>";
+      sub = "<div class='sub'>Presente &middot; desde " + hhmm(d.desde) + "</div>";
+      etiqueta = "EN NAVE";
+    }
+
+    var cronoHtml = activa
+      ? "<div class='crono'>" + crono(min) + "<small>" + etiqueta + "</small></div>"
+      : "<div class='crono' style='color:#D1D5DB'>—</div>";
+
+    return "<div class='card " + clase + "'><div class='fila'><div>" +
+      "<div class='lz'>FURGONETA</div>" + donde + sub +
+      "</div>" + cronoHtml + "</div></div>";
   }
 
   function pintarChat() {
