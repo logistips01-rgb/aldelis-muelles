@@ -2002,20 +2002,26 @@ async function emailsCambiosMaterial() {
   return emailsDeConfig("cambios", []);
 }
 
+// Ancho fijo (no %) en la columna de la etiqueta: sin eso, cada cliente de
+// correo reparte las dos columnas como quiere y el hueco entre "Motivo" y
+// "Alergenos" puede acabar ocupando media pantalla (nos paso justo esto).
 function filaCambio(label, valor) {
-  return "<tr><td style='padding:6px 10px;color:#6B7280;font-size:13px;border-bottom:1px solid #f0f0f0'>" + label + "</td>" +
-    "<td style='padding:6px 10px;font-weight:600;font-size:13px;color:#1A1A1A;border-bottom:1px solid #f0f0f0'>" + valor + "</td></tr>";
+  return "<tr>" +
+    "<td width='150' valign='top' style='padding:4px 10px 4px 0;color:#8A8F98;font-size:12.5px;white-space:nowrap'>" + label + "</td>" +
+    "<td valign='top' style='padding:4px 0;font-size:12.5px;color:#333;font-weight:500'>" + valor + "</td>" +
+    "</tr>";
 }
 
 function htmlCambioMaterial(d, titulo, colorCabecera) {
   const motivoTxt = MOTIVO_LABEL_CAMBIO[d.motivo] || d.motivo || "-";
-  return HEAD_EMAIL + "<body bgcolor='#f0f0f0' style='margin:0;padding:16px;background-color:#f0f0f0;" + FONT + "'>" +
-    "<div style='max-width:600px;margin:0 auto'>" +
-    "<div style='background:" + colorCabecera + ";border-radius:8px;padding:20px 22px;margin-bottom:12px'>" +
-    "<div style='color:#fff;font-size:20px;font-weight:700;letter-spacing:-.5px'>Aldelis</div>" +
-    "<div style='color:rgba(255,255,255,.85);font-size:12px;margin-top:2px'>" + titulo + "</div>" +
-    "</div>" +
-    "<div style='border-radius:8px;border:1px solid #e8e8e8;background:#fff;padding:14px'>" +
+  return HEAD_EMAIL + "<body bgcolor='#f6f6f7' style='margin:0;padding:16px;background-color:#f6f6f7;" + FONT + "'>" +
+    "<div style='max-width:480px;margin:0 auto'>" +
+    "<table width='100%' cellpadding='0' cellspacing='0' style='margin-bottom:14px'><tr>" +
+    "<td width='30' style='padding-right:8px'><img src='https://aldelis-muelles.web.app/icon-512.png' width='26' height='26' style='display:block;border-radius:6px'></td>" +
+    "<td style='border-bottom:2px solid " + colorCabecera + ";padding-bottom:8px'>" +
+    "<div style='font-size:14px;font-weight:700;color:#1A1A1A'>Aldelis</div>" +
+    "<div style='font-size:11.5px;color:#8A8F98;margin-top:1px'>" + titulo + "</div>" +
+    "</td></tr></table>" +
     "<table width='100%' cellpadding='0' cellspacing='0'>" +
     filaCambio("Tipo de material", d.tipo === "bandeja" ? "Bandeja" : "Etiqueta") +
     filaCambio("Referencia actual", esc(d.referenciaActual || "-")) +
@@ -2026,9 +2032,9 @@ function htmlCambioMaterial(d, titulo, colorCabecera) {
     (d.descripcion ? filaCambio("Descripcion", esc(d.descripcion)) : "") +
     (d.observaciones ? filaCambio("Observaciones", esc(d.observaciones)) : "") +
     (d.fechaEjecutada ? filaCambio("Ejecutado el", esc(d.fechaEjecutada)) : "") +
-    "</table></div>" +
-    "<div style='height:14px'></div>" +
-    "<div style='text-align:center;font-size:11px;color:#aaa'>Cambios de material &middot; Aldelis</div>" +
+    "</table>" +
+    "<div style='height:16px'></div>" +
+    "<div style='font-size:10.5px;color:#B0B4BB'>Cambios de material &middot; Aldelis</div>" +
     "</div></body></html>";
 }
 
