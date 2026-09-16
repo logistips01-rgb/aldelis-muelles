@@ -407,14 +407,16 @@ function iniciarListeners() {
       renderPedidosCards();
     }, e => console.error("recogidas_palets hoy:", e)));
 
-    // Total pedido HOY por almacen (se resetea solo cada dia, al calcularse
-    // por fecha de creacion en vez de con un contador acumulado). Puramente
-    // informativo, no se usa para calcular pendientes.
-    _unsubs.push(db.collection("pedidos_transferencia").where("creado", ">=", Ts.fromDate(inicioHoy)).onSnapshot(s => {
+    // Total pedido HOY por almacen (se resetea solo cada dia). Se cuenta por
+    // fecha de RECOGIDA, no de creacion: un pedido programado ayer para hoy
+    // se creo ayer, pero es de hoy a todos los efectos (y ya cuenta en el
+    // pendiente en cuanto se activa). Puramente informativo, no se usa para
+    // calcular pendientes.
+    const hoyStr = new Date().toLocaleDateString("sv-SE");
+    _unsubs.push(db.collection("pedidos_transferencia").where("fecha", "==", hoyStr).onSnapshot(s => {
       window._pedidoHoyPorAlmacen = { avitrans: 0, caserfri: 0, txt: 0 };
       s.forEach(d => {
         const v = d.data();
-        if (v.activado === false) return; // programado para otro dia, no cuenta como "hoy"
         if (window._pedidoHoyPorAlmacen.hasOwnProperty(v.almacen)) {
           window._pedidoHoyPorAlmacen[v.almacen] += (v.palets || 0);
         }

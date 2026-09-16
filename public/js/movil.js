@@ -207,11 +207,13 @@
         pintar();
       }, function (e) { console.error("recogidas_palets:", e); }));
 
-      _unsubs.push(db.collection("pedidos_transferencia").where("creado", ">=", firebase.firestore.Timestamp.fromDate(hoyRec0)).onSnapshot(function (s) {
+      // Se cuenta por fecha de RECOGIDA, no de creacion: un pedido programado
+      // ayer para hoy se creo ayer, pero es de hoy a todos los efectos.
+      var hoyStr = new Date().toLocaleDateString("sv-SE");
+      _unsubs.push(db.collection("pedidos_transferencia").where("fecha", "==", hoyStr).onSnapshot(function (s) {
         _pedidoHoy = { avitrans: 0, caserfri: 0, txt: 0 };
         s.forEach(function (d) {
           var v = d.data();
-          if (v.activado === false) return; // programado para otro dia
           if (_pedidoHoy.hasOwnProperty(v.almacen)) _pedidoHoy[v.almacen] += (v.palets || 0);
         });
         pintar();
