@@ -2003,6 +2003,34 @@ function cargarFurgoneta() {
     else if (logs[i].estado === "transito") trans.push({ destino: logs[i].destino || null, startMin, endMin });
   }
   renderGanttFurgoneta(segs, trans, finMarks);
+  renderTablaFurgoneta(segs, trans);
+}
+
+// Mismos segmentos que la linea de tiempo, pero en tabla: mas facil de leer
+// de un vistazo cuando ha habido varios movimientos en el dia.
+function renderTablaFurgoneta(segs, trans) {
+  const cont = document.getElementById("tabla-furgoneta");
+  if (!cont) return;
+  const filas = [
+    ...segs.map(s => ({ tipo: "En nave", lugar: NAVE_NOMBRE[s.nave] || s.nave, ...s })),
+    ...trans.map(s => ({ tipo: "Transito", lugar: "→ " + (NAVE_NOMBRE[s.destino] || s.destino || "?"), ...s }))
+  ].sort((a, b) => a.startMin - b.startMin);
+
+  if (!filas.length) {
+    cont.innerHTML = "<p style='font-size:13px;color:#9CA3AF'>Sin movimientos registrados este dia.</p>";
+    return;
+  }
+
+  cont.innerHTML = "<div class='tabla-scroll'><table class='tabla-inf'><thead><tr>" +
+    "<th>Tipo</th><th>Lugar</th><th>Desde</th><th>Hasta</th><th>Duracion</th></tr></thead><tbody>" +
+    filas.map(f => "<tr>" +
+      "<td>" + esc(f.tipo) + "</td>" +
+      "<td>" + esc(f.lugar) + "</td>" +
+      "<td>" + minToHHMM(f.startMin) + "</td>" +
+      "<td>" + minToHHMM(f.endMin) + "</td>" +
+      "<td>" + formatDuracion(Math.round(f.endMin - f.startMin)) + "</td>" +
+      "</tr>"
+    ).join("") + "</tbody></table></div>";
 }
 
 function renderGanttFurgoneta(segs, trans, finMarks) {

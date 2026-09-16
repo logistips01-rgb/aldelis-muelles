@@ -60,6 +60,8 @@ function renderNaves(titulo, modo) {
       "<div class='temp-btn' onclick=\"pickNaveFurgo('" + n.id + "', '" + modo + "')\">" +
       "<div class='temp-icon'>🚐</div><div class='temp-name'>" + escTexto(n.nombre) + "</div></div>"
     ).join("") +
+    "<div class='temp-btn' onclick=\"pedirOtroLugarFurgo('" + modo + "')\" style='border-style:dashed'>" +
+    "<div class='temp-icon'>📍</div><div class='temp-name'>Otro lugar</div></div>" +
     "</div></div>";
 }
 
@@ -67,6 +69,71 @@ function pickNaveFurgo(id, modo) {
   if (modo === "destino") { sel.destino = id; registrarTransito(); return; }
   sel.nave = id;
   render();
+}
+
+// ── Lugares que no estan en la lista ────────────────────────────────────────
+// El nombre escrito se guarda tal cual en "nave"/"destino" (texto libre en las
+// reglas). Se recuerdan los ultimos en el propio movil para no teclearlos
+// cada vez, igual que ya hacen las lanzaderas.
+const OTROS_KEY_FURGO = "furgo_otros_lugares";
+const MAX_OTROS_FURGO = 6;
+
+function otrosLugaresFurgo() {
+  try {
+    const l = JSON.parse(localStorage.getItem(OTROS_KEY_FURGO) || "[]");
+    return Array.isArray(l) ? l.filter(x => typeof x === "string" && x) : [];
+  } catch (e) { return []; }
+}
+
+function recordarLugarFurgo(nombre) {
+  try {
+    const l = otrosLugaresFurgo().filter(x => x.toLowerCase() !== nombre.toLowerCase());
+    l.unshift(nombre);
+    localStorage.setItem(OTROS_KEY_FURGO, JSON.stringify(l.slice(0, MAX_OTROS_FURGO)));
+  } catch (e) {}
+}
+
+function pedirOtroLugarFurgo(modo) {
+  const recientes = otrosLugaresFurgo();
+  app.innerHTML =
+    "<div class='card'>" +
+    "<h2>" + (modo === "destino" ? "¿A donde vas?" : "¿Donde estas?") + "</h2>" +
+    "<p class='card-desc'>Escribe el nombre del sitio.</p>" +
+    (recientes.length
+      ? "<p class='card-desc' style='margin-bottom:6px'>Ultimos sitios:</p>" +
+        "<div style='display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px'>" +
+        recientes.map(r =>
+          "<button class='chatov-chip' style='background:#F3F4F6;border:none;border-radius:16px;" +
+          "padding:7px 14px;font-size:13px;font-family:Inter,sans-serif'" +
+          " onclick=\"usarOtroLugarFurgo('" + modo + "', '" + escTexto(r).replace(/'/g, "&#39;") + "')\">" +
+          escTexto(r) + "</button>"
+        ).join("") + "</div>"
+      : "") +
+    "<div class='field'><label>Nombre del sitio</label>" +
+    "<input type='text' id='otro-nombre-furgo' maxlength='60' autocomplete='off' " +
+    "placeholder='Ej: Mercadona Plaza'></div>" +
+    "<div id='otro-error-furgo' style='color:#D41F3A;font-size:13px;margin-bottom:10px;display:none'></div>" +
+    "<button class='btn-primary' onclick=\"confirmarOtroLugarFurgo('" + modo + "')\">Continuar</button>" +
+    "<button class='btn-back' style='width:100%;margin-top:8px' onclick='render()'>&#8592; Atras</button>" +
+    "</div>";
+  const i = document.getElementById("otro-nombre-furgo");
+  if (i) i.focus();
+}
+
+function confirmarOtroLugarFurgo(modo) {
+  const nombre = (document.getElementById("otro-nombre-furgo").value || "").trim();
+  const err = document.getElementById("otro-error-furgo");
+  if (nombre.length < 2) {
+    err.textContent = "Escribe el nombre del sitio.";
+    err.style.display = "block";
+    return;
+  }
+  usarOtroLugarFurgo(modo, nombre);
+}
+
+function usarOtroLugarFurgo(modo, nombre) {
+  recordarLugarFurgo(nombre);
+  pickNaveFurgo(nombre, modo);
 }
 
 function renderConfirmar() {
