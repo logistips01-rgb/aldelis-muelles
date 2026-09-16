@@ -1483,6 +1483,61 @@ async function crearPedidoTransferencia(pt, almacen, resultado, origen, fecha) {
   }
 }
 
+// Caserfri: el correo de "verificacion de camaras" crea un pedido
+// PROVISIONAL (codigo VP-...), y mas tarde llega el documento PT real, que
+// a veces no trae el 100% de lo propuesto. En vez de crear un segundo
+// pedido (duplicando el pendiente), se busca la propuesta abierta cuyos
+// SSCC coincidan y se sustituyen sus datos por los del PT real - pero solo
+// si todavia no se ha recogido nada de ella (si ya se marco algo a mano,
+// se deja tal cual y se descarta el PT para no pisar progreso real).
+// Si no hay ninguna propuesta que encaje, se crea un pedido normal.
+async function sustituirOCrearPtCaserfri(pt, resultado) {
+  const ssccPt = new Set((resultado.lineas || []).map(l => l.sscc));
+  let propuesta = null;
+  if (ssccPt.size) {
+    const snap = await db.collection("pedidos_transferencia")
+      .where("almacen", "==", "caserfri").where("cerrado", "==", false).get();
+    for (const doc of snap.docs) {
+      const d = doc.data();
+      const ssccProp = (d.lineas || []).map(l => l.sscc);
+      if (ssccProp.some(s => ssccPt.has(s))) { propuesta = doc; break; }
+    }
+  }
+
+  if (!propuesta) {
+    // Ninguna propuesta coincide: se trata como un pedido normal. Caserfri
+    // no aplica el corte de las 15:00 (un PT que llega tarde sigue siendo
+    // de hoy), asi que la fecha es siempre la de hoy.
+    await crearPedidoTransferencia(pt, "caserfri", resultado, "email", fechaHoyMadrid());
+    return;
+  }
+
+  const ref = propuesta.ref;
+  try {
+    await db.runTransaction(async (tx) => {
+      const fresh = await tx.get(ref);
+      if (!fresh.exists) return;
+      const d = fresh.data();
+      if ((d.recogido || 0) > 0) {
+        console.log("sustituirOCrearPtCaserfri: propuesta", ref.id, "ya tiene recogido, se descarta el PT", pt);
+        return;
+      }
+      const delta = (resultado.palets || 0) - (d.palets || 0);
+      tx.update(ref, {
+        palets: resultado.palets, lineas: resultado.lineas || [],
+        ptReal: pt, fecha: fechaHoyMadrid(), activado: true
+      });
+      if (delta !== 0) {
+        tx.set(db.collection("almacenes_pendientes").doc("caserfri"), {
+          pedido: admin.firestore.FieldValue.increment(delta)
+        }, { merge: true });
+      }
+    });
+  } catch (e) {
+    console.error("sustituirOCrearPtCaserfri:", e.message);
+  }
+}
+
 // Subida manual desde el panel (arrastrar/elegir archivo). Pasa por el
 // servidor en vez de leerse en el navegador para reutilizar exactamente el
 // mismo analisis de Excel/PDF que usa la lectura automatica del correo, sin
@@ -1872,20 +1927,20 @@ exports.revisarCorreoPedidos = onSchedule(
           continue;
         }
 
-        // Caserfri ya no se procesa por este camino (documento adjunto):
-        // desde que llega el correo de "Verificacion de camaras" de ufsat.com
-        // como fuente unica, un documento oficial posterior para el mismo
-        // envio duplicaria el pedido. Se descarta a proposito.
-        if (almacen === "caserfri") {
-          console.log("revisarCorreoPedidos: documento de Caserfri descartado (sustituido por el correo de ufsat.com):", msg.subject);
-          await graphMarcarLeido(token, msg.id);
-          continue;
-        }
-
         const pt = (resultado.pt)
           || (elegido.name.match(/PT\d{6}/) || [])[0]
           || ((msg.subject || "").match(/PT\d{6}/) || [])[0]
           || ("SINPT-" + msg.id.slice(-8));
+
+        // Caserfri: este documento es la version real de una propuesta
+        // (correo de verificacion de camaras) previa; se busca y se
+        // sustituye por SSCC en vez de crear un pedido nuevo. Ver
+        // sustituirOCrearPtCaserfri para el porque.
+        if (almacen === "caserfri") {
+          await sustituirOCrearPtCaserfri(pt, resultado);
+          await graphMarcarLeido(token, msg.id);
+          continue;
+        }
 
         await crearPedidoTransferencia(pt, almacen, resultado, "email", fechaPedidoParaCorreo(msg.receivedDateTime));
         await graphMarcarLeido(token, msg.id);
