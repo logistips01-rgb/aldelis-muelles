@@ -1009,6 +1009,12 @@ function origenPedidoLabel(o) {
   return "manual";
 }
 
+function horaPedido(ts) {
+  if (!ts || !ts.toDate) return "";
+  const d = ts.toDate();
+  return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+}
+
 function renderPedidosLista() {
   const cont = document.getElementById("pedidos-lista");
   if (!cont) return;
@@ -1029,7 +1035,8 @@ function renderPedidosLista() {
         const programado = p.activado === false;
         return "<div class='pt-admin-row' onclick=\"abrirPtDetalle('" + p.id + "')\">" +
           "<span><span class='pt-admin-codigo'>" + esc(p.id) + "</span>" +
-          "<span class='pt-admin-origen'>" + esc(origenPedidoLabel(p.origen)) + "</span></span>" +
+          "<span class='pt-admin-origen'>" + esc(origenPedidoLabel(p.origen)) +
+          (p.creado ? " · " + horaPedido(p.creado) : "") + "</span></span>" +
           (programado
             ? "<span class='pt-admin-origen'>programado " + esc(p.fecha || "") + "</span>"
             : "<span class='pt-admin-pend tnum'>" + pendiente + " pend.</span>") +

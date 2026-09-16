@@ -383,6 +383,12 @@
     return "manual";
   }
 
+  function horaPedido(ts) {
+    if (!ts || !ts.toDate) return "";
+    var d = ts.toDate();
+    return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+  }
+
   function pintarRecogidas() {
     var cont = el("vista-recog");
     if (!cont || !_perms.lanzaderas) return;
@@ -423,7 +429,8 @@
           : "";
         return "<div class='rec-pt' onclick=\"toggleRecogidaDetalle('" + p.id + "')\">" +
           "<div class='rec-pt-fila'><span><span class='rec-pt-codigo'>" + esc(p.id) + "</span>" +
-          "<span class='rec-pt-origen'>" + esc(origenPtLabel(p.origen)) + "</span></span>" +
+          "<span class='rec-pt-origen'>" + esc(origenPtLabel(p.origen)) +
+          (p.creado ? " · " + horaPedido(p.creado) : "") + "</span></span>" +
           "<span class='rec-pt-pend'>" + pend + " pend.</span></div>" + detalle + "</div>";
       }).join("");
 
