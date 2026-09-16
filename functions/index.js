@@ -1406,7 +1406,10 @@ function contarPaletsExcel(buffer) {
     const fila = filas[i] || [];
     const v = fila[colSscc];
     if (v) {
-      const sscc = String(v).trim();
+      // Si la columna esta formateada como numero en vez de texto, Excel
+      // puede añadir un ".0" al final; se quita para que coincida con el
+      // SSCC de texto tal cual llega en el correo de verificacion.
+      const sscc = String(v).trim().replace(/\.0+$/, "");
       if (!porSscc.has(sscc)) {
         porSscc.set(sscc, colDesc !== -1 && fila[colDesc] ? String(fila[colDesc]).trim() : "");
       }
@@ -1513,6 +1516,8 @@ async function sustituirOCrearPtCaserfri(pt, resultado) {
     // Ninguna propuesta coincide: se trata como un pedido normal. Caserfri
     // no aplica el corte de las 15:00 (un PT que llega tarde sigue siendo
     // de hoy), asi que la fecha es siempre la de hoy.
+    console.log("sustituirOCrearPtCaserfri: sin propuesta con SSCC coincidente para PT", pt,
+      "( SSCC del PT:", [...ssccPt].join(","), "), se crea como pedido nuevo.");
     await crearPedidoTransferencia(pt, "caserfri", resultado, "email", fechaHoyMadrid());
     return;
   }
@@ -1537,6 +1542,7 @@ async function sustituirOCrearPtCaserfri(pt, resultado) {
           pedido: admin.firestore.FieldValue.increment(delta)
         }, { merge: true });
       }
+      console.log("sustituirOCrearPtCaserfri: propuesta", ref.id, "sustituida por PT real", pt, "(", d.palets, "->", resultado.palets, "palets)");
     });
   } catch (e) {
     console.error("sustituirOCrearPtCaserfri:", e.message);
