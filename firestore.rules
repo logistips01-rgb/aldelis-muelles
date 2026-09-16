@@ -61,6 +61,10 @@ service cloud.firestore {
       allow read:  if true;
       allow write: if permitido('costes');
     }
+    match /config/cambios {
+      allow read:  if true;
+      allow write: if permitidoEstricto('cambios');
+    }
     match /config/{id} {
       allow read:  if true;
       allow write: if permitido('config');

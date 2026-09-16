@@ -1971,6 +1971,13 @@ let ADMINS_ALERTA = [
 ];
 let _tiempoMaxLanz = 90; // minutos para alerta email; banner a los +30 min
 
+// Aviso de nueva reserva de muelle. Duplicado del valor por defecto del
+// servidor (AVISO_RESERVAS_DEFECTO en functions/index.js): solo se usa aqui
+// mientras no exista config/reservas; en cuanto se guarda una lista desde el
+// panel, esa manda y este valor por defecto deja de importar.
+const RESERVAS_EMAILS_DEFECTO = ["mlorente@aldelis.com", "garita@aldelis.com"];
+let RESERVAS_EMAILS = [...RESERVAS_EMAILS_DEFECTO];
+
 // IDs de alertas ya notificadas en esta sesion (evita spam cada 30s)
 const _alertasEmailEnviadas = new Set();
 
@@ -3160,6 +3167,15 @@ function cargarConfigListeners() {
     renderCfgAlertas();
   }, () => {});
 
+  // Si el documento no existe todavia, se sigue usando el valor por defecto
+  // del servidor (AVISO_RESERVAS_DEFECTO en functions/index.js): en cuanto se
+  // guarda aqui una vez, ese documento manda y hay que mantener los dos en
+  // sincronia a mano si se quiere cambiar la lista por defecto de origen.
+  db.collection("config").doc("reservas").onSnapshot(d => {
+    RESERVAS_EMAILS = (d.exists && Array.isArray(d.data().emails)) ? d.data().emails : RESERVAS_EMAILS_DEFECTO;
+    renderCfgReservas();
+  }, () => {});
+
   // config/app ya está escuchado en vigilarVersion() — no duplicar
 
   db.collection("config").doc("destinos").onSnapshot(d => {
@@ -3178,6 +3194,7 @@ function actualizarNavesPanel(lista) {
 
 function cargarConfig() {
   renderCfgAlertas();
+  renderCfgReservas();
   renderCfgDestinos();
   const elT = document.getElementById("cfg-tiempo-max");
   if (elT) elT.value = _tiempoMaxLanz;
@@ -3356,6 +3373,41 @@ async function eliminarEmailAlerta(idx) {
   const nuevos = ADMINS_ALERTA.filter((_, i) => i !== idx);
   try {
     await db.collection("config").doc("alertas").set({ emails: nuevos }, { merge: true });
+  } catch(e) { alert("Error al guardar: " + e.message); }
+}
+
+function renderCfgReservas() {
+  const div = document.getElementById("cfg-reservas-lista");
+  if (!div) return;
+  if (!RESERVAS_EMAILS.length) {
+    div.innerHTML = "<p style='font-size:13px;color:#9CA3AF'>Sin destinatarios configurados.</p>";
+    return;
+  }
+  div.innerHTML = RESERVAS_EMAILS.map((email, i) =>
+    "<div style='display:flex;align-items:center;gap:8px;margin-bottom:6px'>" +
+    "<span style='flex:1;font-size:14px'>" + esc(email) + "</span>" +
+    "<button class='btn-reject' style='padding:4px 10px;font-size:12px;cursor:pointer' onclick='eliminarEmailReserva(" + i + ")'>Eliminar</button>" +
+    "</div>"
+  ).join("");
+}
+
+async function agregarEmailReserva() {
+  const inp = document.getElementById("cfg-reserva-email");
+  const email = (inp.value || "").trim().toLowerCase();
+  if (!email || !email.includes("@")) { alert("Introduce un email valido."); return; }
+  if (RESERVAS_EMAILS.includes(email)) { alert("Ese email ya esta en la lista."); return; }
+  const nuevos = [...RESERVAS_EMAILS, email];
+  try {
+    await db.collection("config").doc("reservas").set({ emails: nuevos }, { merge: true });
+    inp.value = "";
+  } catch(e) { alert("Error al guardar: " + e.message); }
+}
+
+async function eliminarEmailReserva(idx) {
+  if (!confirm("Eliminar este destinatario?")) return;
+  const nuevos = RESERVAS_EMAILS.filter((_, i) => i !== idx);
+  try {
+    await db.collection("config").doc("reservas").set({ emails: nuevos }, { merge: true });
   } catch(e) { alert("Error al guardar: " + e.message); }
 }
 

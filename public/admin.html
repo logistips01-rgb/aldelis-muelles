@@ -361,6 +361,16 @@
       </div>
 
       <div class="informe-card" style="margin-top:16px">
+        <div class="informe-card-title">Avisos de nuevas reservas de muelle</div>
+        <p style="font-size:13px;color:#6B7280;margin-bottom:12px">Cuando se hace una reserva nueva, se envia un correo a todos estos destinatarios.</p>
+        <div id="cfg-reservas-lista"></div>
+        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+          <input type="email" id="cfg-reserva-email" placeholder="nuevo@email.com" style="flex:1;min-width:200px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
+          <button class="btn-informe" onclick="agregarEmailReserva()">Agregar</button>
+        </div>
+      </div>
+
+      <div class="informe-card" style="margin-top:16px">
         <div class="informe-card-title">Tiempo maximo de lanzadera</div>
         <p style="font-size:13px;color:#6B7280;margin-bottom:12px">Si una lanzadera lleva mas de este tiempo parada en una nave, se envia la alerta por correo. El banner rojo aparece 30 minutos despues.</p>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
