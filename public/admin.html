@@ -63,13 +63,14 @@
       <div class="topbar-right">
         <span id="last-refresh" style="font-size:11px;color:#B4BAC2;"></span>
         <button class="btn-dark-toggle" id="btn-dark" onclick="toggleDarkMode()">Noche</button>
-        <button class="tab-view active" id="btn-vista-rejilla" onclick="switchVista('rejilla')">Rejilla</button>
+        <button class="tab-view active" id="btn-vista-rejilla" onclick="switchVista('rejilla')">Plaza</button>
+        <button class="tab-view" id="btn-vista-merca" onclick="switchVista('merca')">Merca</button>
+        <button class="tab-view" id="btn-vista-arento" onclick="switchVista('arento')" style="display:none">Arento</button>
         <button class="tab-view" id="btn-vista-lista" onclick="switchVista('lista')">Lista</button>
         <button class="tab-view" id="btn-vista-informes" onclick="switchVista('informes')">Informes</button>
         <button class="tab-view" id="btn-vista-lanzaderas" onclick="switchVista('lanzaderas')">Lanzaderas</button>
         <button class="tab-view" id="btn-vista-pedidos" onclick="switchVista('pedidos')">Pedidos</button>
         <button class="tab-view" id="btn-vista-cargas" onclick="switchVista('cargas')">Cargas</button>
-        <button class="tab-view" id="btn-vista-merca" onclick="switchVista('merca')">Merca</button>
         <button class="tab-view" id="btn-vista-bizerba" onclick="switchVista('bizerba')" style="display:none">Bizerba</button>
         <button class="tab-view" id="btn-vista-config" onclick="switchVista('config')" style="display:none">Config</button>
         <button class="tab-view" id="btn-vista-costes" onclick="switchVista('costes')" style="display:none">Costes</button>
@@ -300,6 +301,14 @@
       <div class="grid-card"><div class="grid-scroll"><table class="rejilla-table" id="rejilla-merca"></table></div></div>
     </div>
 
+    <div id="vista-arento" class="reservas-wrap" style="display:none">
+      <div class="informe-header">
+        <div class="section-title" style="margin-bottom:0">Descargas de proveedores — Arento (Muelles A1 y A2)</div>
+        <button class="btn-informe" onclick="abrirArentoModal()">+ Registrar descarga</button>
+      </div>
+      <div class="grid-card"><div class="grid-scroll"><table class="rejilla-table" id="rejilla-arento"></table></div></div>
+    </div>
+
     <div id="vista-costes" class="reservas-wrap" style="display:none">
       <div class="informe-header">
         <div class="section-title" style="margin-bottom:0">Costes de operacion diarios</div>
@@ -485,6 +494,23 @@
         <div class="field"><label>Pales <span class="opt">(aprox.)</span></label><input type="number" id="mm-pales" min="0"></div>
         <div class="field"><label>Muelle <span class="req">*</span></label><select id="mm-muelle"></select></div>
         <button class="btn-confirm" onclick="registrarMercaAlmacen()">Registrar descarga</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="arento-modal" class="modal-overlay" style="display:none" onclick="cerrarArentoModal(event)">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title">Registrar descarga (Arento)</div>
+        <button class="close-btn" onclick="cerrarArentoModal()">x</button>
+      </div>
+      <div class="modal-body">
+        <div class="field"><label>Empresa / proveedor <span class="req">*</span></label><input type="text" id="am-empresa"></div>
+        <div class="field"><label>Matricula <span class="req">*</span></label><input type="text" id="am-matricula" style="text-transform:uppercase"></div>
+        <div class="field"><label>Mercancia</label><input type="text" id="am-mercancia"></div>
+        <div class="field"><label>Pales <span class="opt">(aprox.)</span></label><input type="number" id="am-pales" min="0"></div>
+        <div class="field"><label>Muelle <span class="req">*</span></label><select id="am-muelle"></select></div>
+        <button class="btn-confirm" onclick="registrarArentoAlmacen()">Registrar descarga</button>
       </div>
     </div>
   </div>

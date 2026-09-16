@@ -13,6 +13,7 @@ const NAVES = [
 const MUELLES_CARGA    = ["M1", "M2", "M3", "M4", "M5"];
 const MUELLES_DESCARGA = ["M6", "M7", "M8", "M9", "M10", "M18", "M19", "M20"];
 const MUELLES_MERCA    = ["M2", "M4"];
+const MUELLES_ARENTO   = ["A1", "A2", "A3"];
 const NOMBRE_NAVE = {};
 NAVES.forEach(n => { NOMBRE_NAVE[n.id] = n.nombre; });
 
@@ -147,6 +148,7 @@ function render() {
   if (!sel.nave)   return renderNaves();
   if (sel.nave === "plaza" && !sel.muelle) return renderMuelles();
   if (sel.nave === "merca" && !sel.muelle) return renderMuellesMerca();
+  if (sel.nave === "arento" && !sel.muelle) return renderMuellesArento();
   return renderConfirmar();
 }
 
@@ -309,11 +311,26 @@ function renderMuellesMerca() {
     "</div>";
 }
 
+function renderMuellesArento() {
+  app.innerHTML =
+    "<div class='card'>" + cabecera() +
+    "<h2>Selecciona muelle</h2><p class='card-desc'>Muelle en Arento.</p>" +
+    "<div class='temp-grid' style='grid-template-columns:1fr 1fr 1fr'>" +
+    MUELLES_ARENTO.map(m =>
+      "<div class='temp-btn' onclick=\"pickMuelle('" + m + "')\"><div class='temp-name'>" + m + "</div></div>"
+    ).join("") +
+    "</div>" +
+    "<button class='btn-back' style='width:100%;margin-top:12px' onclick='volver(\"arento-nave\")'>&#8592; Atras</button>" +
+    "</div>";
+}
+
 function renderConfirmar() {
   const detalle = sel.nave === "plaza"
     ? "Plaza · " + (sel.accion === "cargando" ? "Cargando" : "Descargando") + " · " + sel.muelle
     : sel.nave === "merca"
     ? "Merca · " + sel.muelle
+    : sel.nave === "arento"
+    ? "Arento · " + sel.muelle
     // Un lugar escrito a mano no esta en NOMBRE_NAVE: se muestra tal cual.
     : (NOMBRE_NAVE[sel.nave] || sel.nave || "—");
   app.innerHTML =
@@ -328,7 +345,7 @@ function renderConfirmar() {
 
 function renderHecho(estado) {
   if (estado === "en_nave") {
-    const conMuelle = sel.nave === "plaza" || sel.nave === "merca";
+    const conMuelle = sel.nave === "plaza" || sel.nave === "merca" || sel.nave === "arento";
     app.innerHTML =
       "<div class='card text-center'>" +
       "<div class='done-icon'>✓</div><h2>Registrado</h2>" +
@@ -440,10 +457,10 @@ function volver(desde) {
   if (desde === "nave")   { sel.numero = paramL ? sel.numero : null; if (!paramL) sel.numero = null; }
   if (desde === "muelle") {
     if (sel.nave === "plaza") { sel.muelle = null; sel.accion = null; }
-    else if (sel.nave === "merca") { sel.muelle = null; }
+    else if (sel.nave === "merca" || sel.nave === "arento") { sel.muelle = null; }
     else { sel.nave = null; sel.accion = null; }   // externa o lugar manual
   }
-  if (desde === "merca-nave" || desde === "plaza-nave") {
+  if (desde === "merca-nave" || desde === "plaza-nave" || desde === "arento-nave") {
     if (_muelleAnterior !== null) { cancelarCambioMuelle(); return; }
     sel.nave = null; sel.muelle = null; sel.accion = null;
   }
@@ -492,7 +509,7 @@ async function escribir(estado, activa) {
     estado:      estado,
     nave:        sel.nave,
     accion:      sel.nave === "plaza" ? sel.accion : "presente",
-    muelle:      (sel.nave === "plaza" || sel.nave === "merca") ? sel.muelle : null,
+    muelle:      (sel.nave === "plaza" || sel.nave === "merca" || sel.nave === "arento") ? sel.muelle : null,
     destino:     estado === "transito" ? (sel.destino || null) : null,
     activa:      activa,
     lat:         geo ? geo.lat : null,
@@ -690,8 +707,8 @@ async function finJornada() {
 function irANaves() {
   sel.nave = sel.destino; sel.accion = null; sel.muelle = null; sel.destino = null;
   estadoActivoServidor = null; // se sale del "transito" registrado, toca elegir muelle antes de volver a escribir
-  if (sel.nave && sel.nave !== "plaza" && sel.nave !== "merca") registrar(); // llegada directa a nave externa (cierra el transito)
-  else render();                                      // Plaza o Merca: elegir muelle
+  if (sel.nave && sel.nave !== "plaza" && sel.nave !== "merca" && sel.nave !== "arento") registrar(); // llegada directa a nave externa (cierra el transito)
+  else render();                                      // Plaza, Merca o Arento: elegir muelle
 }
 
 // ─── CHAT con el almacen ─────────────────────────────────────────────

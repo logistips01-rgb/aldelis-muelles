@@ -327,6 +327,15 @@ function iniciarListeners() {
       }, e => console.error("merca:", e)));
   }
 
+  if (_perms.arento) {
+    _unsubs.push(db.collection("descargas_arento")
+      .where("inicio", ">=", Ts.fromMillis(dayStart)).where("inicio", "<", Ts.fromMillis(dayEnd))
+      .onSnapshot(s => {
+        window._arento = []; s.forEach(d => window._arento.push({ id: d.id, ...d.data() }));
+        cargarArento();
+      }, e => console.error("arento:", e)));
+  }
+
   if (_perms.mensajes) {
     _unsubs.push(db.collection("mensajes")
       .where("ts", ">=", Ts.fromMillis(dayStart))
@@ -551,6 +560,7 @@ const SECCIONES = [
   { id: "lanzaderas", label: "Lanzaderas" },
   { id: "cargas",     label: "Cargas" },
   { id: "merca",      label: "Descargas Merca" },
+  { id: "arento",     label: "Descargas Arento" },
   { id: "bizerba",    label: "Incidencias Bizerba" },
   { id: "costes",     label: "Costes de lanzaderas" },
   { id: "chat",       label: "Chat con lanzaderas" },
@@ -611,6 +621,7 @@ function calcularPermisos(emailRaw, secciones) {
       pedidos:    s("lanzaderas"),
       cargas:     s("cargas"),
       merca:      s("merca"),
+      arento:     s("arento"),
       bizerba:    s("bizerba"),
       costes:     s("costes"),
       config:     s("config"),
@@ -618,9 +629,10 @@ function calcularPermisos(emailRaw, secciones) {
     },
     // Colecciones a las que hay que suscribirse
     reservas:    s("rejilla") || s("lista") || s("informes"),
-    lanzLog:     s("lanzaderas") || s("costes") || s("cargas") || s("merca"),
+    lanzLog:     s("lanzaderas") || s("costes") || s("cargas") || s("merca") || s("arento"),
     cargas:      s("cargas"),
     merca:       s("merca"),
+    arento:      s("arento"),
     mensajes:    s("chat"),
     incidencias: s("bizerba"),
     costes:      s("costes"),
@@ -646,7 +658,7 @@ function aplicarRol() {
   if (fab && !_perms.mensajes) fab.style.display = "none";
 
   // Abrir la primera vista disponible
-  const orden = ["rejilla", "lista", "lanzaderas", "pedidos", "bizerba", "cargas", "merca", "informes", "costes", "cambios", "config"];
+  const orden = ["rejilla", "lista", "lanzaderas", "pedidos", "bizerba", "cargas", "merca", "arento", "informes", "costes", "cambios", "config"];
   const primera = orden.find(v => _perms.ver[v]);
   if (primera) switchVista(primera);
 }
@@ -654,7 +666,7 @@ function aplicarRol() {
 function switchVista(vista) {
   // No permitir entrar en una vista sin permiso
   if (_perms.ver && _perms.ver[vista] === false) return;
-  ["rejilla", "lista", "informes", "lanzaderas", "pedidos", "cargas", "merca", "bizerba", "config", "costes", "cambios"].forEach(v => {
+  ["rejilla", "lista", "informes", "lanzaderas", "pedidos", "cargas", "merca", "arento", "bizerba", "config", "costes", "cambios"].forEach(v => {
     document.getElementById("vista-" + v).style.display = vista === v ? "block" : "none";
     document.getElementById("btn-vista-" + v).classList.toggle("active", vista === v);
   });
@@ -678,6 +690,7 @@ function switchVista(vista) {
   if (vista === "pedidos")    cargarPedidos();
   if (vista === "cargas")     cargarCargas();
   if (vista === "merca")      cargarMerca();
+  if (vista === "arento")     cargarArento();
   if (vista === "bizerba")    cargarBizerba();
   if (vista === "config")     cargarConfig();
   if (vista === "costes")     cargarCostes();
@@ -686,6 +699,7 @@ function switchVista(vista) {
 
 const MUELLES_CARGA = ["M1", "M2", "M3", "M4", "M5"];
 const MUELLES_MERCA = ["M2", "M4"];
+const MUELLES_ARENTO = ["A1", "A2", "A3"]; // A3 es solo para maquinaria
 
 function cambioFecha() { iniciarListeners(); }
 
@@ -2302,6 +2316,88 @@ async function registrarMercaAlmacen() {
       created_at: firebase.firestore.Timestamp.now()
     });
     cerrarMercaModal();
+  } catch (e) { console.error(e); alert("Error al registrar la descarga."); }
+}
+
+// ─── DESCARGAS ARENTO (igual que Merca, muelles A1/A2/A3) ────────────────────
+
+function cargarArento() {
+  const fecha = document.getElementById("fecha-dashboard").value;
+  const dayStart = new Date(fecha + "T00:00:00").getTime();
+  const items = window._arento || [];
+  const dayEnd = dayStart + 24 * 3600 * 1000;
+  const lanzArento = lanzaderaSegmentos(dayStart, dayEnd, null, "arento");
+  const filas = MUELLES_ARENTO.map(m => ({ id: m, label: "Muelle " + m }));
+  pintarRejilla("rejilla-arento", "Muelle", filas, FRANJAS_CARGAS, (fila, f, now) => {
+    const r = franjaRango(f);
+    const cs = items.filter(x => x.muelle === fila.id && spanOcupa(x.inicio, x.fin, r[0], r[1], dayStart));
+    if (cs.length === 0) {
+      const lz = lanzArento.find(s => s.muelle === fila.id && s.startMin < r[1] && s.endMin > r[0]);
+      if (lz) {
+        return "<td class='slot-td" + now + "' style='background:#7C3AED' title='Lanzadera " + lz.numero + " en Arento'>" +
+          "<div class='slot-empresa'>L" + lz.numero + "</div><div class='slot-estado'>lanzad.</div></td>";
+      }
+      return "<td class='slot-td slot-libre" + now + "'></td>";
+    }
+    if (cs.length === 1) {
+      const c = cs[0];
+      const color = c.estado === "completada" ? "#6B7280" : "#1D9E75";
+      const click = c.estado === "descargando" ? " onclick=\"completarArento('" + c.id + "')\"" : "";
+      const cur = c.estado === "descargando" ? "cursor:pointer;" : "";
+      return "<td class='slot-td" + now + "' style='background:" + color + ";" + cur + "'" + click +
+        " title='" + esc((c.empresa || "") + (c.mercancia ? " · " + c.mercancia : "")) + "'>" +
+        "<div class='slot-empresa'>" + esc((c.empresa || "").split(" ")[0]) + "</div>" +
+        "<div class='slot-estado'>" + esc(c.estado) + "</div></td>";
+    }
+    return "<td class='slot-td slot-multi" + now + "'>" + cs.map(c => {
+      const color = c.estado === "completada" ? "#6B7280" : "#1D9E75";
+      const click = c.estado === "descargando" ? " onclick=\"completarArento('" + c.id + "')\"" : "";
+      const cur = c.estado === "descargando" ? "cursor:pointer;" : "";
+      return "<div class='slot-mini'" + click + " style='background:" + color + ";" + cur + "' title='" + esc((c.empresa || "")) + " (" + esc(c.estado) + ")'>" + esc((c.empresa || "").split(" ")[0]) + "</div>";
+    }).join("") + "</td>";
+  });
+}
+
+async function completarArento(id) {
+  if (!confirm("¿Marcar esta descarga como completada?")) return;
+  try {
+    await db.collection("descargas_arento").doc(id).update({ estado: "completada", fin: firebase.firestore.Timestamp.now() });
+  } catch (e) { console.error(e); alert("Error al completar la descarga."); }
+}
+
+function abrirArentoModal() {
+  document.getElementById("am-muelle").innerHTML =
+    "<option value=''>Selecciona muelle</option>" +
+    MUELLES_ARENTO.map(m => "<option value='" + m + "'>Muelle " + m + "</option>").join("");
+  ["am-empresa", "am-matricula", "am-mercancia", "am-pales"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("arento-modal").style.display = "flex";
+}
+
+function cerrarArentoModal(e) {
+  if (!e || e.target.id === "arento-modal") document.getElementById("arento-modal").style.display = "none";
+}
+
+async function registrarArentoAlmacen() {
+  const empresa   = document.getElementById("am-empresa").value.trim();
+  const matricula = document.getElementById("am-matricula").value.trim().toUpperCase();
+  const muelle    = document.getElementById("am-muelle").value;
+  if (!empresa)   { alert("Falta la empresa / proveedor."); return; }
+  if (!matricula) { alert("Falta la matricula."); return; }
+  if (!muelle)    { alert("Selecciona el muelle."); return; }
+  const palesV = document.getElementById("am-pales").value.trim();
+  try {
+    await db.collection("descargas_arento").add({
+      empresa: empresa,
+      matricula: matricula,
+      mercancia: document.getElementById("am-mercancia").value.trim(),
+      pales: palesV ? Number(palesV) : null,
+      muelle: muelle,
+      estado: "descargando",
+      inicio: firebase.firestore.Timestamp.now(),
+      fin: null,
+      created_at: firebase.firestore.Timestamp.now()
+    });
+    cerrarArentoModal();
   } catch (e) { console.error(e); alert("Error al registrar la descarga."); }
 }
 

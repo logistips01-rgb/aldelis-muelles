@@ -163,10 +163,10 @@ service cloud.firestore {
     }
 
     // Historico de movimientos (para informes). Solo se anade, no se edita.
-    // Lo necesitan las vistas de lanzaderas, costes, cargas y merca.
+    // Lo necesitan las vistas de lanzaderas, costes, cargas, merca y arento.
     match /lanzaderas_log/{id} {
       allow read: if permitido('lanzaderas') || permitido('costes')
-                  || permitido('cargas') || permitido('merca');
+                  || permitido('cargas') || permitido('merca') || permitidoEstricto('arento');
       allow create: if validLanzadera();
     }
 
@@ -240,6 +240,28 @@ service cloud.firestore {
         && d.estado == 'descargando'
         && d.fin == null
         && d.muelle in ['M2','M4']
+        && d.empresa is string && d.empresa.size() > 0 && d.empresa.size() <= 120
+        && d.matricula is string && d.matricula.size() > 0 && d.matricula.size() <= 20
+        && d.mercancia is string && d.mercancia.size() <= 300
+        && (d.pales == null || d.pales is number);
+    }
+
+    // Descargas de proveedores en Arento (otro almacen, muelles A1/A2/A3).
+    // Seccion nueva, permiso estricto (ver permitidoEstricto mas abajo).
+    match /descargas_arento/{id} {
+      allow read: if permitidoEstricto('arento');
+      allow create: if validArento();
+      allow update, delete: if permitidoEstricto('arento');
+    }
+
+    function validArento() {
+      let d = request.resource.data;
+      return d.keys().hasOnly([
+          'empresa','matricula','mercancia','pales','muelle','estado','inicio','fin','created_at'
+        ])
+        && d.estado == 'descargando'
+        && d.fin == null
+        && d.muelle in ['A1','A2','A3']
         && d.empresa is string && d.empresa.size() > 0 && d.empresa.size() <= 120
         && d.matricula is string && d.matricula.size() > 0 && d.matricula.size() <= 20
         && d.mercancia is string && d.mercancia.size() <= 300
