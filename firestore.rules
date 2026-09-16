@@ -347,5 +347,52 @@ service cloud.firestore {
         && (d.peso  == null || d.peso  is number);
     }
 
+    // ── Cambios de material (etiquetas/bandejas) ────────────────────────────
+    // Modulo con permiso propio y estricto: sin ficha en /permisos que lo
+    // incluya, no hay acceso (a diferencia de permitido(), que deja pasar a
+    // quien no tiene ficha, pensado para secciones que ya existian antes del
+    // sistema de permisos). Una seccion nueva no tiene ese pasado que proteger.
+    function permitidoEstricto(seccion) {
+      return request.auth != null && (
+        esAdmin() || (
+          exists(miDocPermisos())
+          && get(miDocPermisos()).data.secciones is list
+          && seccion in get(miDocPermisos()).data.secciones
+        )
+      );
+    }
+
+    match /cambios_material/{id} {
+      allow read: if permitidoEstricto('cambios');
+      allow create, update: if permitidoEstricto('cambios') && validCambioMaterial();
+    }
+
+    function validCambioMaterial() {
+      let d = request.resource.data;
+      return d.tipo in ['etiqueta', 'bandeja']
+        && d.referenciaActual is string && d.referenciaActual.size() <= 60
+        && d.referenciaNueva  is string && d.referenciaNueva.size() > 0 && d.referenciaNueva.size() <= 60
+        && d.motivo is string && d.motivo.size() <= 80
+        && d.agotarStock is bool
+        && (d.fechaArranque == null || (d.fechaArranque is string && d.fechaArranque.size() <= 10))
+        && d.descripcion  is string && d.descripcion.size()  <= 1000
+        && d.observaciones is string && d.observaciones.size() <= 1000
+        && (!('imagen' in d) || d.imagen == null || (d.imagen is string && d.imagen.size() <= 700000))
+        && d.estado in ['pendiente', 'confirmado', 'ejecutado']
+        && d.creadoPor is string;
+    }
+
+    match /cambios_mensajes/{id} {
+      allow read: if permitidoEstricto('cambios');
+      allow create: if permitidoEstricto('cambios') && validCambioMensaje();
+    }
+
+    function validCambioMensaje() {
+      let d = request.resource.data;
+      return d.cambioId is string && d.cambioId.size() > 0
+        && d.emisor is string && d.emisor.size() <= 120
+        && d.texto is string && d.texto.size() > 0 && d.texto.size() <= 1000;
+    }
+
   }
 }

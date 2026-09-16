@@ -73,6 +73,7 @@
         <button class="tab-view" id="btn-vista-bizerba" onclick="switchVista('bizerba')" style="display:none">Bizerba</button>
         <button class="tab-view" id="btn-vista-config" onclick="switchVista('config')" style="display:none">Config</button>
         <button class="tab-view" id="btn-vista-costes" onclick="switchVista('costes')" style="display:none">Costes</button>
+        <button class="tab-view" id="btn-vista-cambios" onclick="switchVista('cambios')" style="display:none">Cambios</button>
         <input type="date" id="fecha-dashboard" onchange="cambioFecha()">
         <button class="btn-ghost" style="width:auto;padding:6px 14px;" onclick="abrirModalPass()">Contrasena</button>
         <button class="btn-ghost" style="width:auto;padding:6px 14px;" onclick="cerrarSesion()">Cerrar sesion</button>
@@ -323,6 +324,27 @@
       </div>
     </div>
 
+    <div id="vista-cambios" class="reservas-wrap" style="display:none">
+      <div class="informe-header">
+        <div class="section-title" style="margin-bottom:0">Cambios de material</div>
+        <button class="btn-informe" onclick="abrirModalCambio()">+ Registrar cambio</button>
+      </div>
+      <div id="cambios-lista"></div>
+
+      <div class="informe-card" style="margin-top:24px">
+        <div class="informe-card-title">Destinatarios de los avisos</div>
+        <p style="font-size:13px;color:#6B7280;margin-bottom:12px">
+          Reciben un correo al darse de alta un cambio, y otro cuando se marca como ejecutado.
+        </p>
+        <div id="cambios-emails-lista"></div>
+        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+          <input type="email" id="cambios-email-nuevo" placeholder="email@ejemplo.com"
+            style="flex:1;min-width:200px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
+          <button class="btn-informe" onclick="agregarEmailCambios()">Agregar</button>
+        </div>
+      </div>
+    </div>
+
     <div id="vista-config" class="reservas-wrap" style="display:none">
       <div class="informe-header">
         <div class="section-title" style="margin-bottom:0">Configuracion del sistema</div>
@@ -497,6 +519,77 @@
         <div class="field"><label>Destino</label><input type="text" id="cm-destino"></div>
         <div class="field"><label>Muelle de carga <span class="req">*</span></label><select id="cm-muelle"></select></div>
         <button class="btn-confirm" onclick="registrarCargaAlmacen()">Registrar carga</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="cambio-modal" class="modal-overlay" style="display:none" onclick="cerrarModalCambio(event)">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title">Registrar nuevo cambio</div>
+        <button class="close-btn" onclick="cerrarModalCambio()">x</button>
+      </div>
+      <div class="modal-body">
+        <div class="field">
+          <label>Tipo de material</label>
+          <div style="display:flex;gap:16px;margin-top:4px">
+            <label style="font-weight:400;display:flex;align-items:center;gap:6px">
+              <input type="radio" name="cm-tipo" value="etiqueta" style="width:auto" checked> Etiqueta</label>
+            <label style="font-weight:400;display:flex;align-items:center;gap:6px">
+              <input type="radio" name="cm-tipo" value="bandeja" style="width:auto"> Bandeja</label>
+          </div>
+        </div>
+        <div class="field"><label>Referencia actual</label><input type="text" id="cm-ref-actual" placeholder="Ej: C10321"></div>
+        <div class="field"><label>Referencia nueva <span class="req">*</span></label><input type="text" id="cm-ref-nueva" placeholder="Ej: C12044"></div>
+        <div class="field">
+          <label>Motivo del cambio</label>
+          <select id="cm-motivo">
+            <option value="alergenos">Alergenos</option>
+            <option value="diseno">Cambio de diseño</option>
+            <option value="proveedor">Cambio de proveedor</option>
+            <option value="normativa">Normativa / legal</option>
+            <option value="coste">Optimizacion de coste</option>
+            <option value="otro">Otro</option>
+          </select>
+        </div>
+        <div class="field">
+          <label style="font-weight:400;display:flex;align-items:center;gap:6px">
+            <input type="checkbox" id="cm-agotar-stock" style="width:auto" onchange="toggleFechaArranqueCambio()"> Agotar stock primero (sin fecha fija)</label>
+        </div>
+        <div class="field" id="cm-fecha-wrap">
+          <label>Fecha de arranque <span class="opt">(si se conoce)</span></label>
+          <input type="date" id="cm-fecha-arranque">
+        </div>
+        <div class="field"><label>Descripcion del cambio</label><textarea id="cm-descripcion" rows="2"></textarea></div>
+        <div class="field"><label>Observaciones</label><textarea id="cm-observaciones" rows="2"></textarea></div>
+        <div class="field">
+          <label>Imagen <span class="opt">(opcional)</span></label>
+          <input type="file" id="cm-imagen" accept="image/*">
+        </div>
+        <div id="cm-error" style="color:#D41F3A;font-size:13px;margin-bottom:8px;display:none"></div>
+        <button class="btn-confirm" id="cm-btn-guardar" onclick="registrarCambioMaterial()">Registrar cambio</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="cambio-detalle-modal" class="modal-overlay" style="display:none" onclick="cerrarCambioDetalle(event)">
+    <div class="modal-box" style="max-width:560px">
+      <div class="modal-header">
+        <div><div class="modal-title" id="cd2-titulo">Cambio de material</div><div class="modal-sub" id="cd2-sub"></div></div>
+        <button class="close-btn" onclick="cerrarCambioDetalle()">x</button>
+      </div>
+      <div class="modal-body">
+        <div id="cd2-datos" class="resumen"></div>
+        <div id="cd2-acciones" style="margin-top:12px"></div>
+        <div style="margin-top:18px;padding-top:14px;border-top:1px solid #eee">
+          <div class="informe-card-title" style="margin-bottom:8px">Conversacion</div>
+          <div id="cd2-chat" style="max-height:220px;overflow-y:auto;margin-bottom:10px"></div>
+          <div style="display:flex;gap:8px">
+            <input type="text" id="cd2-msg" placeholder="Escribe un mensaje..." style="flex:1;padding:9px 12px;border:1px solid #D1D5DB;border-radius:20px;font-size:14px;font-family:inherit"
+              onkeydown="if(event.key==='Enter')enviarMensajeCambio()">
+            <button class="btn-informe" onclick="enviarMensajeCambio()">Enviar</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>

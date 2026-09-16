@@ -554,7 +554,8 @@ const SECCIONES = [
   { id: "bizerba",    label: "Incidencias Bizerba" },
   { id: "costes",     label: "Costes de lanzaderas" },
   { id: "chat",       label: "Chat con lanzaderas" },
-  { id: "config",     label: "Configuracion" }
+  { id: "config",     label: "Configuracion" },
+  { id: "cambios",    label: "Cambios de material" }
 ];
 
 // Listas antiguas: se usan como valor por defecto mientras el usuario no
@@ -612,7 +613,8 @@ function calcularPermisos(emailRaw, secciones) {
       merca:      s("merca"),
       bizerba:    s("bizerba"),
       costes:     s("costes"),
-      config:     s("config")
+      config:     s("config"),
+      cambios:    s("cambios")
     },
     // Colecciones a las que hay que suscribirse
     reservas:    s("rejilla") || s("lista") || s("informes"),
@@ -623,7 +625,8 @@ function calcularPermisos(emailRaw, secciones) {
     incidencias: s("bizerba"),
     costes:      s("costes"),
     bizerba:     s("bizerba"),
-    config:      s("config")
+    config:      s("config"),
+    cambios:     s("cambios")
   };
 }
 
@@ -643,7 +646,7 @@ function aplicarRol() {
   if (fab && !_perms.mensajes) fab.style.display = "none";
 
   // Abrir la primera vista disponible
-  const orden = ["rejilla", "lista", "lanzaderas", "pedidos", "bizerba", "cargas", "merca", "informes", "costes", "config"];
+  const orden = ["rejilla", "lista", "lanzaderas", "pedidos", "bizerba", "cargas", "merca", "informes", "costes", "cambios", "config"];
   const primera = orden.find(v => _perms.ver[v]);
   if (primera) switchVista(primera);
 }
@@ -651,7 +654,7 @@ function aplicarRol() {
 function switchVista(vista) {
   // No permitir entrar en una vista sin permiso
   if (_perms.ver && _perms.ver[vista] === false) return;
-  ["rejilla", "lista", "informes", "lanzaderas", "pedidos", "cargas", "merca", "bizerba", "config", "costes"].forEach(v => {
+  ["rejilla", "lista", "informes", "lanzaderas", "pedidos", "cargas", "merca", "bizerba", "config", "costes", "cambios"].forEach(v => {
     document.getElementById("vista-" + v).style.display = vista === v ? "block" : "none";
     document.getElementById("btn-vista-" + v).classList.toggle("active", vista === v);
   });
@@ -678,6 +681,7 @@ function switchVista(vista) {
   if (vista === "bizerba")    cargarBizerba();
   if (vista === "config")     cargarConfig();
   if (vista === "costes")     cargarCostes();
+  if (vista === "cambios")    cargarCambios();
 }
 
 const MUELLES_CARGA = ["M1", "M2", "M3", "M4", "M5"];
@@ -3397,4 +3401,265 @@ async function eliminarDestino(idx) {
   try {
     await db.collection("config").doc("destinos").set({ lista: nueva });
   } catch(e) { alert("Error al guardar: " + e.message); }
+}
+
+// ── Cambios de material (etiquetas/bandejas) ────────────────────────────────
+// Modulo con permiso propio y estricto (ver SECCIONES/firestore.rules): I+D
+// da de alta un cambio de referencia, se avisa por correo, almacen lo marca
+// como ejecutado cuando toca y se vuelve a avisar. La lectura automatica del
+// correo del ERP (stock/consumo) queda para mas adelante.
+
+const MOTIVO_CAMBIO_LABEL = {
+  alergenos: "Alergenos", diseno: "Cambio de diseño", proveedor: "Cambio de proveedor",
+  normativa: "Normativa / legal", coste: "Optimizacion de coste", otro: "Otro"
+};
+
+let _cambiosEmailsCache = [];
+let _cambiosCache = [];
+let _cambiosListenersInit = false;
+let _cambioDetalleId = null;
+let _cambioChatUnsub = null;
+let _cambioImagenB64 = null;
+
+function cargarCambios() {
+  if (_cambiosListenersInit) return;
+  _cambiosListenersInit = true;
+
+  db.collection("config").doc("cambios").onSnapshot(d => {
+    _cambiosEmailsCache = (d.exists && Array.isArray(d.data().emails)) ? d.data().emails : [];
+    renderCambiosEmails();
+  }, () => {});
+
+  db.collection("cambios_material").orderBy("creado", "desc").onSnapshot(s => {
+    _cambiosCache = [];
+    s.forEach(d => _cambiosCache.push({ id: d.id, ...d.data() }));
+    renderCambiosLista();
+  }, e => console.error("cambios_material:", e));
+}
+
+function renderCambiosEmails() {
+  const div = document.getElementById("cambios-emails-lista");
+  if (!div) return;
+  if (!_cambiosEmailsCache.length) {
+    div.innerHTML = "<p style='font-size:13px;color:#9CA3AF'>Sin destinatarios configurados.</p>";
+    return;
+  }
+  div.innerHTML = _cambiosEmailsCache.map((email, i) =>
+    "<div style='display:flex;align-items:center;gap:8px;margin-bottom:6px'>" +
+    "<span style='flex:1;font-size:14px'>" + esc(email) + "</span>" +
+    "<button class='btn-reject' style='padding:4px 10px;font-size:12px;cursor:pointer' onclick='eliminarEmailCambios(" + i + ")'>Eliminar</button>" +
+    "</div>"
+  ).join("");
+}
+
+async function agregarEmailCambios() {
+  const inp = document.getElementById("cambios-email-nuevo");
+  const email = (inp.value || "").trim().toLowerCase();
+  if (!email || !email.includes("@")) { alert("Introduce un email valido."); return; }
+  if (_cambiosEmailsCache.includes(email)) { alert("Ese email ya esta en la lista."); return; }
+  const nuevos = [..._cambiosEmailsCache, email];
+  try {
+    await db.collection("config").doc("cambios").set({ emails: nuevos }, { merge: true });
+    inp.value = "";
+  } catch (e) { alert("Error al guardar: " + e.message); }
+}
+
+async function eliminarEmailCambios(idx) {
+  if (!confirm("Eliminar este destinatario?")) return;
+  const nuevos = _cambiosEmailsCache.filter((_, i) => i !== idx);
+  try {
+    await db.collection("config").doc("cambios").set({ emails: nuevos }, { merge: true });
+  } catch (e) { alert("Error al guardar: " + e.message); }
+}
+
+function estadoCambioLabel(e) {
+  if (e === "ejecutado") return { texto: "Ejecutado", color: "#1D9E75" };
+  if (e === "confirmado") return { texto: "Confirmado", color: "#F59E0B" };
+  return { texto: "Pendiente", color: "#D41F3A" };
+}
+
+function renderCambiosLista() {
+  const cont = document.getElementById("cambios-lista");
+  if (!cont) return;
+  if (!_cambiosCache.length) {
+    cont.innerHTML = "<p style='font-size:13px;color:#9CA3AF'>No hay ningun cambio registrado todavia.</p>";
+    return;
+  }
+  cont.innerHTML = _cambiosCache.map(c => {
+    const est = estadoCambioLabel(c.estado);
+    return "<div class='pt-admin-row' onclick=\"abrirCambioDetalle('" + c.id + "')\">" +
+      "<span><span class='pt-admin-codigo'>" + esc(c.referenciaActual || "?") + " &rarr; " + esc(c.referenciaNueva || "?") + "</span>" +
+      "<span class='pt-admin-origen'>" + (c.tipo === "bandeja" ? "Bandeja" : "Etiqueta") + " · " + esc(MOTIVO_CAMBIO_LABEL[c.motivo] || c.motivo || "") + "</span></span>" +
+      "<span class='pt-admin-pend' style='color:" + est.color + "'>" + est.texto + "</span>" +
+      "</div>";
+  }).join("");
+}
+
+function toggleFechaArranqueCambio() {
+  const chk = document.getElementById("cm-agotar-stock");
+  const wrap = document.getElementById("cm-fecha-wrap");
+  if (!chk || !wrap) return;
+  wrap.style.opacity = chk.checked ? "0.55" : "1";
+}
+
+function abrirModalCambio() {
+  document.getElementById("cm-ref-actual").value = "";
+  document.getElementById("cm-ref-nueva").value = "";
+  document.getElementById("cm-motivo").value = "alergenos";
+  document.getElementById("cm-agotar-stock").checked = false;
+  document.getElementById("cm-fecha-arranque").value = "";
+  document.getElementById("cm-descripcion").value = "";
+  document.getElementById("cm-observaciones").value = "";
+  document.getElementById("cm-imagen").value = "";
+  document.querySelector("input[name='cm-tipo'][value='etiqueta']").checked = true;
+  _cambioImagenB64 = null;
+  document.getElementById("cm-error").style.display = "none";
+  toggleFechaArranqueCambio();
+  document.getElementById("cambio-modal").style.display = "flex";
+}
+
+function cerrarModalCambio(e) {
+  if (!e || e.target.id === "cambio-modal") document.getElementById("cambio-modal").style.display = "none";
+}
+
+// Compresion sencilla: solo hace falta una imagen de referencia razonable,
+// no una foto de calidad (igual de fondo que fotos.js, pero sin la miniatura
+// aparte porque aqui solo hay una imagen por cambio, no un chat de fotos).
+function comprimirImagenCambio(file, cb) {
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => {
+    URL.revokeObjectURL(url);
+    const maxLado = 1000;
+    const escala = Math.min(1, maxLado / Math.max(img.width, img.height));
+    const w = Math.max(1, Math.round(img.width * escala));
+    const h = Math.max(1, Math.round(img.height * escala));
+    const c = document.createElement("canvas");
+    c.width = w; c.height = h;
+    const ctx = c.getContext("2d");
+    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(img, 0, 0, w, h);
+    cb(c.toDataURL("image/jpeg", 0.7).split(",")[1]);
+  };
+  img.onerror = () => { URL.revokeObjectURL(url); cb(null); };
+  img.src = url;
+}
+
+async function registrarCambioMaterial() {
+  const tipo = document.querySelector("input[name='cm-tipo']:checked").value;
+  const referenciaActual = document.getElementById("cm-ref-actual").value.trim();
+  const referenciaNueva = document.getElementById("cm-ref-nueva").value.trim();
+  const motivo = document.getElementById("cm-motivo").value;
+  const agotarStock = document.getElementById("cm-agotar-stock").checked;
+  const fechaArranque = document.getElementById("cm-fecha-arranque").value || null;
+  const descripcion = document.getElementById("cm-descripcion").value.trim();
+  const observaciones = document.getElementById("cm-observaciones").value.trim();
+  const errEl = document.getElementById("cm-error");
+
+  if (!referenciaNueva) { errEl.textContent = "Falta la referencia nueva."; errEl.style.display = "block"; return; }
+
+  const btn = document.getElementById("cm-btn-guardar");
+  btn.disabled = true; btn.textContent = "Guardando...";
+
+  const guardar = async () => {
+    try {
+      await db.collection("cambios_material").add({
+        tipo, referenciaActual, referenciaNueva, motivo, agotarStock, fechaArranque,
+        descripcion, observaciones,
+        imagen: _cambioImagenB64 || null,
+        estado: "pendiente",
+        creadoPor: (auth.currentUser && auth.currentUser.email) || "",
+        creado: firebase.firestore.Timestamp.now()
+      });
+      cerrarModalCambio();
+    } catch (e) {
+      errEl.textContent = "No se pudo guardar: " + e.message;
+      errEl.style.display = "block";
+    } finally {
+      btn.disabled = false; btn.textContent = "Registrar cambio";
+    }
+  };
+
+  const fileInp = document.getElementById("cm-imagen");
+  const file = fileInp.files && fileInp.files[0];
+  if (file) {
+    comprimirImagenCambio(file, b64 => { _cambioImagenB64 = b64; guardar(); });
+  } else {
+    guardar();
+  }
+}
+
+function abrirCambioDetalle(id) {
+  const c = _cambiosCache.find(x => x.id === id);
+  if (!c) return;
+  _cambioDetalleId = id;
+  const est = estadoCambioLabel(c.estado);
+
+  document.getElementById("cd2-titulo").textContent = (c.referenciaActual || "?") + " → " + (c.referenciaNueva || "?");
+  document.getElementById("cd2-sub").textContent = (c.tipo === "bandeja" ? "Bandeja" : "Etiqueta") + " · " + est.texto;
+  document.getElementById("cd2-datos").innerHTML =
+    "<div class='resumen-row'><span class='resumen-label'>Motivo</span><span class='resumen-value'>" + esc(MOTIVO_CAMBIO_LABEL[c.motivo] || c.motivo || "-") + "</span></div>" +
+    "<div class='resumen-row'><span class='resumen-label'>Agotar stock primero</span><span class='resumen-value'>" + (c.agotarStock ? "Si" : "No") + "</span></div>" +
+    "<div class='resumen-row'><span class='resumen-label'>Fecha de arranque</span><span class='resumen-value'>" + esc(c.fechaArranque || "Sin fijar") + "</span></div>" +
+    (c.descripcion ? "<div class='resumen-row'><span class='resumen-label'>Descripcion</span><span class='resumen-value'>" + esc(c.descripcion) + "</span></div>" : "") +
+    (c.observaciones ? "<div class='resumen-row'><span class='resumen-label'>Observaciones</span><span class='resumen-value'>" + esc(c.observaciones) + "</span></div>" : "") +
+    (c.fechaEjecutada ? "<div class='resumen-row'><span class='resumen-label'>Ejecutado el</span><span class='resumen-value'>" + esc(c.fechaEjecutada) + "</span></div>" : "") +
+    (c.imagen ? "<div style='margin-top:10px'><img src='data:image/jpeg;base64," + c.imagen + "' style='max-width:100%;border-radius:8px'></div>" : "");
+
+  const accionesEl = document.getElementById("cd2-acciones");
+  accionesEl.innerHTML = c.estado !== "ejecutado"
+    ? "<button class='btn-confirm' style='width:100%' onclick=\"marcarCambioEjecutado('" + id + "')\">Marcar como ejecutado</button>"
+    : "";
+
+  cargarChatCambio(id);
+  document.getElementById("cambio-detalle-modal").style.display = "flex";
+}
+
+function cerrarCambioDetalle(e) {
+  if (e && e.target.id !== "cambio-detalle-modal") return;
+  document.getElementById("cambio-detalle-modal").style.display = "none";
+  if (_cambioChatUnsub) { _cambioChatUnsub(); _cambioChatUnsub = null; }
+  _cambioDetalleId = null;
+}
+
+async function marcarCambioEjecutado(id) {
+  const hoy = new Date().toLocaleDateString("sv-SE");
+  const fecha = prompt("¿Que dia se ha ejecutado el cambio?", hoy);
+  if (fecha === null) return;
+  try {
+    await db.collection("cambios_material").doc(id).update({
+      estado: "ejecutado", fechaEjecutada: fecha,
+      ejecutadoPor: (auth.currentUser && auth.currentUser.email) || ""
+    });
+    cerrarCambioDetalle();
+  } catch (e) { alert("No se pudo actualizar: " + e.message); }
+}
+
+function cargarChatCambio(cambioId) {
+  if (_cambioChatUnsub) { _cambioChatUnsub(); _cambioChatUnsub = null; }
+  _cambioChatUnsub = db.collection("cambios_mensajes").where("cambioId", "==", cambioId)
+    .orderBy("ts", "asc").onSnapshot(s => {
+      const cont = document.getElementById("cd2-chat");
+      if (!cont) return;
+      const msgs = [];
+      s.forEach(d => msgs.push(d.data()));
+      cont.innerHTML = msgs.length
+        ? msgs.map(m => "<div style='margin-bottom:8px'><b style='font-size:12px;color:#374151'>" + esc(m.emisor || "") +
+            "</b><div style='font-size:13px'>" + esc(m.texto || "") + "</div></div>").join("")
+        : "<p style='font-size:13px;color:#9CA3AF'>Sin mensajes todavia.</p>";
+      cont.scrollTop = cont.scrollHeight;
+    }, e => console.error("cambios_mensajes:", e));
+}
+
+function enviarMensajeCambio() {
+  const inp = document.getElementById("cd2-msg");
+  const texto = (inp.value || "").trim();
+  if (!texto || !_cambioDetalleId) return;
+  inp.value = "";
+  db.collection("cambios_mensajes").add({
+    cambioId: _cambioDetalleId,
+    emisor: (auth.currentUser && auth.currentUser.email) || "",
+    texto,
+    ts: firebase.firestore.Timestamp.now()
+  }).catch(e => { console.error("enviarMensajeCambio:", e); alert("No se pudo enviar el mensaje."); inp.value = texto; });
 }

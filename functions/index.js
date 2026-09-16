@@ -192,6 +192,24 @@ async function puedeSeccion(email, seccion) {
   }
 }
 
+// Como puedeSeccion(), pero sin el refuerzo progresivo: sin ficha en
+// /permisos que lo incluya, no hay acceso. Para secciones nuevas que no
+// tienen un pasado que proteger (mismo criterio que permitidoEstricto en
+// firestore.rules).
+async function puedeSeccionEstricto(email, seccion) {
+  if (!email) return false;
+  if (ADMINS_APP.includes(email)) return true;
+  try {
+    const d = await db.collection("permisos").doc(email).get();
+    if (!d.exists) return false;
+    const s = d.data().secciones;
+    return Array.isArray(s) && s.includes(seccion);
+  } catch (e) {
+    console.warn("puedeSeccionEstricto", e.message);
+    return false;
+  }
+}
+
 const SECCION_LABEL = { seco: "Almacen Seco", frio: "Almacen Frio", lavadero: "Lavadero" };
 const FIRMA = "\n\nAldelis — Gestion de muelles";
 const CARD_RESET = "border-radius:8px;border:1px solid #e8e8e8;background:#ffffff;background-color:#ffffff;color:#1A1A1A";
@@ -1961,3 +1979,88 @@ exports.enviarResumenIncidencias = onSchedule(
     }
   }
 );
+
+// ── Cambios de material (etiquetas/bandejas) ────────────────────────────────
+//
+// I+D da de alta un cambio de referencia (por agotar stock o con fecha fija).
+// Al crearse, se avisa por correo a los destinatarios configurados
+// (config/cambios.emails) con los datos del cambio, para que almacen lo
+// ejecute. Cuando alguien marca el cambio como ejecutado (actualizando el
+// documento desde el panel, con permiso), se manda un segundo correo
+// avisando a todos de que ya esta hecho.
+//
+// El chat de cada cambio (cambios_mensajes) no necesita Cloud Function: se
+// lee y se escribe directo desde el panel, protegido por las reglas de
+// Firestore igual que el resto del modulo.
+
+const MOTIVO_LABEL_CAMBIO = {
+  alergenos: "Alergenos", diseno: "Cambio de diseño", proveedor: "Cambio de proveedor",
+  normativa: "Normativa / legal", coste: "Optimizacion de coste", otro: "Otro"
+};
+
+async function emailsCambiosMaterial() {
+  return emailsDeConfig("cambios", []);
+}
+
+function filaCambio(label, valor) {
+  return "<tr><td style='padding:6px 10px;color:#6B7280;font-size:13px;border-bottom:1px solid #f0f0f0'>" + label + "</td>" +
+    "<td style='padding:6px 10px;font-weight:600;font-size:13px;color:#1A1A1A;border-bottom:1px solid #f0f0f0'>" + valor + "</td></tr>";
+}
+
+function htmlCambioMaterial(d, titulo, colorCabecera) {
+  const motivoTxt = MOTIVO_LABEL_CAMBIO[d.motivo] || d.motivo || "-";
+  return HEAD_EMAIL + "<body bgcolor='#f0f0f0' style='margin:0;padding:16px;background-color:#f0f0f0;" + FONT + "'>" +
+    "<div style='max-width:600px;margin:0 auto'>" +
+    "<div style='background:" + colorCabecera + ";border-radius:8px;padding:20px 22px;margin-bottom:12px'>" +
+    "<div style='color:#fff;font-size:20px;font-weight:700;letter-spacing:-.5px'>Aldelis</div>" +
+    "<div style='color:rgba(255,255,255,.85);font-size:12px;margin-top:2px'>" + titulo + "</div>" +
+    "</div>" +
+    "<div style='border-radius:8px;border:1px solid #e8e8e8;background:#fff;padding:14px'>" +
+    "<table width='100%' cellpadding='0' cellspacing='0'>" +
+    filaCambio("Tipo de material", d.tipo === "bandeja" ? "Bandeja" : "Etiqueta") +
+    filaCambio("Referencia actual", esc(d.referenciaActual || "-")) +
+    filaCambio("Referencia nueva", esc(d.referenciaNueva || "-")) +
+    filaCambio("Motivo", esc(motivoTxt)) +
+    filaCambio("Agotar stock primero", d.agotarStock ? "Si" : "No") +
+    filaCambio("Fecha de arranque", d.fechaArranque ? esc(d.fechaArranque) : "Sin fecha fijada todavia") +
+    (d.descripcion ? filaCambio("Descripcion", esc(d.descripcion)) : "") +
+    (d.observaciones ? filaCambio("Observaciones", esc(d.observaciones)) : "") +
+    (d.fechaEjecutada ? filaCambio("Ejecutado el", esc(d.fechaEjecutada)) : "") +
+    "</table></div>" +
+    "<div style='height:14px'></div>" +
+    "<div style='text-align:center;font-size:11px;color:#aaa'>Cambios de material &middot; Aldelis</div>" +
+    "</div></body></html>";
+}
+
+exports.notifCambioMaterial = onDocumentWritten("cambios_material/{id}", async (event) => {
+  const antes = event.data && event.data.before && event.data.before.exists ? event.data.before.data() : null;
+  const despues = event.data && event.data.after && event.data.after.exists ? event.data.after.data() : null;
+  if (!despues) return; // documento borrado
+
+  const emails = await emailsCambiosMaterial();
+  if (!emails.length) { console.log("notifCambioMaterial: sin destinatarios configurados"); return; }
+
+  let asunto, html, cuerpo;
+  if (!antes) {
+    // Alta nueva
+    asunto = "Nuevo cambio de material: " + (despues.referenciaActual || "?") + " -> " + (despues.referenciaNueva || "?");
+    html = htmlCambioMaterial(despues, "Nuevo cambio de material registrado", "#D41F3A");
+    cuerpo = "Nuevo cambio de material: " + despues.referenciaActual + " -> " + despues.referenciaNueva;
+  } else if (antes.estado !== "ejecutado" && despues.estado === "ejecutado") {
+    // Paso a ejecutado
+    asunto = "Cambio ejecutado: " + (despues.referenciaActual || "?") + " -> " + (despues.referenciaNueva || "?");
+    html = htmlCambioMaterial(despues, "Cambio de material ejecutado", "#1D9E75");
+    cuerpo = "Cambio ejecutado: " + despues.referenciaActual + " -> " + despues.referenciaNueva;
+  } else {
+    return; // otro tipo de edicion, no se avisa
+  }
+
+  try {
+    const token = await obtenerTokenMS();
+    for (const email of emails) {
+      await enviarConGraph(token, email, asunto, html, cuerpo, null);
+    }
+  } catch (e) {
+    console.error("notifCambioMaterial: envio:", e.message);
+  }
+});

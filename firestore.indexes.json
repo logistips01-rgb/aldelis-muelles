@@ -15,6 +15,14 @@
         { "fieldPath": "activado", "order": "ASCENDING" },
         { "fieldPath": "fecha", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "cambios_mensajes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "cambioId", "order": "ASCENDING" },
+        { "fieldPath": "ts", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []
