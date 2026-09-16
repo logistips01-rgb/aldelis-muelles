@@ -1827,8 +1827,13 @@ exports.revisarCorreoPedidos = onSchedule(
         // dejo de usar porque llegaba tarde (el palet ya estaba recogido
         // para cuando llegaba el documento oficial). No tiene adjunto: el
         // cuerpo del correo es la propia lista de SSCC liberados.
+        // Se reconoce por remitente (lo normal) o por el propio asunto (un
+        // reenvio cambia el remitente a quien reenvia, pero el asunto es
+        // bastante caracteristico y sirve igual para poder probarlo).
         const remitenteDireccion = (msg.from && msg.from.emailAddress && msg.from.emailAddress.address || "").toLowerCase();
-        if (remitenteDireccion.endsWith("@ufsat.com")) {
+        const esVerificacionCamaras = remitenteDireccion.endsWith("@ufsat.com")
+          || /verificaci[oó]n de c[aá]maras completada/i.test(msg.subject || "");
+        if (esVerificacionCamaras) {
           const textoCuerpo = htmlATextoTabla(msg.body && msg.body.content);
           const resultado = contarPaletsCorreoTexto(textoCuerpo);
           if (!resultado.palets) { await graphMarcarLeido(token, msg.id); continue; }
