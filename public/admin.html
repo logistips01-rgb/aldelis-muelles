@@ -330,19 +330,6 @@
         <button class="btn-informe" onclick="abrirModalCambio()">+ Registrar cambio</button>
       </div>
       <div id="cambios-lista"></div>
-
-      <div class="informe-card" style="margin-top:24px">
-        <div class="informe-card-title">Destinatarios de los avisos</div>
-        <p style="font-size:13px;color:#6B7280;margin-bottom:12px">
-          Reciben un correo al darse de alta un cambio, y otro cuando se marca como ejecutado.
-        </p>
-        <div id="cambios-emails-lista"></div>
-        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
-          <input type="email" id="cambios-email-nuevo" placeholder="email@ejemplo.com"
-            style="flex:1;min-width:200px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
-          <button class="btn-informe" onclick="agregarEmailCambios()">Agregar</button>
-        </div>
-      </div>
     </div>
 
     <div id="vista-config" class="reservas-wrap" style="display:none">
@@ -367,6 +354,20 @@
         <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
           <input type="email" id="cfg-reserva-email" placeholder="nuevo@email.com" style="flex:1;min-width:200px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
           <button class="btn-informe" onclick="agregarEmailReserva()">Agregar</button>
+        </div>
+      </div>
+
+      <div class="informe-card" style="margin-top:16px">
+        <div class="informe-card-title">Avisos de Cambios de material</div>
+        <p style="font-size:13px;color:#6B7280;margin-bottom:12px">
+          Reciben un correo al darse de alta un cambio de material, y otro cuando se marca como ejecutado.
+          Aparte del permiso de "Cambios de material", solo quien tenga acceso a Configuracion puede ver o tocar esta lista.
+        </p>
+        <div id="cambios-emails-lista"></div>
+        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+          <input type="email" id="cambios-email-nuevo" placeholder="email@ejemplo.com"
+            style="flex:1;min-width:200px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
+          <button class="btn-informe" onclick="agregarEmailCambios()">Agregar</button>
         </div>
       </div>
 

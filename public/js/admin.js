@@ -3176,6 +3176,14 @@ function cargarConfigListeners() {
     renderCfgReservas();
   }, () => {});
 
+  // Destinatarios de avisos de Cambios de material: vive en Config, no en la
+  // propia pestaña de Cambios, para que quien tenga acceso a Cambios pero no
+  // a Config no pueda ver ni tocar la lista de quien recibe los avisos.
+  db.collection("config").doc("cambios").onSnapshot(d => {
+    _cambiosEmailsCache = (d.exists && Array.isArray(d.data().emails)) ? d.data().emails : [];
+    renderCambiosEmails();
+  }, () => {});
+
   // config/app ya está escuchado en vigilarVersion() — no duplicar
 
   db.collection("config").doc("destinos").onSnapshot(d => {
@@ -3476,11 +3484,6 @@ let _cambioImagenB64 = null;
 function cargarCambios() {
   if (_cambiosListenersInit) return;
   _cambiosListenersInit = true;
-
-  db.collection("config").doc("cambios").onSnapshot(d => {
-    _cambiosEmailsCache = (d.exists && Array.isArray(d.data().emails)) ? d.data().emails : [];
-    renderCambiosEmails();
-  }, () => {});
 
   db.collection("cambios_material").orderBy("creado", "desc").onSnapshot(s => {
     _cambiosCache = [];
