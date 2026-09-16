@@ -1746,6 +1746,57 @@ function fechaPedidoParaCorreo(receivedDateTime) {
   return fecha;
 }
 
+// Ciertos correos (por ahora, los de "Verificacion de camaras completada"
+// del ERP de Caserfri, remitente @ufsat.com) no traen ningun adjunto: el
+// propio cuerpo del correo YA es el documento, con una tabla de SSCC
+// liberados. Convertir <td>/<tr> a tabulaciones/saltos de linea antes de
+// quitar el resto de las etiquetas conserva las columnas razonablemente,
+// aunque no siempre perfecto (por eso el conteo de SSCC no depende de la
+// posicion de columna, solo la descripcion best-effort si sale limpia).
+function htmlATextoTabla(html) {
+  return String(html || "")
+    .replace(/<\/(td|th)>/gi, "\t")
+    .replace(/<\/tr>/gi, "\n")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/[ \t]+\n/g, "\n");
+}
+
+// El almacen no viene en un campo "Origen" fijo como en los PDF de pedidos:
+// aqui basta con que el nombre aparezca en algun sitio del texto (columna
+// "DONDE" en el caso de Caserfri).
+function detectarAlmacenEnTexto(texto) {
+  const up = texto.toUpperCase();
+  for (const nombre of ["AVITRANS", "CASERFRI", "TXT"]) {
+    if (new RegExp("\\b" + nombre + "\\b").test(up)) return normalizarAlmacen(nombre);
+  }
+  return null;
+}
+
+// Cada SSCC (siempre 18 digitos) es un palet, igual que en los PDF/Excel. La
+// descripcion se intenta sacar de la misma linea (columna siguiente tras el
+// SSCC, si el texto conserva las tabulaciones de htmlATextoTabla); si no
+// sale limpia, se deja vacia en vez de arriesgarse a poner algo erroneo.
+function contarPaletsCorreoTexto(texto) {
+  const porSscc = new Map();
+  texto.split("\n").forEach(linea => {
+    const m = linea.match(/\b(\d{18})\b/);
+    if (!m) return;
+    const sscc = m[1];
+    if (porSscc.has(sscc)) return;
+    const cols = linea.split("\t").map(c => c.trim());
+    const idx = cols.findIndex(c => c === sscc);
+    const descripcion = (idx !== -1 && cols[idx + 2]) ? cols[idx + 2] : "";
+    porSscc.set(sscc, descripcion);
+  });
+  const lineas = [...porSscc].map(([sscc, descripcion]) => ({ sscc, descripcion }));
+  return { palets: lineas.length, lineas };
+}
+
 exports.revisarCorreoPedidos = onSchedule(
   { schedule: "every 10 minutes", timeZone: "Europe/Madrid" },
   async () => {
@@ -1760,7 +1811,7 @@ exports.revisarCorreoPedidos = onSchedule(
       data = await graphGet(token,
         "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS +
         "/mailFolders/inbox/messages?$filter=isRead eq false&$top=25" +
-        "&$select=id,subject,from,toRecipients,ccRecipients,hasAttachments,receivedDateTime");
+        "&$select=id,subject,from,toRecipients,ccRecipients,hasAttachments,receivedDateTime,body");
     } catch (e) { console.error("revisarCorreoPedidos: listar mensajes:", e.message); return; }
 
     for (const msg of (data.value || [])) {
@@ -1770,6 +1821,30 @@ exports.revisarCorreoPedidos = onSchedule(
         // las dos funciones podria marcarlos como leidos antes de que la
         // otra llegue a verlos.
         if (remitenteDeUsieto(msg)) continue;
+
+        // "Verificacion de camaras completada" (ERP @ufsat.com): sustituye
+        // por completo al flujo de documento adjunto para Caserfri, que se
+        // dejo de usar porque llegaba tarde (el palet ya estaba recogido
+        // para cuando llegaba el documento oficial). No tiene adjunto: el
+        // cuerpo del correo es la propia lista de SSCC liberados.
+        const remitenteDireccion = (msg.from && msg.from.emailAddress && msg.from.emailAddress.address || "").toLowerCase();
+        if (remitenteDireccion.endsWith("@ufsat.com")) {
+          const textoCuerpo = htmlATextoTabla(msg.body && msg.body.content);
+          const resultado = contarPaletsCorreoTexto(textoCuerpo);
+          if (!resultado.palets) { await graphMarcarLeido(token, msg.id); continue; }
+          const almacen = detectarAlmacenEnTexto(textoCuerpo) || detectarAlmacenEnTexto(msg.subject || "");
+          if (!almacen) {
+            console.log("revisarCorreoPedidos: correo ufsat.com sin almacen reconocido en", msg.subject);
+            await graphMarcarLeido(token, msg.id);
+            continue;
+          }
+          const vpMatch = (msg.subject || "").match(/VP-\d{4}-\d{2}-\d{2}-\d+/) || textoCuerpo.match(/VP-\d{4}-\d{2}-\d{2}-\d+/);
+          const pt = vpMatch ? vpMatch[0] : ("SINPT-" + msg.id.slice(-8));
+          await crearPedidoTransferencia(pt, almacen, resultado, "email-verificacion", fechaPedidoParaCorreo(msg.receivedDateTime));
+          await graphMarcarLeido(token, msg.id);
+          continue;
+        }
+
         if (!msg.hasAttachments) { await graphMarcarLeido(token, msg.id); continue; }
 
         const adjuntos = await graphGet(token,
@@ -1788,6 +1863,16 @@ exports.revisarCorreoPedidos = onSchedule(
         const almacen = resultado.almacenDetectado || detectarAlmacenPorDestinatarios(msg);
         if (!almacen) {
           console.log("revisarCorreoPedidos: sin almacen reconocido en", msg.subject);
+          await graphMarcarLeido(token, msg.id);
+          continue;
+        }
+
+        // Caserfri ya no se procesa por este camino (documento adjunto):
+        // desde que llega el correo de "Verificacion de camaras" de ufsat.com
+        // como fuente unica, un documento oficial posterior para el mismo
+        // envio duplicaria el pedido. Se descarta a proposito.
+        if (almacen === "caserfri") {
+          console.log("revisarCorreoPedidos: documento de Caserfri descartado (sustituido por el correo de ufsat.com):", msg.subject);
           await graphMarcarLeido(token, msg.id);
           continue;
         }
