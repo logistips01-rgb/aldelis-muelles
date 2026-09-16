@@ -23,8 +23,8 @@
         <div class="logo">Aldelis</div>
         <div class="logo-sub">Panel de almacen</div>
       </div>
-      <div class="field"><label>Email</label><input type="email" id="login-email" placeholder="usuario@aldelis.com"></div>
-      <div class="field"><label>Contrasena</label><input type="password" id="login-pass" placeholder="••••••••"></div>
+      <div class="field"><label>Email</label><input type="email" id="login-email" placeholder="usuario@aldelis.com" onkeydown="if(event.key==='Enter')iniciarSesion()"></div>
+      <div class="field"><label>Contrasena</label><input type="password" id="login-pass" placeholder="••••••••" onkeydown="if(event.key==='Enter')iniciarSesion()"></div>
       <div id="login-error" style="color:#D41F3A;font-size:13px;margin-bottom:10px;display:none"></div>
       <button class="btn-primary" onclick="iniciarSesion()">Entrar</button>
       <div style="text-align:center;margin-top:14px">
