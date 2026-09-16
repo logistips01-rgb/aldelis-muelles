@@ -125,6 +125,24 @@ service cloud.firestore {
       allow create, update: if validLanzadera();
     }
 
+    // Furgoneta: modulo aparte y minimo (sin chat, sin GPS, sin coste), un
+    // unico vehiculo. Misma logica que lanzaderas pero sin numero ni muelle.
+    match /furgoneta/{id} {
+      allow read: if true;
+      allow create, update: if validFurgoneta();
+    }
+    match /furgoneta_log/{id} {
+      allow read: if permitidoEstricto('furgoneta');
+      allow create: if validFurgoneta();
+    }
+    function validFurgoneta() {
+      let d = request.resource.data;
+      return d.estado in ['en_nave', 'transito', 'fuera']
+        && d.nave is string && d.nave.size() > 0 && d.nave.size() <= 60
+        && (d.destino == null || (d.destino is string && d.destino.size() <= 60))
+        && d.activa is bool;
+    }
+
     // Coordenadas GPS aprendidas de cada nave (Plaza, Merca, Caserfri...), a
     // partir de las lecturas reales de los choferes al llegar. Se usan para
     // dibujar en el mapa hacia donde va una lanzadera en transito.

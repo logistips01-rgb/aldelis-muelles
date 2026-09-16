@@ -336,6 +336,15 @@ function iniciarListeners() {
       }, e => console.error("arento:", e)));
   }
 
+  if (_perms.furgoneta) {
+    _unsubs.push(db.collection("furgoneta_log")
+      .where("desde", ">=", Ts.fromMillis(dayStart)).where("desde", "<", Ts.fromMillis(dayEnd))
+      .onSnapshot(s => {
+        window._furgonetaLog = []; s.forEach(d => window._furgonetaLog.push(d.data()));
+        cargarFurgoneta();
+      }, e => console.error("furgoneta_log:", e)));
+  }
+
   if (_perms.mensajes) {
     _unsubs.push(db.collection("mensajes")
       .where("ts", ">=", Ts.fromMillis(dayStart))
@@ -565,7 +574,8 @@ const SECCIONES = [
   { id: "costes",     label: "Costes de lanzaderas" },
   { id: "chat",       label: "Chat con lanzaderas" },
   { id: "config",     label: "Configuracion" },
-  { id: "cambios",    label: "Cambios de material" }
+  { id: "cambios",    label: "Cambios de material" },
+  { id: "furgoneta",  label: "Furgoneta" }
 ];
 
 // Listas antiguas: se usan como valor por defecto mientras el usuario no
@@ -625,7 +635,8 @@ function calcularPermisos(emailRaw, secciones) {
       bizerba:    s("bizerba"),
       costes:     s("costes"),
       config:     s("config"),
-      cambios:    s("cambios")
+      cambios:    s("cambios"),
+      furgoneta:  s("furgoneta")
     },
     // Colecciones a las que hay que suscribirse
     reservas:    s("rejilla") || s("lista") || s("informes"),
@@ -638,7 +649,8 @@ function calcularPermisos(emailRaw, secciones) {
     costes:      s("costes"),
     bizerba:     s("bizerba"),
     config:      s("config"),
-    cambios:     s("cambios")
+    cambios:     s("cambios"),
+    furgoneta:   s("furgoneta")
   };
 }
 
@@ -658,7 +670,7 @@ function aplicarRol() {
   if (fab && !_perms.mensajes) fab.style.display = "none";
 
   // Abrir la primera vista disponible
-  const orden = ["rejilla", "lista", "lanzaderas", "pedidos", "bizerba", "cargas", "merca", "arento", "informes", "costes", "cambios", "config"];
+  const orden = ["rejilla", "lista", "lanzaderas", "pedidos", "bizerba", "cargas", "merca", "arento", "informes", "costes", "cambios", "furgoneta", "config"];
   const primera = orden.find(v => _perms.ver[v]);
   if (primera) switchVista(primera);
 }
@@ -666,7 +678,7 @@ function aplicarRol() {
 function switchVista(vista) {
   // No permitir entrar en una vista sin permiso
   if (_perms.ver && _perms.ver[vista] === false) return;
-  ["rejilla", "lista", "informes", "lanzaderas", "pedidos", "cargas", "merca", "arento", "bizerba", "config", "costes", "cambios"].forEach(v => {
+  ["rejilla", "lista", "informes", "lanzaderas", "pedidos", "cargas", "merca", "arento", "bizerba", "config", "costes", "cambios", "furgoneta"].forEach(v => {
     document.getElementById("vista-" + v).style.display = vista === v ? "block" : "none";
     document.getElementById("btn-vista-" + v).classList.toggle("active", vista === v);
   });
@@ -691,6 +703,7 @@ function switchVista(vista) {
   if (vista === "cargas")     cargarCargas();
   if (vista === "merca")      cargarMerca();
   if (vista === "arento")     cargarArento();
+  if (vista === "furgoneta")  cargarFurgoneta();
   if (vista === "bizerba")    cargarBizerba();
   if (vista === "config")     cargarConfig();
   if (vista === "costes")     cargarCostes();
@@ -1967,6 +1980,70 @@ function renderGanttLanz(segs, trans, finMarks) {
   }
 
   revisarAlertas(segs, trans, finMarks);
+}
+
+// ─── LINEA DE TIEMPO (GANTT) DE LA FURGONETA ─────────────────────────
+// Modulo aparte y minimo (sin chat, sin GPS, sin coste): solo se quiere ver
+// donde ha estado a lo largo del dia, igual que la cronologia de lanzaderas
+// pero con una unica pista, calculada de la misma forma a partir de su
+// propio historico (furgoneta_log), sin mezclarse con lanzaderas_log.
+function cargarFurgoneta() {
+  const fecha = document.getElementById("fecha-dashboard").value;
+  const dayStart = new Date(fecha + "T00:00:00").getTime();
+  const dayEnd = dayStart + 24 * 3600 * 1000;
+  const logs = (window._furgonetaLog || []).slice().sort((a, b) => a.desde.toMillis() - b.desde.toMillis());
+
+  const segs = [], trans = [], finMarks = [];
+  for (let i = 0; i < logs.length; i++) {
+    const startMin = (logs[i].desde.toMillis() - dayStart) / 60000;
+    if (logs[i].estado === "fuera") { finMarks.push({ atMin: startMin }); continue; }
+    const nextMs = (i + 1 < logs.length) ? logs[i + 1].desde.toMillis() : (esHoy ? Date.now() : dayEnd);
+    const endMin = (nextMs - dayStart) / 60000;
+    if (logs[i].estado === "en_nave") segs.push({ nave: logs[i].nave, startMin, endMin });
+    else if (logs[i].estado === "transito") trans.push({ destino: logs[i].destino || null, startMin, endMin });
+  }
+  renderGanttFurgoneta(segs, trans, finMarks);
+}
+
+function renderGanttFurgoneta(segs, trans, finMarks) {
+  const cont = document.getElementById("gantt-furgoneta");
+  if (!cont) return;
+
+  let head = "<div class='gantt-track gantt-head-track' style='width:" + G_W + "px'>";
+  for (let h = 4; h <= 24; h++) {
+    const left = (h * 60 - G_INI) * G_PXMIN;
+    head += "<div class='gantt-tick' style='left:" + left + "px'>" + String(h % 24).padStart(2, "0") + ":00</div>";
+  }
+  head += ganttNow() + "</div>";
+
+  let bars = "";
+  segs.forEach(s => {
+    const lbl = NAVE_NOMBRE[s.nave] || s.nave;
+    const info = "Furgoneta · " + lbl + "\nDe " + minToHHMM(s.startMin) + " a " + minToHHMM(s.endMin);
+    bars += ganttBarra(s.startMin, s.endMin, "#1D9E75", lbl, info);
+  });
+  trans.forEach(s => {
+    const dest = NAVE_NOMBRE[s.destino] || s.destino || "?";
+    const info = "Furgoneta · en transito → " + dest + "\nDe " + minToHHMM(s.startMin) + " a " + minToHHMM(s.endMin);
+    bars += ganttBarra(s.startMin, s.endMin, "#F59E0B", "→ " + dest, info);
+  });
+  finMarks.forEach(m => {
+    const left = (m.atMin - G_INI) * G_PXMIN;
+    if (left >= 0 && left <= G_W) bars += "<div class='gantt-fin' style='left:" + left + "px' title='Fin de servicio " + minToHHMM(m.atMin) + "' data-info='Furgoneta · fin de servicio " + minToHHMM(m.atMin) + "'></div>";
+  });
+  const track = "<div class='gantt-track' style='width:" + G_W + "px'>" + bars + ganttNow() + "</div>";
+
+  cont.innerHTML =
+    "<div class='gantt-wrap'>" +
+      "<div class='gantt-labels'><div class='gantt-lab gantt-lab-head'>Hora</div><div class='gantt-lab'>Furgoneta</div></div>" +
+      "<div class='gantt-scroll2'>" + head + track + "</div>" +
+    "</div>";
+
+  if (esHoy) {
+    const sc = cont.querySelector(".gantt-scroll2");
+    const nl = (ahoraMin - G_INI) * G_PXMIN;
+    if (sc && nl >= 0) sc.scrollLeft = Math.max(0, nl - sc.clientWidth / 2);
+  }
 }
 
 let ADMINS_ALERTA = [

@@ -75,6 +75,7 @@
         <button class="tab-view" id="btn-vista-config" onclick="switchVista('config')" style="display:none">Config</button>
         <button class="tab-view" id="btn-vista-costes" onclick="switchVista('costes')" style="display:none">Costes</button>
         <button class="tab-view" id="btn-vista-cambios" onclick="switchVista('cambios')" style="display:none">Cambios</button>
+        <button class="tab-view" id="btn-vista-furgoneta" onclick="switchVista('furgoneta')" style="display:none">Furgoneta</button>
         <input type="date" id="fecha-dashboard" onchange="cambioFecha()">
         <button class="btn-ghost" style="width:auto;padding:6px 14px;" onclick="abrirModalPass()">Contrasena</button>
         <button class="btn-ghost" style="width:auto;padding:6px 14px;" onclick="cerrarSesion()">Cerrar sesion</button>
@@ -307,6 +308,13 @@
         <button class="btn-informe" onclick="abrirArentoModal()">+ Registrar descarga</button>
       </div>
       <div class="grid-card"><div class="grid-scroll"><table class="rejilla-table" id="rejilla-arento"></table></div></div>
+    </div>
+
+    <div id="vista-furgoneta" class="reservas-wrap" style="display:none">
+      <div class="informe-header">
+        <div class="section-title" style="margin-bottom:0">Furgoneta — linea de tiempo</div>
+      </div>
+      <div id="gantt-furgoneta"></div>
     </div>
 
     <div id="vista-costes" class="reservas-wrap" style="display:none">
