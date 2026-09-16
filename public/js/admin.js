@@ -407,6 +407,13 @@ function iniciarListeners() {
       renderPedidosLista();
     }, e => console.error("pedidos_transferencia:", e)));
 
+    // Estimacion de fin de recogidas: se recalcula una vez al dia en el
+    // servidor (calcularEstimacionRecogidas), aqui solo se lee.
+    _unsubs.push(db.collection("config").doc("estimacion_recogidas").onSnapshot(d => {
+      window._estimacionRecogidas = d.exists ? d.data() : null;
+      renderPedidosCards();
+    }, e => console.error("estimacion_recogidas:", e)));
+
     // Recogidas de hoy, solo para el contador en vivo "recogidos hoy" (el
     // desglose de verdad va en el informe de costes de lanzaderas).
     const inicioHoy = new Date(); inicioHoy.setHours(0, 0, 0, 0);
@@ -989,6 +996,28 @@ function resetPedidosPruebas() {
 // ya cerrados hace dias), asi que con el tiempo "Pedido"/"Recogido" dejan de
 // representar lo que hay abierto ahora mismo, aunque la resta (pendiente)
 // siga siendo correcta. Calculandolo asi nunca puede desincronizarse.
+// Hora estimada de fin de las recogidas en un almacen: parte de la media
+// historica (calculada una vez al dia en el servidor, ver
+// calcularEstimacionRecogidas en functions/index.js) y le suma el retraso en
+// vivo si hoy una lanzadera lleva en ese almacen mas tiempo del habitual.
+// Sin datos historicos todavia (primeros dias del modulo) no se muestra
+// nada, en vez de inventarse una hora.
+function estimacionFinTexto(almacenId) {
+  const est = (window._estimacionRecogidas || {})[almacenId];
+  if (!est || est.finMedioMin == null) return null;
+
+  let minutos = est.finMedioMin;
+  const lz = Object.values(window._lanzLive || {}).find(l =>
+    l && l.activa && l.estado === "en_nave" && l.nave === almacenId);
+  if (lz && lz.desde) {
+    const llevaMin = (Date.now() - lz.desde.toMillis()) / 60000;
+    if (est.duracionMediaMin != null && llevaMin > est.duracionMediaMin) {
+      minutos += (llevaMin - est.duracionMediaMin);
+    }
+  }
+  return minToHHMM(minutos);
+}
+
 function renderPedidosCards() {
   const cont = document.getElementById("pedidos-grid");
   if (!cont) return;
@@ -1009,6 +1038,7 @@ function renderPedidosCards() {
     const pendiente = Math.max(pedido - recogidoAbierto, 0);
     const hoyRecogido = recogidoHoy[a.id] || 0;
     const completado = pendiente === 0;
+    const finEstimado = completado ? null : estimacionFinTexto(a.id);
     const color = completado ? "#1D9E75" : (pendiente > pedido / 2 ? "#D41F3A" : "#F59E0B");
     // El aro reparte los dos numeros que ya se ven en la tarjeta: verde lo
     // recogido hoy, el color de estado lo que queda pendiente ahora mismo.
@@ -1029,7 +1059,9 @@ function renderPedidosCards() {
       "<div class='pedido-info'>" +
       "<div class='pedido-lbl'>palets pendientes" + (completado ? " — completado" : "") + "</div>" +
       "<div class='pedido-detalle'><span>Recogido hoy: <b class='tnum'>" + (recogidoHoy[a.id] || 0) + "</b></span>" +
-      "<span>Pedido hoy: <b class='tnum'>" + (pedidoHoy[a.id] || 0) + "</b></span></div>" +
+      "<span>Pedido hoy: <b class='tnum'>" + (pedidoHoy[a.id] || 0) + "</b></span>" +
+      (finEstimado ? "<span>Fin estimado: <b class='tnum'>" + finEstimado + "</b></span>" : "") +
+      "</div>" +
       "</div></div></div>";
   }).join("");
 }

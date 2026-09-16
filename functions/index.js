@@ -2220,3 +2220,84 @@ exports.notifCambioMaterial = onDocumentWritten("cambios_material/{id}", async (
     console.error("notifCambioMaterial: envio:", e.message);
   }
 });
+
+// ── Estimacion de hora de fin de las recogidas externas ─────────────────────
+//
+// Cada noche se calcula, con el historico de los ultimos 14 dias, a que hora
+// suelen terminar las recogidas en cada almacen externo (Avitrans/Caserfri/
+// Txt) y cuanto se tarda de media por visita. Solo se usan las lanzaderas 2
+// y 3 para la media: la 4 solo entra quando hay exceso de trabajo (segun el
+// usuario) y metida en la media historica la desvirtuaria.
+//
+// El resultado se guarda en config/estimacion_recogidas y lo lee el panel
+// para pintar "Fin estimado: HH:MM" en cada tarjeta, sumando en el propio
+// cliente el retraso si hoy una lanzadera lleva mas tiempo del habitual
+// parada en ese almacen (ver renderPedidosCards en admin.js).
+
+const LANZ_RECOGIDAS_EXTERNAS = [2, 3];
+const DIAS_HISTORICO_RECOGIDAS = 14;
+
+exports.calcularEstimacionRecogidas = onSchedule(
+  { schedule: "0 3 * * *", timeZone: "Europe/Madrid" },
+  async () => {
+    const hasta = Date.now();
+    const desde = hasta - DIAS_HISTORICO_RECOGIDAS * 24 * 3600 * 1000;
+
+    let snap;
+    try {
+      snap = await db.collection("lanzaderas_log")
+        .where("desde", ">=", admin.firestore.Timestamp.fromMillis(desde))
+        .orderBy("desde", "asc").get();
+    } catch (e) { console.error("calcularEstimacionRecogidas: consulta:", e.message); return; }
+
+    // Agrupar por lanzadera para poder calcular la duracion de cada segmento
+    // (hasta el siguiente evento de esa misma lanzadera), igual que hace el
+    // informe de costes.
+    const porLanz = {};
+    snap.forEach(doc => {
+      const d = doc.data();
+      if (!LANZ_RECOGIDAS_EXTERNAS.includes(d.numero)) return;
+      (porLanz[d.numero] = porLanz[d.numero] || []).push(d);
+    });
+
+    // Por almacen: lista de duraciones (minutos) de cada visita, y lista de
+    // "minuto del dia" en que termino cada visita (para la hora media de fin).
+    const datos = {};
+    ALMACENES_PT.forEach(a => { datos[a] = { duraciones: [], finesMin: [] }; });
+
+    Object.values(porLanz).forEach(eventos => {
+      for (let i = 0; i < eventos.length; i++) {
+        const ev = eventos[i];
+        if (ev.estado !== "en_nave" || !ALMACENES_PT.includes(ev.nave)) continue;
+        const inicioMs = ev.desde.toMillis();
+        const finMs = (i + 1 < eventos.length) ? eventos[i + 1].desde.toMillis() : null;
+        if (!finMs) continue; // ultimo evento del historico, sin cierre fiable: se descarta
+        const duracionMin = (finMs - inicioMs) / 60000;
+        if (duracionMin <= 0 || duracionMin > 240) continue; // descarta valores absurdos
+        datos[ev.nave].duraciones.push(duracionMin);
+
+        const finLocal = new Date(finMs).toLocaleString("sv-SE", { timeZone: "Europe/Madrid" });
+        const horaFin = finLocal.split(" ")[1]; // "HH:MM:SS"
+        const [h, m] = horaFin.split(":").map(Number);
+        datos[ev.nave].finesMin.push(h * 60 + m);
+      }
+    });
+
+    function media(arr) { return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null; }
+
+    const resultado = {};
+    ALMACENES_PT.forEach(a => {
+      resultado[a] = {
+        duracionMediaMin: media(datos[a].duraciones),
+        finMedioMin: media(datos[a].finesMin),
+        muestras: datos[a].duraciones.length
+      };
+    });
+    resultado.calculadoEn = admin.firestore.Timestamp.now();
+
+    try {
+      await db.collection("config").doc("estimacion_recogidas").set(resultado);
+      console.log("calcularEstimacionRecogidas: hecho.", JSON.stringify(resultado));
+    } catch (e) { console.error("calcularEstimacionRecogidas: guardar:", e.message); }
+  }
+);
