@@ -853,11 +853,6 @@ exports.enviarInformeDiario = onSchedule(
   () => generarYEnviarInforme("23:59")
 );
 
-exports.enviarInformeManana = onSchedule(
-  { schedule: "30 8 * * *", timeZone: "Europe/Madrid" },
-  () => generarYEnviarInforme("08:30")
-);
-
 // ── Informe diario Bizerba ───────────────────────────────────────────────────
 
 async function generarYEnviarInformeBizerba() {
