@@ -1939,6 +1939,11 @@ exports.revisarCorreoPedidos = onSchedule(
 // (que trae varios correos a la vez): se pide aparte, uno a uno, solo para
 // el correo que resulta ser de verificacion de camaras.
 function esVerificacionCamarasCaserfri(msg) {
+  // El PT real de Caserfri tambien puede llegar desde @ufsat.com (mismo
+  // ERP), pero SIEMPRE con el documento adjunto: si tiene adjunto, no es
+  // este flujo (el correo de verificacion nunca lleva ninguno), por muy
+  // ufsat.com que sea el remitente.
+  if (msg.hasAttachments) return false;
   const remitente = (msg.from && msg.from.emailAddress && msg.from.emailAddress.address || "").toLowerCase();
   return remitente.endsWith("@ufsat.com")
     || /verificaci[oó]n de c[aá]maras completada/i.test(msg.subject || "");
@@ -2002,7 +2007,7 @@ exports.revisarCorreoVerificacionCaserfri = onSchedule(
       data = await graphGet(token,
         "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS +
         "/mailFolders/inbox/messages?$filter=isRead eq false&$top=25" +
-        "&$select=id,subject,from,receivedDateTime");
+        "&$select=id,subject,from,receivedDateTime,hasAttachments");
     } catch (e) { console.error("revisarCorreoVerificacionCaserfri: listar mensajes:", e.message); return; }
 
     const candidatos = (data.value || []).filter(esVerificacionCamarasCaserfri);
