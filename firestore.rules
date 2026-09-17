@@ -140,6 +140,7 @@ service cloud.firestore {
       return d.estado in ['en_nave', 'transito', 'fuera']
         && d.nave is string && d.nave.size() > 0 && d.nave.size() <= 60
         && (d.destino == null || (d.destino is string && d.destino.size() <= 60))
+        && (!('motivo' in d) || d.motivo == null || (d.motivo is string && d.motivo.size() <= 120))
         && d.activa is bool;
     }
 

@@ -24,7 +24,7 @@ function escTexto(s) {
   });
 }
 
-let sel = { nave: null, destino: null };
+let sel = { nave: null, destino: null, motivo: null };
 let estadoActivoServidor = null;
 const app = document.getElementById("app");
 const DOC_ID = "furgoneta"; // un unico vehiculo: un unico documento de estado
@@ -66,9 +66,38 @@ function renderNaves(titulo, modo) {
 }
 
 function pickNaveFurgo(id, modo) {
-  if (modo === "destino") { sel.destino = id; registrarTransito(); return; }
+  if (modo === "destino") { sel.destino = id; pedirMotivoTransito(); return; }
   sel.nave = id;
   render();
+}
+
+// Antes de salir hacia el destino, se pide el motivo del viaje (texto libre):
+// es lo que luego se ve en la tabla de movimientos del panel.
+function pedirMotivoTransito() {
+  app.innerHTML =
+    "<div class='card'>" +
+    "<h2>¿Motivo del viaje?</h2>" +
+    "<p class='card-desc'>Antes de salir hacia " + escTexto(NOMBRE_NAVE_FURGO[sel.destino] || sel.destino) + ".</p>" +
+    "<div class='field'><label>Motivo</label>" +
+    "<input type='text' id='motivo-transito-furgo' maxlength='120' autocomplete='off' placeholder='Ej: recoger material'></div>" +
+    "<div id='motivo-error-furgo' style='color:#D41F3A;font-size:13px;margin-bottom:10px;display:none'></div>" +
+    "<button class='btn-primary' style='width:100%' onclick='confirmarMotivoTransito()'>Continuar</button>" +
+    "<button class='btn-back' style='width:100%;margin-top:8px' onclick=\"sel.destino=null; renderNaves('¿A donde vas?','destino')\">&#8592; Atras</button>" +
+    "</div>";
+  const i = document.getElementById("motivo-transito-furgo");
+  if (i) i.focus();
+}
+
+function confirmarMotivoTransito() {
+  const motivo = (document.getElementById("motivo-transito-furgo").value || "").trim();
+  const err = document.getElementById("motivo-error-furgo");
+  if (motivo.length < 2) {
+    err.textContent = "Escribe el motivo del viaje.";
+    err.style.display = "block";
+    return;
+  }
+  sel.motivo = motivo;
+  registrarTransito();
 }
 
 // ── Lugares que no estan en la lista ────────────────────────────────────────
@@ -186,11 +215,12 @@ function salirFurgo() {
 function heLlegadoFurgo() {
   sel.nave = sel.destino;
   sel.destino = null;
+  sel.motivo = null;
   registrar();
 }
 
 function nuevoFurgo() {
-  sel = { nave: null, destino: null };
+  sel = { nave: null, destino: null, motivo: null };
   estadoActivoServidor = null;
   render();
 }
@@ -200,6 +230,7 @@ async function escribir(estado, activa) {
     estado: estado,
     nave: sel.nave,
     destino: estado === "transito" ? (sel.destino || null) : null,
+    motivo: estado === "transito" ? (sel.motivo || null) : null,
     activa: activa,
     desde: firebase.firestore.Timestamp.now(),
     actualizado: firebase.firestore.Timestamp.now()

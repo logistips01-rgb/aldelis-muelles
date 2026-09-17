@@ -2132,7 +2132,7 @@ function cargarFurgoneta() {
     const nextMs = (i + 1 < logs.length) ? logs[i + 1].desde.toMillis() : (esHoy ? Date.now() : dayEnd);
     const endMin = (nextMs - dayStart) / 60000;
     if (logs[i].estado === "en_nave") segs.push({ nave: logs[i].nave, startMin, endMin });
-    else if (logs[i].estado === "transito") trans.push({ destino: logs[i].destino || null, startMin, endMin });
+    else if (logs[i].estado === "transito") trans.push({ destino: logs[i].destino || null, motivo: logs[i].motivo || null, startMin, endMin });
   }
   renderGanttFurgoneta(segs, trans, finMarks);
   renderTablaFurgoneta(segs, trans);
@@ -2144,7 +2144,7 @@ function renderTablaFurgoneta(segs, trans) {
   const cont = document.getElementById("tabla-furgoneta");
   if (!cont) return;
   const filas = [
-    ...segs.map(s => ({ tipo: "En nave", lugar: NAVE_NOMBRE[s.nave] || s.nave, ...s })),
+    ...segs.map(s => ({ tipo: "En nave", lugar: NAVE_NOMBRE[s.nave] || s.nave, motivo: null, ...s })),
     ...trans.map(s => ({ tipo: "Transito", lugar: "→ " + (NAVE_NOMBRE[s.destino] || s.destino || "?"), ...s }))
   ].sort((a, b) => a.startMin - b.startMin);
 
@@ -2154,10 +2154,11 @@ function renderTablaFurgoneta(segs, trans) {
   }
 
   cont.innerHTML = "<div class='tabla-scroll'><table class='tabla-inf'><thead><tr>" +
-    "<th>Tipo</th><th>Lugar</th><th>Desde</th><th>Hasta</th><th>Duracion</th></tr></thead><tbody>" +
+    "<th>Tipo</th><th>Lugar</th><th>Motivo</th><th>Desde</th><th>Hasta</th><th>Duracion</th></tr></thead><tbody>" +
     filas.map(f => "<tr>" +
       "<td>" + esc(f.tipo) + "</td>" +
       "<td>" + esc(f.lugar) + "</td>" +
+      "<td>" + esc(f.motivo || "-") + "</td>" +
       "<td>" + minToHHMM(f.startMin) + "</td>" +
       "<td>" + minToHHMM(f.endMin) + "</td>" +
       "<td>" + formatDuracion(Math.round(f.endMin - f.startMin)) + "</td>" +
