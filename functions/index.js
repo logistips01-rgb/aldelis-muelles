@@ -1495,74 +1495,6 @@ async function crearPedidoTransferencia(pt, almacen, resultado, origen, fecha) {
   }
 }
 
-// Caserfri: el correo de "verificacion de camaras" (revisarCorreoVerificacion
-// Caserfri, ver mas abajo) crea un pedido PROVISIONAL (codigo VP-...), y mas
-// tarde llega el documento PT real (por el flujo normal de arriba), que a
-// veces no trae el 100% de lo propuesto. En vez de crear un segundo pedido
-// (duplicando el pendiente), se busca la propuesta cuyos SSCC coincidan y se
-// sustituyen sus datos por los del PT real - pero solo si todavia no se ha
-// recogido nada de ella (si ya se marco algo a mano, se deja tal cual y se
-// descarta el PT para no pisar progreso real). Si no hay ninguna propuesta
-// que encaje, se crea un pedido normal.
-//
-// A proposito, esta funcion NO llama a Microsoft Graph ni toca el correo: es
-// pura lectura/escritura de Firestore, invocada desde el flujo normal de
-// revisarCorreoPedidos (que no cambia en como lee el correo). El fallo de la
-// vez anterior estuvo siempre en la lectura del correo, nunca aqui.
-async function fusionarOCrearPedidoCaserfri(pt, resultado) {
-  const ssccPt = new Set((resultado.lineas || []).map(l => l.sscc));
-  let propuesta = null;
-  if (ssccPt.size) {
-    // Sin filtrar por cerrado: si el SSCC coincide con una propuesta que ya
-    // se recogio del todo (cerrada), el PT tiene que descartarse igual que
-    // si coincidiera con una abierta a medio recoger - si solo mirara las
-    // abiertas, una propuesta ya cerrada no se encontraria y se crearia un
-    // pedido nuevo por error para algo que ya esta hecho.
-    const snap = await db.collection("pedidos_transferencia")
-      .where("almacen", "==", "caserfri").get();
-    for (const doc of snap.docs) {
-      const d = doc.data();
-      const ssccProp = (d.lineas || []).map(l => l.sscc);
-      if (ssccProp.some(s => ssccPt.has(s))) { propuesta = doc; break; }
-    }
-  }
-
-  if (!propuesta) {
-    // Ninguna propuesta coincide: se trata como un pedido normal. Caserfri
-    // no aplica el corte de las 15:00 (un PT que llega tarde sigue siendo
-    // de hoy), asi que la fecha es siempre la de hoy.
-    console.log("fusionarOCrearPedidoCaserfri: sin propuesta con SSCC coincidente para PT", pt,
-      "(SSCC:", [...ssccPt].join(","), "), se crea como pedido nuevo.");
-    await crearPedidoTransferencia(pt, "caserfri", resultado, "email", fechaHoyMadrid());
-    return;
-  }
-
-  const ref = propuesta.ref;
-  try {
-    await db.runTransaction(async (tx) => {
-      const fresh = await tx.get(ref);
-      if (!fresh.exists) return;
-      const d = fresh.data();
-      if ((d.recogido || 0) > 0) {
-        console.log("fusionarOCrearPedidoCaserfri: propuesta", ref.id, "ya tiene recogido (o esta cerrada), se descarta el PT", pt);
-        return;
-      }
-      const delta = (resultado.palets || 0) - (d.palets || 0);
-      tx.update(ref, {
-        palets: resultado.palets, lineas: resultado.lineas || [],
-        ptReal: pt, fecha: fechaHoyMadrid(), activado: true
-      });
-      if (delta !== 0) {
-        tx.set(db.collection("almacenes_pendientes").doc("caserfri"), {
-          pedido: admin.firestore.FieldValue.increment(delta)
-        }, { merge: true });
-      }
-      console.log("fusionarOCrearPedidoCaserfri: propuesta", ref.id, "sustituida por PT real", pt, "(", d.palets, "->", resultado.palets, "palets)");
-    });
-  } catch (e) {
-    console.error("fusionarOCrearPedidoCaserfri:", e.message);
-  }
-}
 
 // Subida manual desde el panel (arrastrar/elegir archivo). Pasa por el
 // servidor en vez de leerse en el navegador para reutilizar exactamente el
@@ -1856,15 +1788,6 @@ exports.revisarCorreoPedidos = onSchedule(
           console.log("revisarCorreoPedidos: es de Usieto, se deja para revisarCorreoIncidencias:", msg.subject);
           continue;
         }
-        // El correo de "verificacion de camaras" de Caserfri no tiene
-        // adjunto, asi que sin este aviso lo marcaria como leido mas abajo
-        // ("sin adjuntos") antes de que revisarCorreoVerificacionCaserfri
-        // llegue a leerlo. Es solo una comprobacion de texto, sin llamadas a
-        // Graph: no añade riesgo a esta funcion.
-        if (esVerificacionCamarasCaserfri(msg)) {
-          console.log("revisarCorreoPedidos: es de verificacion de camaras, se deja para revisarCorreoVerificacionCaserfri:", msg.subject);
-          continue;
-        }
         if (!msg.hasAttachments) {
           console.log("revisarCorreoPedidos: sin adjuntos, descartado:", msg.subject);
           await graphMarcarLeido(token, msg.id);
@@ -1905,142 +1828,10 @@ exports.revisarCorreoPedidos = onSchedule(
           || ("SINPT-" + msg.id.slice(-8));
 
         console.log("revisarCorreoPedidos: procesando", pt, almacen, resultado.palets, "palets -", msg.subject);
-
-        // Caserfri: este documento puede ser la version real de una
-        // propuesta (correo de verificacion de camaras) previa; se busca y
-        // se sustituye por SSCC en vez de crear un pedido nuevo. Pura
-        // lectura/escritura de Firestore, no toca el correo.
-        if (almacen === "caserfri") {
-          await fusionarOCrearPedidoCaserfri(pt, resultado);
-        } else {
-          await crearPedidoTransferencia(pt, almacen, resultado, "email", fechaPedidoParaCorreo(msg.receivedDateTime));
-        }
+        await crearPedidoTransferencia(pt, almacen, resultado, "email", fechaPedidoParaCorreo(msg.receivedDateTime));
         await graphMarcarLeido(token, msg.id);
       } catch (e) {
         console.error("revisarCorreoPedidos: mensaje", msg.id, e.message);
-      }
-    }
-  }
-);
-
-// ── Caserfri: correo de "verificacion de camaras" (propuesta provisional) ──
-//
-// El documento oficial (adjunto, procesado por revisarCorreoPedidos de
-// arriba) llega tarde: para cuando aparece, el palet ya se ha recogido segun
-// el aviso previo del ERP. Este correo de erp@ufsat.com no lleva adjunto: el
-// propio cuerpo (una tabla con los SSCC liberados) es el documento, y crea
-// un pedido PROVISIONAL (codigo VP-...) que luego el PT real (arriba,
-// fusionarOCrearPedidoCaserfri) sustituye por los datos definitivos.
-//
-// Funcion COMPLETAMENTE APARTE de revisarCorreoPedidos a proposito: si algo
-// falla aqui leyendo el cuerpo de un correo (la causa del problema real que
-// tuvimos), no debe poder bloquear la creacion de pedidos de ningun almacen.
-// Por el mismo motivo, el cuerpo del correo NO se pide en el listado inicial
-// (que trae varios correos a la vez): se pide aparte, uno a uno, solo para
-// el correo que resulta ser de verificacion de camaras.
-function esVerificacionCamarasCaserfri(msg) {
-  // El PT real de Caserfri tambien puede llegar desde @ufsat.com (mismo
-  // ERP), pero SIEMPRE con el documento adjunto: si tiene adjunto, no es
-  // este flujo (el correo de verificacion nunca lleva ninguno), por muy
-  // ufsat.com que sea el remitente.
-  if (msg.hasAttachments) return false;
-  const remitente = (msg.from && msg.from.emailAddress && msg.from.emailAddress.address || "").toLowerCase();
-  return remitente.endsWith("@ufsat.com")
-    || /verificaci[oó]n de c[aá]maras completada/i.test(msg.subject || "");
-}
-
-function htmlATextoTabla(html) {
-  return String(html || "")
-    .replace(/<\/(td|th)>/gi, "\t")
-    .replace(/<\/tr>/gi, "\n")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/[ \t]+\n/g, "\n");
-}
-
-// El almacen no viene en un campo "Origen" fijo como en los PDF de pedidos:
-// aqui basta con que el nombre aparezca en algun sitio del texto (columna
-// "DONDE" en el caso de Caserfri).
-function detectarAlmacenEnTexto(texto) {
-  const up = texto.toUpperCase();
-  for (const nombre of ["AVITRANS", "CASERFRI", "TXT"]) {
-    if (new RegExp("\\b" + nombre + "\\b").test(up)) return normalizarAlmacen(nombre);
-  }
-  return null;
-}
-
-// Cada SSCC (siempre 18 digitos) es un palet, igual que en los PDF/Excel. La
-// descripcion se intenta sacar de la misma linea (columna siguiente tras el
-// SSCC, si el texto conserva las tabulaciones de htmlATextoTabla); si no
-// sale limpia, se deja vacia en vez de arriesgarse a poner algo erroneo.
-function contarPaletsCorreoTexto(texto) {
-  const porSscc = new Map();
-  texto.split("\n").forEach(linea => {
-    const m = linea.match(/\b(\d{18})\b/);
-    if (!m) return;
-    const sscc = m[1];
-    if (porSscc.has(sscc)) return;
-    const cols = linea.split("\t").map(c => c.trim());
-    const idx = cols.findIndex(c => c === sscc);
-    const descripcion = (idx !== -1 && cols[idx + 2]) ? cols[idx + 2] : "";
-    porSscc.set(sscc, descripcion);
-  });
-  const lineas = [...porSscc].map(([sscc, descripcion]) => ({ sscc, descripcion }));
-  return { palets: lineas.length, lineas };
-}
-
-exports.revisarCorreoVerificacionCaserfri = onSchedule(
-  { schedule: "every 10 minutes", timeZone: "Europe/Madrid" },
-  async () => {
-    if (!MS_SECRET) { console.warn("revisarCorreoVerificacionCaserfri: falta MS_SECRET"); return; }
-
-    let token;
-    try { token = await obtenerTokenMS(); }
-    catch (e) { console.error("revisarCorreoVerificacionCaserfri: token:", e.message); return; }
-
-    let data;
-    try {
-      data = await graphGet(token,
-        "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS +
-        "/mailFolders/inbox/messages?$filter=isRead eq false&$top=25" +
-        "&$select=id,subject,from,receivedDateTime,hasAttachments");
-    } catch (e) { console.error("revisarCorreoVerificacionCaserfri: listar mensajes:", e.message); return; }
-
-    const candidatos = (data.value || []).filter(esVerificacionCamarasCaserfri);
-    console.log("revisarCorreoVerificacionCaserfri: " + candidatos.length + " correo(s) candidato(s) de "
-      + (data.value || []).length + " no leido(s).");
-
-    for (const msg of candidatos) {
-      try {
-        // El cuerpo se pide aqui, uno a uno, solo para este correo concreto
-        // (nunca en el listado de arriba, que trae varios a la vez).
-        const detalle = await graphGet(token,
-          "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS + "/messages/" + msg.id + "?$select=body");
-        const textoCuerpo = htmlATextoTabla(detalle.body && detalle.body.content);
-        const resultado = contarPaletsCorreoTexto(textoCuerpo);
-        if (!resultado.palets) {
-          console.log("revisarCorreoVerificacionCaserfri: 0 SSCC reconocidos en", msg.subject);
-          await graphMarcarLeido(token, msg.id);
-          continue;
-        }
-        const almacen = detectarAlmacenEnTexto(textoCuerpo) || detectarAlmacenEnTexto(msg.subject || "");
-        if (!almacen) {
-          console.log("revisarCorreoVerificacionCaserfri: sin almacen reconocido en", msg.subject);
-          await graphMarcarLeido(token, msg.id);
-          continue;
-        }
-        const vpMatch = (msg.subject || "").match(/VP-\d{4}-\d{2}-\d{2}-\d+/) || textoCuerpo.match(/VP-\d{4}-\d{2}-\d{2}-\d+/);
-        const pt = vpMatch ? vpMatch[0] : ("SINPT-" + msg.id.slice(-8));
-
-        console.log("revisarCorreoVerificacionCaserfri: creando propuesta", pt, almacen, resultado.palets, "palets -", msg.subject);
-        await crearPedidoTransferencia(pt, almacen, resultado, "email-verificacion", fechaPedidoParaCorreo(msg.receivedDateTime));
-        await graphMarcarLeido(token, msg.id);
-      } catch (e) {
-        console.error("revisarCorreoVerificacionCaserfri: mensaje", msg.id, e.message);
       }
     }
   }
@@ -2680,11 +2471,10 @@ function minToHHMMServidor(minutos) {
 // faltaba llega tarde), asi que interesa ver la evolucion dia a dia y un
 // balance al cierre de la semana, no solo el aviso suelto.
 //
-// Funcion de lectura de correo COMPLETAMENTE APARTE de revisarCorreoPedidos y
-// de revisarCorreoVerificacionCaserfri, por la misma razon que esa: si algo
-// falla leyendo estos correos, no debe poder afectar a ningun otro flujo. No
-// escribe en pedidos_transferencia ni en ninguna coleccion que otras
-// funciones lean: coleccion propia, "albaranes_acopal".
+// Funcion de lectura de correo COMPLETAMENTE APARTE de revisarCorreoPedidos:
+// si algo falla leyendo estos correos, no debe poder afectar a ningun otro
+// flujo. No escribe en pedidos_transferencia ni en ninguna coleccion que
+// otras funciones lean: coleccion propia, "albaranes_acopal".
 
 function esErrorAlbaranAcopal(msg) {
   return /errores\s+albaranes/i.test(msg.subject || "");
