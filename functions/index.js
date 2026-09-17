@@ -2847,3 +2847,294 @@ exports.enviarBalanceSemanalAcopal = onSchedule(
     console.log("enviarBalanceSemanalAcopal: enviado,", docs.length, "albaranes de la semana.");
   }
 );
+
+// ── Asistente IA de almacen ──────────────────────────────────────────────
+//
+// Asistente personal de admin: acceso de LECTURA a cualquier coleccion de
+// Firestore y al buzon de correo, y de ESCRITURA solo para mandar un mensaje
+// de chat a una lanzadera o un correo - nunca puede tocar pedidos, permisos
+// ni ninguna otra cosa directamente. Restringido a ADMINS_APP (un unico
+// email). Necesita ANTHROPIC_API_KEY en functions/.env (igual que MS_SECRET).
+//
+// El propio buzon: nunca lee el cuerpo de varios correos de golpe (misma
+// leccion del incidente de Caserfri) - leer_correos_recientes solo trae
+// metadatos, leer_cuerpo_correo pide el cuerpo de uno solo, bajo demanda.
+
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+
+const COLECCIONES_IA_PERMITIDAS = [
+  "pedidos_transferencia", "incidencias_transporte", "cambios_material", "cambios_mensajes",
+  "reservas", "lanzaderas", "lanzaderas_log", "lanzaderas_nota", "mensajes",
+  "descargas_merca", "descargas_arento", "furgoneta", "furgoneta_log",
+  "recogidas_palets", "almacenes_pendientes", "albaranes_acopal", "alertas_cierre",
+  "config", "permisos", "incidencias", "ubicaciones_naves"
+];
+
+// Los Timestamp de Firestore no se pueden mandar tal cual a la IA (no son
+// JSON serializable de forma legible): se convierten a texto ISO.
+function iaSerializar(obj) {
+  const out = {};
+  for (const k in obj) {
+    const v = obj[k];
+    out[k] = (v && typeof v.toDate === "function") ? v.toDate().toISOString() : v;
+  }
+  return out;
+}
+
+async function iaListarDocumentos(input) {
+  const coleccion = String((input && input.coleccion) || "");
+  if (!COLECCIONES_IA_PERMITIDAS.includes(coleccion)) return { error: "Coleccion no permitida: " + coleccion };
+  let q = db.collection(coleccion);
+  if (input && input.ordenCampo) q = q.orderBy(String(input.ordenCampo), input.ordenDireccion === "desc" ? "desc" : "asc");
+  q = q.limit(Math.min(Number(input && input.limite) || 20, 50));
+  const snap = await q.get();
+  const docs = [];
+  snap.forEach(d => docs.push({ id: d.id, ...iaSerializar(d.data()) }));
+  return { docs, total: docs.length };
+}
+
+async function iaBuscarDocumentos(input) {
+  const coleccion = String((input && input.coleccion) || "");
+  if (!COLECCIONES_IA_PERMITIDAS.includes(coleccion)) return { error: "Coleccion no permitida: " + coleccion };
+  const opsValidos = ["==", "!=", ">", "<", ">=", "<=", "array-contains", "in"];
+  const operador = String((input && input.operador) || "");
+  if (!opsValidos.includes(operador)) return { error: "Operador no valido: " + operador };
+  if (!input || !input.campo) return { error: "Falta el campo" };
+  try {
+    const snap = await db.collection(coleccion)
+      .where(String(input.campo), operador, input.valor)
+      .limit(Math.min(Number(input.limite) || 20, 50)).get();
+    const docs = [];
+    snap.forEach(d => docs.push({ id: d.id, ...iaSerializar(d.data()) }));
+    return { docs, total: docs.length };
+  } catch (e) { return { error: e.message }; }
+}
+
+// Conversion basica de HTML a texto plano, solo para que la IA pueda leer el
+// cuerpo de un correo con sentido (no hace falta preservar tablas como en el
+// parser de Caserfri).
+function iaHtmlATexto(html) {
+  return String(html || "")
+    .replace(/<(br|\/p|\/div|\/tr|\/li)\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+async function iaLeerCorreosRecientes(input) {
+  const cantidad = Math.min(Number(input && input.cantidad) || 10, 25);
+  const filtro = (input && input.soloNoLeidos) ? "&$filter=isRead eq false" : "";
+  const token = await obtenerTokenMS();
+  const data = await graphGet(token,
+    "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS +
+    "/mailFolders/inbox/messages?$top=" + cantidad + filtro +
+    "&$orderby=receivedDateTime desc&$select=id,subject,from,receivedDateTime,isRead,hasAttachments");
+  return {
+    correos: (data.value || []).map(m => ({
+      id: m.id,
+      asunto: m.subject,
+      de: m.from && m.from.emailAddress && m.from.emailAddress.address,
+      recibido: m.receivedDateTime,
+      leido: m.isRead,
+      tieneAdjuntos: m.hasAttachments
+    }))
+  };
+}
+
+async function iaLeerCuerpoCorreo(input) {
+  const messageId = input && input.messageId;
+  if (!messageId) return { error: "Falta el messageId" };
+  const token = await obtenerTokenMS();
+  const detalle = await graphGet(token,
+    "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS + "/messages/" + messageId + "?$select=subject,body");
+  return { asunto: detalle.subject, cuerpo: iaHtmlATexto(detalle.body && detalle.body.content).slice(0, 6000) };
+}
+
+async function iaEnviarMensajeChat(input) {
+  const numero = Number(input && input.lanzadera);
+  if (!(numero >= 1 && numero <= 4)) return { error: "Lanzadera no valida (debe ser 1, 2, 3 o 4)" };
+  const texto = String((input && input.texto) || "").trim().slice(0, 500);
+  if (!texto) return { error: "Falta el texto del mensaje" };
+  await db.collection("mensajes").add({
+    lanzadera: numero, de: "almacen", emisor: "IA Muelles", texto,
+    ts: admin.firestore.Timestamp.now()
+  });
+  return { ok: true };
+}
+
+async function iaEnviarCorreo(input) {
+  const destinatario = String((input && input.destinatario) || "").trim().toLowerCase();
+  if (!destinatarioValido(destinatario)) return { error: "Destinatario no valido" };
+  const asunto = String((input && input.asunto) || "(sin asunto)").slice(0, 200);
+  const cuerpo = String((input && input.cuerpo) || "").slice(0, 5000);
+  const token = await obtenerTokenMS();
+  const status = await enviarConGraph(token, destinatario, asunto, null, cuerpo, null);
+  return { ok: status === 200 || status === 202, status };
+}
+
+const HERRAMIENTAS_IA = [
+  {
+    name: "listar_documentos",
+    description: "Lista documentos de una coleccion de Firestore, opcionalmente ordenados. Util para ver lo mas reciente de algo.",
+    input_schema: {
+      type: "object",
+      properties: {
+        coleccion: { type: "string", description: "Nombre exacto de la coleccion" },
+        limite: { type: "number", description: "Maximo de documentos a devolver (por defecto 20, maximo 50)" },
+        ordenCampo: { type: "string", description: "Campo por el que ordenar, opcional" },
+        ordenDireccion: { type: "string", enum: ["asc", "desc"] }
+      },
+      required: ["coleccion"]
+    }
+  },
+  {
+    name: "buscar_documentos",
+    description: "Busca documentos de una coleccion de Firestore que cumplan una condicion sencilla (campo, operador, valor).",
+    input_schema: {
+      type: "object",
+      properties: {
+        coleccion: { type: "string" },
+        campo: { type: "string" },
+        operador: { type: "string", enum: ["==", "!=", ">", "<", ">=", "<=", "array-contains", "in"] },
+        valor: {},
+        limite: { type: "number" }
+      },
+      required: ["coleccion", "campo", "operador", "valor"]
+    }
+  },
+  {
+    name: "leer_correos_recientes",
+    description: "Lista los correos mas recientes del buzon de pedidos (solo metadatos: asunto, remitente, fecha - no el cuerpo).",
+    input_schema: {
+      type: "object",
+      properties: {
+        cantidad: { type: "number", description: "Cuantos correos traer (por defecto 10, maximo 25)" },
+        soloNoLeidos: { type: "boolean" }
+      }
+    }
+  },
+  {
+    name: "leer_cuerpo_correo",
+    description: "Lee el asunto y el cuerpo completo de un correo concreto, dado su id (sacado de leer_correos_recientes).",
+    input_schema: {
+      type: "object",
+      properties: { messageId: { type: "string" } },
+      required: ["messageId"]
+    }
+  },
+  {
+    name: "enviar_mensaje_chat",
+    description: "Envia un mensaje de chat a una lanzadera (numero 1 a 4) de parte del almacen. Solo usar si el usuario lo ha pedido explicitamente.",
+    input_schema: {
+      type: "object",
+      properties: {
+        lanzadera: { type: "number", description: "Numero de lanzadera, de 1 a 4" },
+        texto: { type: "string" }
+      },
+      required: ["lanzadera", "texto"]
+    }
+  },
+  {
+    name: "enviar_correo",
+    description: "Envia un correo electronico a un destinatario. Solo usar si el usuario lo ha pedido explicitamente.",
+    input_schema: {
+      type: "object",
+      properties: {
+        destinatario: { type: "string" },
+        asunto: { type: "string" },
+        cuerpo: { type: "string" }
+      },
+      required: ["destinatario", "asunto", "cuerpo"]
+    }
+  }
+];
+
+async function iaEjecutarHerramienta(nombre, input) {
+  switch (nombre) {
+    case "listar_documentos": return iaListarDocumentos(input);
+    case "buscar_documentos": return iaBuscarDocumentos(input);
+    case "leer_correos_recientes": return iaLeerCorreosRecientes(input);
+    case "leer_cuerpo_correo": return iaLeerCuerpoCorreo(input);
+    case "enviar_mensaje_chat": return iaEnviarMensajeChat(input);
+    case "enviar_correo": return iaEnviarCorreo(input);
+    default: return { error: "Herramienta desconocida: " + nombre };
+  }
+}
+
+const IA_SYSTEM_PROMPT =
+  "Eres el asistente personal de almacen de Aldelis Muelles, una empresa de logistica de aves/alimentacion. " +
+  "Tienes acceso de LECTURA a cualquier coleccion de la base de datos (listar_documentos, buscar_documentos) " +
+  "y al buzon de correo de pedidos (leer_correos_recientes, leer_cuerpo_correo). Solo puedes ESCRIBIR mediante " +
+  "enviar_mensaje_chat (a una lanzadera, numero 1 a 4) y enviar_correo: no puedes modificar pedidos, permisos, " +
+  "configuracion ni ninguna otra cosa directamente, y nunca debes usar enviar_mensaje_chat o enviar_correo por " +
+  "iniciativa propia, solo cuando el usuario lo pida explicitamente. Responde en español, de forma breve y " +
+  "concreta, como un asistente de confianza que conoce bien el almacen. Si necesitas datos para responder, usa " +
+  "las herramientas de lectura antes de contestar en vez de inventarte numeros.";
+
+exports.preguntarAsistente = functions.https.onCall(async (request, context) => {
+  const esV2 = !!(request && typeof request === "object" && request.data !== undefined);
+  const data = esV2 ? request.data : request;
+  const ctx  = esV2 ? request : (context || {});
+
+  if (!ctx.app) return { ok: false, error: "No autorizado" };
+  const email = (ctx.auth && ctx.auth.token && ctx.auth.token.email || "").toLowerCase();
+  if (!ADMINS_APP.includes(email)) return { ok: false, error: "Sin permiso" };
+  if (!ANTHROPIC_API_KEY) return { ok: false, error: "Falta configurar ANTHROPIC_API_KEY en el servidor" };
+
+  const mensaje = data && String(data.mensaje || "").trim();
+  if (!mensaje) return { ok: false, error: "Falta el mensaje" };
+  if (mensaje.length > 4000) return { ok: false, error: "Mensaje demasiado largo" };
+
+  let messages = [{ role: "user", content: mensaje }];
+  let respuestaFinal = "";
+
+  try {
+    for (let vuelta = 0; vuelta < 6; vuelta++) {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "x-api-key": ANTHROPIC_API_KEY,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-5",
+          max_tokens: 1500,
+          system: IA_SYSTEM_PROMPT,
+          tools: HERRAMIENTAS_IA,
+          messages
+        })
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        console.error("preguntarAsistente: Anthropic error:", JSON.stringify(json));
+        return { ok: false, error: (json.error && json.error.message) || "Error llamando a la IA" };
+      }
+
+      messages.push({ role: "assistant", content: json.content });
+
+      const usosHerramienta = (json.content || []).filter(b => b.type === "tool_use");
+      if (!usosHerramienta.length) {
+        respuestaFinal = (json.content || []).filter(b => b.type === "text").map(b => b.text).join("\n");
+        break;
+      }
+
+      const resultados = [];
+      for (const uso of usosHerramienta) {
+        let resultado;
+        try { resultado = await iaEjecutarHerramienta(uso.name, uso.input || {}); }
+        catch (e) { resultado = { error: e.message }; }
+        resultados.push({ type: "tool_result", tool_use_id: uso.id, content: JSON.stringify(resultado).slice(0, 8000) });
+      }
+      messages.push({ role: "user", content: resultados });
+    }
+
+    if (!respuestaFinal) respuestaFinal = "No he podido completar la respuesta (demasiados pasos, prueba con una pregunta mas concreta).";
+    console.log("preguntarAsistente:", email, "->", mensaje.slice(0, 100));
+    return { ok: true, respuesta: respuestaFinal };
+  } catch (e) {
+    console.error("preguntarAsistente:", e.message);
+    return { ok: false, error: e.message };
+  }
+});

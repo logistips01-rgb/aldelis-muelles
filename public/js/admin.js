@@ -687,6 +687,14 @@ function aplicarRol() {
   const fab = document.getElementById("chat-fab");
   if (fab && !_perms.mensajes) fab.style.display = "none";
 
+  // Asistente de IA: solo para el admin, no depende del sistema de permisos
+  // por secciones (acceso de lectura total, restringido a un unico email).
+  const btnAsistente = document.getElementById("btn-vista-asistente");
+  if (btnAsistente) {
+    const esAdminIA = auth.currentUser && ADMINS.includes((auth.currentUser.email || "").toLowerCase());
+    btnAsistente.style.display = esAdminIA ? "" : "none";
+  }
+
   // Abrir la primera vista disponible
   const orden = ["rejilla", "lista", "lanzaderas", "pedidos", "bizerba", "cargas", "merca", "arento", "informes", "costes", "cambios", "furgoneta", "config"];
   const primera = orden.find(v => _perms.ver[v]);
@@ -696,7 +704,7 @@ function aplicarRol() {
 function switchVista(vista) {
   // No permitir entrar en una vista sin permiso
   if (_perms.ver && _perms.ver[vista] === false) return;
-  ["rejilla", "lista", "informes", "lanzaderas", "pedidos", "cargas", "merca", "arento", "bizerba", "config", "costes", "cambios", "furgoneta"].forEach(v => {
+  ["rejilla", "lista", "informes", "lanzaderas", "pedidos", "cargas", "merca", "arento", "bizerba", "config", "costes", "cambios", "furgoneta", "asistente"].forEach(v => {
     document.getElementById("vista-" + v).style.display = vista === v ? "block" : "none";
     document.getElementById("btn-vista-" + v).classList.toggle("active", vista === v);
   });
@@ -4323,4 +4331,89 @@ function enviarMensajeCambio() {
     texto,
     ts: firebase.firestore.Timestamp.now()
   }).catch(e => { console.error("enviarMensajeCambio:", e); alert("No se pudo enviar el mensaje."); inp.value = texto; });
+}
+
+// ─── ASISTENTE DE IA (solo admin) ────────────────────────────────────────
+// Voz a texto y texto a voz con las APIs del propio navegador (sin coste ni
+// servicio adicional); el "cerebro" es la funcion preguntarAsistente, que
+// llama a Claude con herramientas de lectura total y escritura acotada a
+// chat/correo.
+
+function agregarMensajeAsistente(rol, texto) {
+  const cont = document.getElementById("asistente-conversacion");
+  if (!cont) return;
+  const esUsuario = rol === "usuario";
+  const burbuja = document.createElement("div");
+  burbuja.style.cssText = "align-self:" + (esUsuario ? "flex-end" : "flex-start") +
+    ";max-width:80%;padding:10px 14px;border-radius:12px;font-size:14px;white-space:pre-wrap;" +
+    (esUsuario ? "background:#1A1A1A;color:#fff" : "background:#F1F2F5;color:#1A1A1A");
+  burbuja.textContent = texto;
+  cont.appendChild(burbuja);
+  cont.scrollTop = cont.scrollHeight;
+}
+
+async function preguntarAsistenteIA() {
+  const input = document.getElementById("asistente-input");
+  const mensaje = (input.value || "").trim();
+  if (!mensaje) return;
+  const estado = document.getElementById("asistente-estado");
+  agregarMensajeAsistente("usuario", mensaje);
+  input.value = "";
+  estado.textContent = "Pensando...";
+  try {
+    const res = await firebase.functions().httpsCallable("preguntarAsistente")({ mensaje });
+    if (res.data && res.data.ok) {
+      agregarMensajeAsistente("asistente", res.data.respuesta);
+      hablarAsistente(res.data.respuesta);
+      estado.textContent = "";
+    } else {
+      estado.textContent = (res.data && res.data.error) || "No se pudo obtener respuesta.";
+    }
+  } catch (e) {
+    console.error("preguntarAsistenteIA:", e);
+    estado.textContent = "Error al preguntar.";
+  }
+}
+
+function hablarAsistente(texto) {
+  try {
+    if (!window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(texto);
+    u.lang = "es-ES";
+    window.speechSynthesis.speak(u);
+  } catch (e) { console.warn("hablarAsistente:", e.message); }
+}
+
+let _asistenteReconocimiento = null;
+let _asistenteEscuchando = false;
+
+function toggleMicAsistente() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const btn = document.getElementById("asistente-btn-mic");
+  if (!SR) { alert("Este navegador no admite dictado por voz. Escribe la pregunta."); return; }
+
+  if (_asistenteEscuchando) {
+    if (_asistenteReconocimiento) _asistenteReconocimiento.stop();
+    return;
+  }
+
+  _asistenteReconocimiento = new SR();
+  _asistenteReconocimiento.lang = "es-ES";
+  _asistenteReconocimiento.interimResults = false;
+  _asistenteReconocimiento.onstart = () => {
+    _asistenteEscuchando = true;
+    if (btn) { btn.textContent = "⏹"; btn.style.background = "#D41F3A"; btn.style.color = "#fff"; }
+  };
+  _asistenteReconocimiento.onresult = (ev) => {
+    const texto = ev.results[0][0].transcript;
+    const input = document.getElementById("asistente-input");
+    if (input) input.value = (input.value ? input.value + " " : "") + texto;
+  };
+  _asistenteReconocimiento.onerror = (ev) => console.warn("reconocimiento de voz:", ev.error);
+  _asistenteReconocimiento.onend = () => {
+    _asistenteEscuchando = false;
+    if (btn) { btn.textContent = "🎤"; btn.style.background = ""; btn.style.color = ""; }
+  };
+  _asistenteReconocimiento.start();
 }
