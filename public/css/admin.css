@@ -251,6 +251,39 @@
   width: 100%;
 }
 
+/* Boton discreto de "quitar" para las filas de listas de destinatarios en
+   Config (alertas, reservas, cambios...): a proposito NO usa .btn-reject
+   (ese es de ancho completo, pensado para otro tipo de boton, y estirado
+   dentro de una fila flex quedaba ocupando casi todo el ancho). */
+.lista-config-fila {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid #F0F0F1;
+}
+.lista-config-fila:last-child { border-bottom: none; }
+.lista-config-email { flex: 1; font-size: 14px; color: #1A1A1A; }
+.btn-quitar-mini {
+  background: transparent;
+  color: #D41F3A;
+  border: 1px solid #F5C0C8;
+  border-radius: 6px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  width: auto;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.btn-quitar-mini:hover { background: #FDF2F4; border-color: #D41F3A; }
+body.dark .lista-config-fila { border-bottom-color: #2A2A2E; }
+body.dark .lista-config-email { color: #E5E5E7; }
+body.dark .btn-quitar-mini { border-color: #5C2530; }
+body.dark .btn-quitar-mini:hover { background: #3A1E22; }
+
 .empty-state {
   text-align: center;
   padding: 40px;

@@ -1644,9 +1644,9 @@ function renderCostesEmails() {
     return;
   }
   div.innerHTML = _costesEmailsCache.map((email, i) =>
-    "<div style='display:flex;align-items:center;gap:8px;margin-bottom:6px'>" +
-    "<span style='flex:1;font-size:14px'>" + esc(email) + "</span>" +
-    "<button class='btn-reject' style='padding:4px 10px;font-size:12px;cursor:pointer' onclick='eliminarEmailCostes(" + i + ")'>Eliminar</button>" +
+    "<div class='lista-config-fila'>" +
+    "<span class='lista-config-email'>" + esc(email) + "</span>" +
+    "<button class='btn-quitar-mini' onclick='eliminarEmailCostes(" + i + ")'>Quitar</button>" +
     "</div>"
   ).join("");
 }
@@ -3636,7 +3636,7 @@ function renderPermisosUsuarios() {
       "<div style='display:flex;align-items:center;gap:8px;margin-bottom:10px'>" +
       "<span style='flex:1;font-size:14px;font-weight:600'>" + esc(u.email) + "</span>" +
       "<span style='font-size:12px;color:#6B7280'>" + u.secciones.length + " de " + SECCIONES.length + " secciones</span>" +
-      "<button class='btn-reject' style='padding:4px 10px;font-size:12px;cursor:pointer' onclick='eliminarUsuarioPermisos(" + idx + ")'>Eliminar</button>" +
+      "<button class='btn-quitar-mini' onclick='eliminarUsuarioPermisos(" + idx + ")'>Quitar</button>" +
       "</div><div>" + checks + "</div></div>";
   }).join("");
 }
@@ -3699,9 +3699,9 @@ function renderCfgAlertas() {
     return;
   }
   div.innerHTML = ADMINS_ALERTA.map((email, i) =>
-    "<div style='display:flex;align-items:center;gap:8px;margin-bottom:6px'>" +
-    "<span style='flex:1;font-size:14px'>" + esc(email) + "</span>" +
-    "<button class='btn-reject' style='padding:4px 10px;font-size:12px;cursor:pointer' onclick='eliminarEmailAlerta(" + i + ")'>Eliminar</button>" +
+    "<div class='lista-config-fila'>" +
+    "<span class='lista-config-email'>" + esc(email) + "</span>" +
+    "<button class='btn-quitar-mini' onclick='eliminarEmailAlerta(" + i + ")'>Quitar</button>" +
     "</div>"
   ).join("");
 }
@@ -3714,10 +3714,10 @@ function renderCfgDestinos() {
     return;
   }
   div.innerHTML = NAVES_PANEL.map((n, i) =>
-    "<div style='display:flex;align-items:center;gap:8px;margin-bottom:6px'>" +
+    "<div class='lista-config-fila'>" +
     "<span style='font-size:12px;color:#9CA3AF;width:110px;flex-shrink:0'>" + esc(n.id) + "</span>" +
-    "<span style='flex:1;font-size:14px'>" + esc(n.nombre) + "</span>" +
-    "<button class='btn-reject' style='padding:4px 10px;font-size:12px;cursor:pointer' onclick='eliminarDestino(" + i + ")'>Eliminar</button>" +
+    "<span class='lista-config-email'>" + esc(n.nombre) + "</span>" +
+    "<button class='btn-quitar-mini' onclick='eliminarDestino(" + i + ")'>Quitar</button>" +
     "</div>"
   ).join("");
 }
@@ -3750,9 +3750,9 @@ function renderCfgReservas() {
     return;
   }
   div.innerHTML = RESERVAS_EMAILS.map((email, i) =>
-    "<div style='display:flex;align-items:center;gap:8px;margin-bottom:6px'>" +
-    "<span style='flex:1;font-size:14px'>" + esc(email) + "</span>" +
-    "<button class='btn-reject' style='padding:4px 10px;font-size:12px;cursor:pointer' onclick='eliminarEmailReserva(" + i + ")'>Eliminar</button>" +
+    "<div class='lista-config-fila'>" +
+    "<span class='lista-config-email'>" + esc(email) + "</span>" +
+    "<button class='btn-quitar-mini' onclick='eliminarEmailReserva(" + i + ")'>Quitar</button>" +
     "</div>"
   ).join("");
 }
@@ -3857,9 +3857,9 @@ function renderCambiosEmails() {
     return;
   }
   div.innerHTML = _cambiosEmailsCache.map((email, i) =>
-    "<div style='display:flex;align-items:center;gap:8px;margin-bottom:6px'>" +
-    "<span style='flex:1;font-size:14px'>" + esc(email) + "</span>" +
-    "<button class='btn-reject' style='padding:4px 10px;font-size:12px;cursor:pointer' onclick='eliminarEmailCambios(" + i + ")'>Eliminar</button>" +
+    "<div class='lista-config-fila'>" +
+    "<span class='lista-config-email'>" + esc(email) + "</span>" +
+    "<button class='btn-quitar-mini' onclick='eliminarEmailCambios(" + i + ")'>Quitar</button>" +
     "</div>"
   ).join("");
 }
@@ -3896,9 +3896,9 @@ function renderCambiosPdfEmails() {
     return;
   }
   div.innerHTML = _cambiosPdfEmailsCache.map((email, i) =>
-    "<div style='display:flex;align-items:center;gap:8px;margin-bottom:6px'>" +
-    "<span style='flex:1;font-size:14px'>" + esc(email) + "</span>" +
-    "<button class='btn-reject' style='padding:4px 10px;font-size:12px;cursor:pointer' onclick='eliminarEmailCambiosPdf(" + i + ")'>Eliminar</button>" +
+    "<div class='lista-config-fila'>" +
+    "<span class='lista-config-email'>" + esc(email) + "</span>" +
+    "<button class='btn-quitar-mini' onclick='eliminarEmailCambiosPdf(" + i + ")'>Quitar</button>" +
     "</div>"
   ).join("");
 }
