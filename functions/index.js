@@ -2741,7 +2741,7 @@ function sumarDiasFecha(fechaStr, dias) {
 }
 
 exports.revisarCorreoAlbaranesAcopal = onSchedule(
-  { schedule: "every 10 minutes", timeZone: "Europe/Madrid" },
+  { schedule: "0 10 * * *", timeZone: "Europe/Madrid" },
   async () => {
     if (!MS_SECRET) { console.warn("revisarCorreoAlbaranesAcopal: falta MS_SECRET"); return; }
 
