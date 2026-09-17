@@ -428,16 +428,19 @@ function iniciarListeners() {
     _unsubs.push(db.collection("recogidas_palets").where("ts", ">=", Ts.fromDate(inicioHoy)).onSnapshot(s => {
       let total = 0;
       window._recogidoHoyPorAlmacen = { avitrans: 0, caserfri: 0, txt: 0 };
+      window._recogidasHoyDocs = [];
       s.forEach(d => {
         const v = d.data();
         total += (v.palets || 0);
         if (window._recogidoHoyPorAlmacen.hasOwnProperty(v.almacen)) {
           window._recogidoHoyPorAlmacen[v.almacen] += (v.palets || 0);
         }
+        window._recogidasHoyDocs.push({ id: d.id, ...v });
       });
       const el = document.getElementById("pedidos-hoy");
       if (el) el.textContent = "📦 Recogidos hoy (todos los almacenes): " + total + " palets";
       renderPedidosCards();
+      renderRecogidasHoy();
     }, e => console.error("recogidas_palets hoy:", e)));
 
     // Total pedido HOY por almacen (se resetea solo cada dia). Se cuenta por
@@ -1067,6 +1070,7 @@ let _dropZonePedidosInit = false;
 function cargarPedidos() {
   renderPedidosCards();
   renderPedidosLista();
+  renderRecogidasHoy();
   const inFecha = document.getElementById("pedido-fecha");
   if (inFecha && !inFecha.value) inFecha.value = new Date().toLocaleDateString("sv-SE");
   if (!_dropZonePedidosInit) { initDropZonePedidos(); _dropZonePedidosInit = true; }
@@ -1376,6 +1380,50 @@ function cerrarPedidoManualUI(pt, pendiente) {
       }
     })
     .catch(e => { console.error("cerrarPedidoManualUI:", e); if (estado) estado.textContent = "No se pudo registrar."; });
+}
+
+// Lista de recogidas de hoy (con boton para deshacer si el chofer se
+// equivoco de PT o de cantidad). Los mismos documentos que ya se usan para
+// el contador "Recogidos hoy", solo que aqui se ven uno a uno.
+function renderRecogidasHoy() {
+  const cont = document.getElementById("recogidas-hoy-lista");
+  if (!cont) return;
+  const docs = (window._recogidasHoyDocs || []).slice().sort((a, b) => {
+    const ta = a.ts && a.ts.toMillis ? a.ts.toMillis() : 0;
+    const tb = b.ts && b.ts.toMillis ? b.ts.toMillis() : 0;
+    return tb - ta; // mas reciente primero
+  });
+  if (!docs.length) {
+    cont.innerHTML = "<p style='font-size:13px;color:#9CA3AF'>Todavia no se ha marcado ninguna recogida hoy.</p>";
+    return;
+  }
+  cont.innerHTML = "<div class='tabla-scroll'><table class='tabla-inf'><thead><tr>" +
+    "<th>Hora</th><th>Almacen</th><th>Lanzadera</th><th>Pedidos</th><th>Palets</th><th></th>" +
+    "</tr></thead><tbody>" +
+    docs.map(d => {
+      const hora = d.ts && d.ts.toDate ? horaPedido(d.ts) : "-";
+      const pts = (Array.isArray(d.pts) ? d.pts : []).map(p => esc(p.pt) + " (" + p.palets + ")").join(", ") || "-";
+      const accion = d.deshecha
+        ? "<span style='font-size:12px;color:#9CA3AF'>Deshecha</span>"
+        : "<button class='btn-quitar-mini' onclick=\"deshacerRecogidaUI('" + d.id + "')\">Deshacer</button>";
+      return "<tr" + (d.deshecha ? " style='opacity:.5'" : "") + ">" +
+        "<td>" + hora + "</td>" +
+        "<td>" + esc(NAVE_NOMBRE[d.almacen] || d.almacen) + "</td>" +
+        "<td>" + (d.manual ? "manual" : (d.numero || "-")) + "</td>" +
+        "<td>" + pts + "</td>" +
+        "<td>" + (d.palets || 0) + "</td>" +
+        "<td>" + accion + "</td>" +
+        "</tr>";
+    }).join("") + "</tbody></table></div>";
+}
+
+function deshacerRecogidaUI(id) {
+  if (!confirm("¿Deshacer esta recogida? El pedido volvera a quedar pendiente.")) return;
+  firebase.functions().httpsCallable("deshacerRecogida")({ id })
+    .then(res => {
+      if (!res.data || !res.data.ok) alert((res.data && res.data.error) || "No se pudo deshacer.");
+    })
+    .catch(e => { console.error("deshacerRecogidaUI:", e); alert("No se pudo deshacer."); });
 }
 
 // Mover la fecha de un pedido ya creado (p.ej. llego antes de las 15:00 pero

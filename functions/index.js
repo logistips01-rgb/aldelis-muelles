@@ -1647,6 +1647,70 @@ exports.cerrarPedidoManual = functions.https.onCall(async (request, context) => 
   return { ok: true };
 });
 
+// Deshacer una recogida marcada por error (el chofer se equivoca de PT o de
+// cantidad con cierta frecuencia). Revierte exactamente lo que sumo
+// restarRecogidaPalets al crearse ese documento: resta lo recogido de cada
+// PT afectado (reabriendo el pedido si hacia falta) y del contador del
+// almacen. Solo se puede deshacer una recogida del mismo dia, para no tocar
+// datos de un informe de costes ya cerrado/enviado de dias anteriores.
+exports.deshacerRecogida = functions.https.onCall(async (request, context) => {
+  const esV2 = !!(request && typeof request === "object" && request.data !== undefined);
+  const data = esV2 ? request.data : request;
+  const ctx  = esV2 ? request : (context || {});
+
+  if (!ctx.app) return { ok: false, error: "No autorizado" };
+  const email = (ctx.auth && ctx.auth.token && ctx.auth.token.email || "").toLowerCase();
+  if (!email || !(await puedeSeccion(email, "lanzaderas"))) return { ok: false, error: "Sin permiso" };
+
+  const id = data && String(data.id || "");
+  if (!id) return { ok: false, error: "Falta el id de la recogida" };
+
+  const ref = db.collection("recogidas_palets").doc(id);
+
+  try {
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) throw new Error("Esa recogida ya no existe");
+      const d = snap.data();
+      if (d.deshecha) throw new Error("Esa recogida ya estaba deshecha");
+
+      const tsMs = d.ts && d.ts.toMillis ? d.ts.toMillis() : 0;
+      const fechaRecogida = new Date(tsMs).toLocaleDateString("sv-SE", { timeZone: "Europe/Madrid" });
+      if (fechaRecogida !== fechaHoyMadrid()) throw new Error("Solo se puede deshacer una recogida del mismo dia");
+
+      const pts = (Array.isArray(d.pts) ? d.pts : []).filter(item => item && item.pt && item.palets > 0);
+      const totalPts = pts.reduce((s, item) => s + item.palets, 0);
+
+      // Todas las lecturas antes de cualquier escritura, como exige una
+      // transaccion de Firestore.
+      const refsPt = pts.map(item => db.collection("pedidos_transferencia").doc(item.pt));
+      const docsPt = await Promise.all(refsPt.map(r => tx.get(r)));
+
+      docsPt.forEach((docPt, i) => {
+        if (!docPt.exists) return;
+        const actual = docPt.data();
+        const recogidoNuevo = Math.max((actual.recogido || 0) - pts[i].palets, 0);
+        tx.update(docPt.ref, {
+          recogido: recogidoNuevo,
+          cerrado: recogidoNuevo >= (actual.palets || 0)
+        });
+      });
+
+      if (totalPts > 0 && ALMACENES_PT.includes(d.almacen)) {
+        tx.set(db.collection("almacenes_pendientes").doc(d.almacen), {
+          recogido: admin.firestore.FieldValue.increment(-totalPts)
+        }, { merge: true });
+      }
+
+      tx.update(ref, { deshecha: true, deshechaPor: email, deshechaTs: admin.firestore.Timestamp.now() });
+    });
+    return { ok: true };
+  } catch (e) {
+    console.error("deshacerRecogida:", e.message);
+    return { ok: false, error: e.message };
+  }
+});
+
 // Mover la fecha de un pedido ya creado (p.ej. llego antes de las 15:00 pero
 // en realidad es para mañana). Si ya estaba activado (sumado al pendiente de
 // hoy), se descuenta del contador al posponerlo; si la nueva fecha ya es hoy
