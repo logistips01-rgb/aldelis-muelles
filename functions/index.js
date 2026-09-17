@@ -1775,14 +1775,23 @@ exports.revisarCorreoPedidos = onSchedule(
         "&$select=id,subject,from,toRecipients,ccRecipients,hasAttachments,receivedDateTime");
     } catch (e) { console.error("revisarCorreoPedidos: listar mensajes:", e.message); return; }
 
+    console.log("revisarCorreoPedidos: " + (data.value || []).length + " correo(s) no leido(s) encontrado(s).");
+
     for (const msg of (data.value || [])) {
       try {
         // Los correos de incidencias de transporte (Usieto) los procesa
         // revisarCorreoIncidencias: si tambien se tocan aqui, cualquiera de
         // las dos funciones podria marcarlos como leidos antes de que la
         // otra llegue a verlos.
-        if (remitenteDeUsieto(msg)) continue;
-        if (!msg.hasAttachments) { await graphMarcarLeido(token, msg.id); continue; }
+        if (remitenteDeUsieto(msg)) {
+          console.log("revisarCorreoPedidos: es de Usieto, se deja para revisarCorreoIncidencias:", msg.subject);
+          continue;
+        }
+        if (!msg.hasAttachments) {
+          console.log("revisarCorreoPedidos: sin adjuntos, descartado:", msg.subject);
+          await graphMarcarLeido(token, msg.id);
+          continue;
+        }
 
         const adjuntos = await graphGet(token,
           "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS + "/messages/" + msg.id + "/attachments");
@@ -1790,7 +1799,15 @@ exports.revisarCorreoPedidos = onSchedule(
         const excel = conContenido.find(a => /\.xlsx?$/i.test(a.name || ""));
         const pdfAdj = conContenido.find(a => /\.pdf$/i.test(a.name || ""));
         const elegido = excel || pdfAdj;
-        if (!elegido) { await graphMarcarLeido(token, msg.id); continue; }
+        if (!elegido) {
+          // hasAttachments=true no siempre trae un fichero descargable: por
+          // ejemplo, un correo reenviado "como datos adjuntos" trae el
+          // correo original incrustado (itemAttachment), sin contentBytes.
+          console.log("revisarCorreoPedidos: tiene adjuntos pero ninguno es xlsx/pdf descargable:",
+            msg.subject, "-", (adjuntos.value || []).map(a => (a.name || "?") + " (" + a["@odata.type"] + ")").join(", "));
+          await graphMarcarLeido(token, msg.id);
+          continue;
+        }
 
         const buffer = Buffer.from(elegido.contentBytes, "base64");
         const resultado = elegido === excel ? contarPaletsExcel(buffer) : await contarPaletsPdf(buffer);
@@ -1809,6 +1826,7 @@ exports.revisarCorreoPedidos = onSchedule(
           || ((msg.subject || "").match(/PT\d{6}/) || [])[0]
           || ("SINPT-" + msg.id.slice(-8));
 
+        console.log("revisarCorreoPedidos: procesando", pt, almacen, resultado.palets, "palets -", msg.subject);
         await crearPedidoTransferencia(pt, almacen, resultado, "email", fechaPedidoParaCorreo(msg.receivedDateTime));
         await graphMarcarLeido(token, msg.id);
       } catch (e) {
