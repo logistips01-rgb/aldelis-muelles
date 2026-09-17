@@ -1467,7 +1467,15 @@ async function contarPaletsPdf(buffer) {
 }
 
 async function crearPedidoTransferencia(pt, almacen, resultado, origen, fecha) {
-  if (!resultado.palets) return;
+  if (!resultado.palets) {
+    // Si esto pasa, el documento adjunto no se pudo leer (formato distinto al
+    // esperado, columna SSCC no encontrada, etc.): antes se descartaba en
+    // silencio y el correo se marcaba como leido igualmente, asi que el
+    // pedido desaparecia sin dejar rastro. Ahora al menos queda constancia en
+    // los logs para poder revisarlo a mano.
+    console.warn("crearPedidoTransferencia: 0 palets detectados, PT descartado sin crear:", pt, almacen, origen);
+    return;
+  }
   const hoy = fechaHoyMadrid();
   const fechaFinal = (fecha && /^\d{4}-\d{2}-\d{2}$/.test(fecha)) ? fecha : hoy;
   const ref = db.collection("pedidos_transferencia").doc(pt);
@@ -1934,6 +1942,32 @@ exports.revisarCorreoPedidos = onSchedule(
         const almacen = resultado.almacenDetectado || detectarAlmacenPorDestinatarios(msg);
         if (!almacen) {
           console.log("revisarCorreoPedidos: sin almacen reconocido en", msg.subject);
+          await graphMarcarLeido(token, msg.id);
+          continue;
+        }
+
+        // Si no se han podido contar palets (no se reconocio la columna SSCC
+        // del Excel, o el PDF no trae SSCC de 18 digitos), el pedido se va a
+        // descartar sin crearse: antes esto pasaba en silencio y el correo se
+        // marcaba igualmente como leido, asi que el pedido desaparecia sin
+        // que nadie se enterase. Se avisa por correo para poder revisarlo a
+        // mano el mismo dia (el documento en si no se va a poder reprocesar
+        // solo, hace falta mirarlo).
+        if (!resultado.palets) {
+          console.warn("revisarCorreoPedidos: 0 palets detectados en", elegido.name, "-", msg.subject);
+          try {
+            const destinatarios = await emailsDeConfig("alertas", []);
+            if (destinatarios.length) {
+              await enviarALista(destinatarios,
+                "ALERTA Aldelis — Pedido no reconocido (" + almacen + ")",
+                "No se ha podido leer el documento adjunto de este correo, asi que NO se ha creado ningun pedido:\n\n" +
+                "Asunto: " + (msg.subject || "-") + "\n" +
+                "Adjunto: " + elegido.name + "\n" +
+                "Almacen detectado: " + almacen + "\n\n" +
+                "Revisa el correo original en el buzon y crea el pedido a mano si corresponde.",
+                null, null);
+            }
+          } catch (e) { console.error("revisarCorreoPedidos: aviso 0 palets:", e.message); }
           await graphMarcarLeido(token, msg.id);
           continue;
         }
