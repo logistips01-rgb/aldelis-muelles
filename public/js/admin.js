@@ -846,13 +846,103 @@ function switchLanzVista(v) {
   _vistaLanzSub = v;
   document.getElementById("lanz-cronologia").style.display = v === "cronologia" ? "" : "none";
   document.getElementById("lanz-mapa").style.display = v === "mapa" ? "" : "none";
+  document.getElementById("lanz-llegadas").style.display = v === "llegadas" ? "" : "none";
   document.getElementById("btn-lanz-cronologia").classList.toggle("active", v === "cronologia");
   document.getElementById("btn-lanz-mapa").classList.toggle("active", v === "mapa");
+  document.getElementById("btn-lanz-llegadas").classList.toggle("active", v === "llegadas");
   if (v === "mapa") {
     renderMapaLanzaderas();
     // Leaflet calcula su tamaño al crearse; si el contenedor estaba oculto
     // (display:none) sale con el mapa mal recortado hasta que se le avisa.
     setTimeout(() => { if (_leafletMap) _leafletMap.invalidateSize(); }, 60);
+  }
+  if (v === "llegadas") iniciarInformeLlegadas();
+}
+
+// ── Informe de llegadas por nave ─────────────────────────────────────────
+// Pedido puntual: a que hora llega cada lanzadera a las naves que se
+// elijan, en un rango de fechas. Se hace en el cliente, con la sesion ya
+// iniciada del panel (mismas reglas de Firestore de siempre), sin ninguna
+// funcion ni clave nueva.
+let _llegadasInit = false;
+
+function iniciarInformeLlegadas() {
+  if (_llegadasInit) return;
+  _llegadasInit = true;
+
+  const cont = document.getElementById("llegadas-naves");
+  cont.innerHTML = NAVES_PANEL.map(n =>
+    "<label style='font-weight:400;display:flex;align-items:center;gap:6px;font-size:14px'>" +
+    "<input type='checkbox' class='llegadas-nave-chk' value='" + n.id + "' style='width:auto'> " + esc(n.nombre) +
+    "</label>"
+  ).join("");
+  // Preseleccion razonable segun lo pedido la primera vez (merca, upasa,
+  // arento, caserfri); el usuario puede cambiarla libremente.
+  ["merca", "upasa", "arento", "caserfri"].forEach(id => {
+    const chk = cont.querySelector("input[value='" + id + "']");
+    if (chk) chk.checked = true;
+  });
+
+  const hoy = new Date();
+  const hace7 = new Date(hoy.getTime() - 7 * 24 * 3600 * 1000);
+  document.getElementById("llegadas-hasta").value = hoy.toISOString().split("T")[0];
+  document.getElementById("llegadas-desde").value = hace7.toISOString().split("T")[0];
+}
+
+async function generarInformeLlegadas() {
+  const naves = [...document.querySelectorAll(".llegadas-nave-chk:checked")].map(c => c.value);
+  const resultado = document.getElementById("llegadas-resultado");
+  if (!naves.length) { resultado.innerHTML = "<p style='color:#D41F3A;font-size:13px'>Elige al menos una nave.</p>"; return; }
+
+  const desde = document.getElementById("llegadas-desde").value;
+  const hasta = document.getElementById("llegadas-hasta").value;
+  if (!desde || !hasta) { resultado.innerHTML = "<p style='color:#D41F3A;font-size:13px'>Elige el rango de fechas.</p>"; return; }
+
+  resultado.innerHTML = "<p style='font-size:13px;color:#9CA3AF'>Consultando...</p>";
+
+  const Ts = firebase.firestore.Timestamp;
+  const tsDesde = Ts.fromDate(new Date(desde + "T00:00:00"));
+  const tsHasta = Ts.fromDate(new Date(new Date(hasta + "T00:00:00").getTime() + 24 * 3600 * 1000));
+
+  try {
+    const snap = await db.collection("lanzaderas_log")
+      .where("desde", ">=", tsDesde).where("desde", "<", tsHasta)
+      .orderBy("desde", "asc").get();
+
+    const filas = [];
+    snap.forEach(d => {
+      const v = d.data();
+      if (v.estado !== "en_nave" || !naves.includes(v.nave)) return;
+      const fh = v.desde.toDate();
+      filas.push({
+        fecha: fh.toLocaleDateString("es-ES"),
+        hora: String(fh.getHours()).padStart(2, "0") + ":" + String(fh.getMinutes()).padStart(2, "0"),
+        ts: fh.getTime(),
+        lanzadera: v.numero,
+        nave: NAVE_NOMBRE[v.nave] || v.nave,
+        muelle: v.muelle || "-"
+      });
+    });
+    filas.sort((a, b) => a.ts - b.ts);
+
+    if (!filas.length) {
+      resultado.innerHTML = "<p style='font-size:13px;color:#9CA3AF'>Sin llegadas a esas naves en el rango elegido.</p>";
+      return;
+    }
+
+    resultado.innerHTML = "<div class='tabla-scroll'><table class='tabla-inf'><thead><tr>" +
+      "<th>Fecha</th><th>Hora</th><th>Lanzadera</th><th>Nave</th><th>Muelle</th></tr></thead><tbody>" +
+      filas.map(f => "<tr>" +
+        "<td>" + f.fecha + "</td>" +
+        "<td>" + f.hora + "</td>" +
+        "<td>" + f.lanzadera + "</td>" +
+        "<td>" + esc(f.nave) + "</td>" +
+        "<td>" + esc(f.muelle) + "</td>" +
+        "</tr>"
+      ).join("") + "</tbody></table></div>" +
+      "<p style='font-size:12px;color:#9CA3AF;margin-top:8px'>" + filas.length + " llegada(s).</p>";
+  } catch (e) {
+    resultado.innerHTML = "<p style='color:#D41F3A;font-size:13px'>Error al consultar: " + e.message + "</p>";
   }
 }
 

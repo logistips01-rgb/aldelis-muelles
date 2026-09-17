@@ -187,6 +187,7 @@
       <div class="lanz-subtabs">
         <button class="lanz-subtab active" id="btn-lanz-cronologia" onclick="switchLanzVista('cronologia')">Cronologia</button>
         <button class="lanz-subtab" id="btn-lanz-mapa" onclick="switchLanzVista('mapa')">Mapa</button>
+        <button class="lanz-subtab" id="btn-lanz-llegadas" onclick="switchLanzVista('llegadas')">Llegadas por nave</button>
       </div>
 
       <div id="lanz-cronologia">
@@ -197,6 +198,22 @@
         <div id="leaflet-map"></div>
         <div id="mapa-avisos" class="mapa-avisos"></div>
         <div id="mapa-resumen"></div>
+      </div>
+
+      <div id="lanz-llegadas" style="display:none">
+        <div class="informe-card" style="margin-top:12px">
+          <div class="informe-card-title">Informe de llegadas por nave</div>
+          <p style="font-size:13px;color:#6B7280;margin-bottom:12px">
+            Elige las naves y el rango de fechas: sale a qué hora ha llegado cada lanzadera a cada una.
+          </p>
+          <div id="llegadas-naves" style="display:flex;flex-wrap:wrap;gap:10px 18px;margin-bottom:14px"></div>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
+            <label style="font-size:13px;color:#374151">Desde <input type="date" id="llegadas-desde" style="margin-left:4px"></label>
+            <label style="font-size:13px;color:#374151">Hasta <input type="date" id="llegadas-hasta" style="margin-left:4px"></label>
+            <button class="btn-informe" onclick="generarInformeLlegadas()">Generar</button>
+          </div>
+          <div id="llegadas-resultado"></div>
+        </div>
       </div>
 
       <div class="section-title" style="margin-top:24px">Chat con lanzaderas</div>
