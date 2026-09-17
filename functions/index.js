@@ -2232,7 +2232,7 @@ exports.notifCambioMaterial = onDocumentWritten("cambios_material/{id}", async (
       if (!destinatariosPdf.length) {
         console.log("notifCambioMaterial: PDF sin destinatarios configurados (config/cambios_pdf)");
       } else {
-        const asuntoPdf = "Documento de cambio de material: " + (despues.referenciaActual || "?") + " -> " + (despues.referenciaNueva || "?");
+        const asuntoPdf = "Comunicación cambio de etiquetado: " + (despues.referenciaActual || "?") + " -> " + (despues.referenciaNueva || "?");
         const htmlPdf = htmlCambioMaterialPdf(despues);
         const adjuntos = [{
           name: despues.pdfNombre || "documento.pdf", contentType: "application/pdf",
