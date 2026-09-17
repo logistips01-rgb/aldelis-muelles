@@ -3837,7 +3837,6 @@ let _cambiosCache = [];
 let _cambiosListenersInit = false;
 let _cambioDetalleId = null;
 let _cambioChatUnsub = null;
-let _cambioImagenB64 = null;
 
 function cargarCambios() {
   if (_cambiosListenersInit) return;
@@ -3995,10 +3994,8 @@ function abrirModalCambio() {
   document.getElementById("cm-fecha-arranque").value = "";
   document.getElementById("cm-descripcion").value = "";
   document.getElementById("cm-observaciones").value = "";
-  document.getElementById("cm-imagen").value = "";
   document.getElementById("cm-pdf").value = "";
   document.querySelector("input[name='cm-tipo'][value='etiqueta']").checked = true;
-  _cambioImagenB64 = null;
   document.getElementById("cm-error").style.display = "none";
   toggleFechaArranqueCambio();
   document.getElementById("cambio-modal").style.display = "flex";
@@ -4006,29 +4003,6 @@ function abrirModalCambio() {
 
 function cerrarModalCambio(e) {
   if (!e || e.target.id === "cambio-modal") document.getElementById("cambio-modal").style.display = "none";
-}
-
-// Compresion sencilla: solo hace falta una imagen de referencia razonable,
-// no una foto de calidad (igual de fondo que fotos.js, pero sin la miniatura
-// aparte porque aqui solo hay una imagen por cambio, no un chat de fotos).
-function comprimirImagenCambio(file, cb) {
-  const url = URL.createObjectURL(file);
-  const img = new Image();
-  img.onload = () => {
-    URL.revokeObjectURL(url);
-    const maxLado = 1000;
-    const escala = Math.min(1, maxLado / Math.max(img.width, img.height));
-    const w = Math.max(1, Math.round(img.width * escala));
-    const h = Math.max(1, Math.round(img.height * escala));
-    const c = document.createElement("canvas");
-    c.width = w; c.height = h;
-    const ctx = c.getContext("2d");
-    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, w, h);
-    ctx.drawImage(img, 0, 0, w, h);
-    cb(c.toDataURL("image/jpeg", 0.7).split(",")[1]);
-  };
-  img.onerror = () => { URL.revokeObjectURL(url); cb(null); };
-  img.src = url;
 }
 
 if (window.pdfjsLib) {
@@ -4089,7 +4063,6 @@ async function registrarCambioMaterial() {
       await db.collection("cambios_material").add({
         tipo, referenciaActual, referenciaNueva, motivo, agotarStock, fechaArranque,
         descripcion, observaciones,
-        imagen: _cambioImagenB64 || null,
         pdfBase64: (pdfDatos && pdfDatos.pdfBase64) || null,
         pdfPreviewBase64: (pdfDatos && pdfDatos.pdfPreviewBase64) || null,
         pdfNombre: (pdfDatos && pdfDatos.pdfNombre) || null,
@@ -4119,13 +4092,7 @@ async function registrarCambioMaterial() {
     }
   }
 
-  const fileInp = document.getElementById("cm-imagen");
-  const file = fileInp.files && fileInp.files[0];
-  if (file) {
-    comprimirImagenCambio(file, b64 => { _cambioImagenB64 = b64; guardar(pdfDatos); });
-  } else {
-    guardar(pdfDatos);
-  }
+  guardar(pdfDatos);
 }
 
 function abrirCambioDetalle(id) {
