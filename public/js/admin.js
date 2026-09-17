@@ -865,6 +865,7 @@ function switchLanzVista(v) {
 // iniciada del panel (mismas reglas de Firestore de siempre), sin ninguna
 // funcion ni clave nueva.
 let _llegadasInit = false;
+let _llegadasUltimasFilas = [];
 
 function iniciarInformeLlegadas() {
   if (_llegadasInit) return;
@@ -924,13 +925,16 @@ async function generarInformeLlegadas() {
       });
     });
     filas.sort((a, b) => a.ts - b.ts);
+    _llegadasUltimasFilas = filas;
 
     if (!filas.length) {
       resultado.innerHTML = "<p style='font-size:13px;color:#9CA3AF'>Sin llegadas a esas naves en el rango elegido.</p>";
       return;
     }
 
-    resultado.innerHTML = "<div class='tabla-scroll'><table class='tabla-inf'><thead><tr>" +
+    resultado.innerHTML = "<div style='display:flex;justify-content:flex-end;margin-bottom:8px'>" +
+      "<button class='btn-excel' onclick='exportarLlegadasExcel()'>Exportar Excel</button></div>" +
+      "<div class='tabla-scroll'><table class='tabla-inf'><thead><tr>" +
       "<th>Fecha</th><th>Hora</th><th>Lanzadera</th><th>Nave</th><th>Muelle</th></tr></thead><tbody>" +
       filas.map(f => "<tr>" +
         "<td>" + f.fecha + "</td>" +
@@ -944,6 +948,19 @@ async function generarInformeLlegadas() {
   } catch (e) {
     resultado.innerHTML = "<p style='color:#D41F3A;font-size:13px'>Error al consultar: " + e.message + "</p>";
   }
+}
+
+function exportarLlegadasExcel() {
+  if (!_llegadasUltimasFilas.length) { alert("Primero genera el informe."); return; }
+  const filas = _llegadasUltimasFilas.map(f => ({
+    "Fecha": f.fecha, "Hora": f.hora, "Lanzadera": f.lanzadera, "Nave": f.nave, "Muelle": f.muelle
+  }));
+  const ws = XLSX.utils.json_to_sheet(filas);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Llegadas");
+  const desde = document.getElementById("llegadas-desde").value;
+  const hasta = document.getElementById("llegadas-hasta").value;
+  XLSX.writeFile(wb, "Aldelis_Llegadas_" + desde + "_" + hasta + ".xlsx");
 }
 
 function pinCamion(n, color) {
