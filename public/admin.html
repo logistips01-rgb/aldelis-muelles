@@ -405,6 +405,17 @@
             style="flex:1;min-width:200px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
           <button class="btn-informe" onclick="agregarEmailCambiosPdf()">Agregar</button>
         </div>
+        <div style="margin-top:14px;padding-top:14px;border-top:1px solid #eee">
+          <label style="font-size:13px;color:#374151;display:block;margin-bottom:6px">Añadir varias de golpe</label>
+          <p style="font-size:12.5px;color:#6B7280;margin-bottom:8px">
+            Pega aquí el bloque de destinatarios (vale tal cual salga al ver el origen/detalles del correo, con
+            nombres y todo — solo se cogen las direcciones), separadas por comas, espacios o saltos de línea.
+          </p>
+          <textarea id="cambios-pdf-email-bulk" rows="4" placeholder="Nombre Apellido &lt;correo1@ejemplo.com&gt;; Otro Nombre &lt;correo2@ejemplo.com&gt;; ..."
+            style="width:100%;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:13px;font-family:inherit;resize:vertical"></textarea>
+          <button class="btn-informe" style="margin-top:8px" onclick="agregarEmailsCambiosPdfBulk()">Añadir todas</button>
+          <span id="cambios-pdf-bulk-resultado" style="font-size:13px;margin-left:10px"></span>
+        </div>
       </div>
 
       <div class="informe-card" style="margin-top:16px">

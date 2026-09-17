@@ -3924,6 +3924,39 @@ async function eliminarEmailCambiosPdf(idx) {
   } catch (e) { alert("Error al guardar: " + e.message); }
 }
 
+// Pegar un bloque entero (por ejemplo, el "Para"/"CC" tal cual sale al ver el
+// origen de un correo, con nombre y direccion mezclados) y sacar solo las
+// direcciones validas, para no tener que ir añadiendo una a una cuando son
+// muchas. Ignora lo que no sea una direccion (nombres, "<", ";", etc.).
+function extraerEmailsDeTexto(texto) {
+  const encontrados = (texto || "").match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g) || [];
+  return [...new Set(encontrados.map(e => e.toLowerCase()))];
+}
+
+async function agregarEmailsCambiosPdfBulk() {
+  const inp = document.getElementById("cambios-pdf-email-bulk");
+  const resultado = document.getElementById("cambios-pdf-bulk-resultado");
+  const encontrados = extraerEmailsDeTexto(inp.value);
+  if (!encontrados.length) {
+    resultado.style.color = "#D41F3A";
+    resultado.textContent = "No se ha reconocido ninguna direccion valida.";
+    return;
+  }
+  const nuevosDeVerdad = encontrados.filter(e => !_cambiosPdfEmailsCache.includes(e));
+  const nuevos = [..._cambiosPdfEmailsCache, ...nuevosDeVerdad];
+  try {
+    await db.collection("config").doc("cambios_pdf").set({ emails: nuevos }, { merge: true });
+    inp.value = "";
+    resultado.style.color = "#1D9E75";
+    resultado.textContent = nuevosDeVerdad.length
+      ? "Añadidas " + nuevosDeVerdad.length + " direcciones nuevas" + (encontrados.length > nuevosDeVerdad.length ? " (" + (encontrados.length - nuevosDeVerdad.length) + " ya estaban)." : ".")
+      : "Todas esas direcciones ya estaban en la lista.";
+  } catch (e) {
+    resultado.style.color = "#D41F3A";
+    resultado.textContent = "Error al guardar: " + e.message;
+  }
+}
+
 function estadoCambioLabel(e) {
   if (e === "ejecutado") return { texto: "Ejecutado", color: "#1D9E75" };
   if (e === "confirmado") return { texto: "Confirmado", color: "#F59E0B" };
