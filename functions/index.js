@@ -1885,7 +1885,7 @@ exports.revisarCorreoPedidos = onSchedule(
       data = await graphGet(token,
         "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS +
         "/mailFolders/inbox/messages?$filter=isRead eq false&$top=25" +
-        "&$select=id,subject,from,toRecipients,ccRecipients,hasAttachments,receivedDateTime,body");
+        "&$select=id,subject,from,toRecipients,ccRecipients,hasAttachments,receivedDateTime");
     } catch (e) { console.error("revisarCorreoPedidos: listar mensajes:", e.message); return; }
 
     for (const msg of (data.value || [])) {
@@ -1908,7 +1908,15 @@ exports.revisarCorreoPedidos = onSchedule(
         const esVerificacionCamaras = remitenteDireccion.endsWith("@ufsat.com")
           || /verificaci[oó]n de c[aá]maras completada/i.test(msg.subject || "");
         if (esVerificacionCamaras) {
-          const textoCuerpo = htmlATextoTabla(msg.body && msg.body.content);
+          // El cuerpo NO se pide en el listado inicial (que trae hasta 25
+          // correos a la vez): pedirlo para todos de golpe puede hacer
+          // fallar esa consulta si algun correo trae un cuerpo pesado
+          // (firmas con imagenes, etc.), y si esa consulta falla se aborta
+          // la funcion entera sin procesar NINGUN correo. Se pide aqui, uno
+          // a uno, solo para el correo que de verdad lo necesita.
+          const detalle = await graphGet(token,
+            "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS + "/messages/" + msg.id + "?$select=body");
+          const textoCuerpo = htmlATextoTabla(detalle.body && detalle.body.content);
           const resultado = contarPaletsCorreoTexto(textoCuerpo);
           if (!resultado.palets) { await graphMarcarLeido(token, msg.id); continue; }
           const almacen = detectarAlmacenEnTexto(textoCuerpo) || detectarAlmacenEnTexto(msg.subject || "");
