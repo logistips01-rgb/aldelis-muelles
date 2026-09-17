@@ -425,6 +425,7 @@
 
   function origenPtLabel(o) {
     if (o === "email") return "por correo";
+    if (o === "email-verificacion") return "por correo (verificación)";
     if (o === "manual-envases") return "envases";
     return "manual";
   }
