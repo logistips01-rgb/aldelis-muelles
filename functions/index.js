@@ -2666,3 +2666,255 @@ function minToHHMMServidor(minutos) {
   if (m < 0) m += 1440;
   return String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0");
 }
+
+// ── ACOPAL: balance recibido vs facturado en albaranes de Aves Nobles ──────
+//
+// ACOPAL avisa por correo ("Errores albaranes AVES NOBLES mercancia entrega")
+// cuando lo recibido y lo facturado de un albaran no coinciden. Un desajuste
+// aislado no dice nada (puede arreglarse al dia siguiente si el palet que
+// faltaba llega tarde), asi que interesa ver la evolucion dia a dia y un
+// balance al cierre de la semana, no solo el aviso suelto.
+//
+// Funcion de lectura de correo COMPLETAMENTE APARTE de revisarCorreoPedidos y
+// de revisarCorreoVerificacionCaserfri, por la misma razon que esa: si algo
+// falla leyendo estos correos, no debe poder afectar a ningun otro flujo. No
+// escribe en pedidos_transferencia ni en ninguna coleccion que otras
+// funciones lean: coleccion propia, "albaranes_acopal".
+
+function esErrorAlbaranAcopal(msg) {
+  return /errores\s+albaranes/i.test(msg.subject || "");
+}
+
+// Convierte el cuerpo del correo (parrafos simples, no una tabla) en lineas
+// de texto: cada </p>/</div>/<br> es un salto de linea razonable para este
+// formato.
+function htmlATextoLineas(html) {
+  return String(html || "")
+    .replace(/<\/(p|div|tr|li)>/gi, "\n")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .split("\n")
+    .map(l => l.trim())
+    .filter(Boolean);
+}
+
+// El correo puede traer varios albaranes, cada uno con varias lineas de
+// producto: "Albaran NNNN" abre un bloque, y cada linea siguiente con el
+// patron "referencia, recibido N, facturado N" se cuelga del ultimo albaran
+// visto, hasta el siguiente "Albaran" o el fin del correo.
+function parseAlbaranesAcopal(html) {
+  const lineas = htmlATextoLineas(html);
+  const albaranes = {};
+  let actual = null;
+  for (const linea of lineas) {
+    const mAlb = linea.match(/^Albaran\s+(\d+)/i);
+    if (mAlb) {
+      actual = mAlb[1];
+      if (!albaranes[actual]) albaranes[actual] = [];
+      continue;
+    }
+    const mLinea = linea.match(/^(.*?),\s*recibido\s*(\d+)\s*,\s*facturado\s*(\d+)/i);
+    if (mLinea && actual) {
+      albaranes[actual].push({
+        referencia: mLinea[1].trim(),
+        recibido: Number(mLinea[2]),
+        facturado: Number(mLinea[3])
+      });
+    }
+  }
+  return albaranes;
+}
+
+function fechaDeCorreoMadrid(receivedDateTime) {
+  const recibido = receivedDateTime ? new Date(receivedDateTime) : new Date();
+  return recibido.toLocaleDateString("sv-SE", { timeZone: "Europe/Madrid" });
+}
+
+function sumarDiasFecha(fechaStr, dias) {
+  const d = new Date(fechaStr + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + dias);
+  return d.toISOString().slice(0, 10);
+}
+
+exports.revisarCorreoAlbaranesAcopal = onSchedule(
+  { schedule: "every 10 minutes", timeZone: "Europe/Madrid" },
+  async () => {
+    if (!MS_SECRET) { console.warn("revisarCorreoAlbaranesAcopal: falta MS_SECRET"); return; }
+
+    let token;
+    try { token = await obtenerTokenMS(); }
+    catch (e) { console.error("revisarCorreoAlbaranesAcopal: token:", e.message); return; }
+
+    let data;
+    try {
+      data = await graphGet(token,
+        "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS +
+        "/mailFolders/inbox/messages?$filter=isRead eq false&$top=25" +
+        "&$select=id,subject,receivedDateTime");
+    } catch (e) { console.error("revisarCorreoAlbaranesAcopal: listar mensajes:", e.message); return; }
+
+    const candidatos = (data.value || []).filter(esErrorAlbaranAcopal);
+    console.log("revisarCorreoAlbaranesAcopal: " + candidatos.length + " correo(s) candidato(s) de "
+      + (data.value || []).length + " no leido(s).");
+
+    for (const msg of candidatos) {
+      try {
+        const detalle = await graphGet(token,
+          "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS + "/messages/" + msg.id + "?$select=body");
+        const albaranes = parseAlbaranesAcopal(detalle.body && detalle.body.content);
+        const nums = Object.keys(albaranes);
+        if (!nums.length) {
+          console.log("revisarCorreoAlbaranesAcopal: sin albaranes reconocidos en", msg.subject);
+          await graphMarcarLeido(token, msg.id);
+          continue;
+        }
+
+        const fecha = fechaDeCorreoMadrid(msg.receivedDateTime);
+        for (const num of nums) {
+          const lineasAlb = albaranes[num];
+          const recibidoTotal = lineasAlb.reduce((s, l) => s + l.recibido, 0);
+          const facturadoTotal = lineasAlb.reduce((s, l) => s + l.facturado, 0);
+          await db.collection("albaranes_acopal").doc(num).set({
+            albaran: num, lineas: lineasAlb,
+            recibidoTotal, facturadoTotal, diferencia: facturadoTotal - recibidoTotal,
+            fecha, actualizado: admin.firestore.Timestamp.now()
+          });
+          console.log("revisarCorreoAlbaranesAcopal: albaran", num, "recibido", recibidoTotal, "facturado", facturadoTotal);
+        }
+        await graphMarcarLeido(token, msg.id);
+      } catch (e) {
+        console.error("revisarCorreoAlbaranesAcopal: mensaje", msg.id, e.message);
+      }
+    }
+  }
+);
+
+function filaAlbaranAcopalHtml(d) {
+  const color = d.diferencia === 0 ? "#1D9E75" : "#D41F3A";
+  return "<tr>" +
+    "<td style='padding:6px 10px;border-bottom:1px solid #eee'>" + d.albaran + "</td>" +
+    "<td style='padding:6px 10px;border-bottom:1px solid #eee'>" + d.recibidoTotal + "</td>" +
+    "<td style='padding:6px 10px;border-bottom:1px solid #eee'>" + d.facturadoTotal + "</td>" +
+    "<td style='padding:6px 10px;border-bottom:1px solid #eee;color:" + color + ";font-weight:600'>" +
+    (d.diferencia > 0 ? "+" : "") + d.diferencia + "</td>" +
+    "</tr>";
+}
+
+function tablaAlbaranesAcopalHtml(docs, mensajeVacio) {
+  if (!docs.length) return "<tr><td colspan='4' style='padding:10px'>" + mensajeVacio + "</td></tr>";
+  const filas = docs.map(filaAlbaranAcopalHtml).join("");
+  const recibidoTotal = docs.reduce((s, d) => s + d.recibidoTotal, 0);
+  const facturadoTotal = docs.reduce((s, d) => s + d.facturadoTotal, 0);
+  const diferenciaTotal = facturadoTotal - recibidoTotal;
+  const colorTotal = diferenciaTotal === 0 ? "#1D9E75" : "#D41F3A";
+  const filaTotal = "<tr style='font-weight:700;background:#F5F5F5'>" +
+    "<td style='padding:6px 10px'>Total</td>" +
+    "<td style='padding:6px 10px'>" + recibidoTotal + "</td>" +
+    "<td style='padding:6px 10px'>" + facturadoTotal + "</td>" +
+    "<td style='padding:6px 10px;color:" + colorTotal + "'>" + (diferenciaTotal > 0 ? "+" : "") + diferenciaTotal + "</td>" +
+    "</tr>";
+  return filas + filaTotal;
+}
+
+async function enviarBalanceAcopalATodos(asunto, titulo, subtitulo, tablaHtml) {
+  try {
+    const token = await obtenerTokenMS();
+    for (const dest of DESTINATARIOS_INCIDENCIAS) {
+      const html = "<html><body style='font-family:Arial,sans-serif;font-size:13px;color:#1A1A1A'>" +
+        "<p>Hola " + esc(dest.nombre) + ",</p>" +
+        "<h2 style='margin-bottom:4px'>" + titulo + "</h2>" +
+        "<p style='color:#6B7280;margin-top:0'>" + subtitulo + "</p>" +
+        "<table style='border-collapse:collapse;width:100%'>" +
+        "<thead><tr style='text-align:left;background:#F5F5F5'>" +
+        "<th style='padding:6px 10px'>Albaran</th><th style='padding:6px 10px'>Recibido</th>" +
+        "<th style='padding:6px 10px'>Facturado</th><th style='padding:6px 10px'>Diferencia</th>" +
+        "</tr></thead><tbody>" + tablaHtml + "</tbody></table>" +
+        "<p style='color:#6B7280;font-size:12px;margin-top:14px'>Diferencia = facturado - recibido. " +
+        "Positivo: se ha facturado mas de lo recibido (posible palet pendiente de recibir). " +
+        "Negativo: se ha recibido mas de lo facturado.</p>" +
+        "</body></html>";
+      const cuerpo = "Hola " + dest.nombre + ",\n\n" + titulo + ".";
+      await enviarALista([dest.email], asunto, cuerpo, html, null);
+    }
+  } catch (e) {
+    console.error("enviarBalanceAcopalATodos:", e.message);
+  }
+}
+
+// Cada dia a las 20:00 (Europe/Madrid), balance del dia comparado con el
+// anterior: no sustituye al semanal, es para ver de un vistazo si un
+// desajuste de ayer se ha corregido hoy o va a mas.
+exports.enviarBalanceDiarioAcopal = onSchedule(
+  { schedule: "0 20 * * *", timeZone: "Europe/Madrid" },
+  async () => {
+    const hoy = fechaHoyMadrid();
+    const ayer = sumarDiasFecha(hoy, -1);
+
+    let snapHoy, snapAyer;
+    try {
+      [snapHoy, snapAyer] = await Promise.all([
+        db.collection("albaranes_acopal").where("fecha", "==", hoy).get(),
+        db.collection("albaranes_acopal").where("fecha", "==", ayer).get()
+      ]);
+    } catch (e) { console.error("enviarBalanceDiarioAcopal: consulta:", e.message); return; }
+
+    const docsHoy = []; snapHoy.forEach(d => docsHoy.push(d.data()));
+    const docsAyer = []; snapAyer.forEach(d => docsAyer.push(d.data()));
+    if (!docsHoy.length && !docsAyer.length) { console.log("enviarBalanceDiarioAcopal: sin albaranes en 2 dias, no se envia."); return; }
+
+    const difHoy = docsHoy.reduce((s, d) => s + d.diferencia, 0);
+    const difAyer = docsAyer.reduce((s, d) => s + d.diferencia, 0);
+    const fechaFmt = new Date(hoy + "T00:00:00Z").toLocaleDateString("es-ES", { timeZone: "UTC" });
+
+    const asunto = "Balance albaranes ACOPAL — " + fechaFmt + " (" + docsHoy.length + " albaran(es))";
+    const tabla = tablaAlbaranesAcopalHtml(docsHoy, "Sin albaranes con diferencia hoy.");
+
+    await enviarBalanceAcopalATodos(
+      asunto,
+      "Balance albaranes ACOPAL — " + fechaFmt,
+      "Hoy: diferencia total " + (difHoy > 0 ? "+" : "") + difHoy +
+      ". Ayer: diferencia total " + (difAyer > 0 ? "+" : "") + difAyer + ".",
+      tabla
+    );
+    console.log("enviarBalanceDiarioAcopal: enviado,", docsHoy.length, "albaranes hoy, diferencia", difHoy);
+  }
+);
+
+// Cada lunes a las 10:00 (Europe/Madrid) - despues de que llegue el correo
+// del lunes, que suele ser todavia de la semana anterior -, balance de la
+// semana que acaba de terminar (el lunes a las 10:00 de hoy hacia atras, 7
+// dias).
+exports.enviarBalanceSemanalAcopal = onSchedule(
+  { schedule: "0 10 * * 1", timeZone: "Europe/Madrid" },
+  async () => {
+    const hoy = fechaHoyMadrid();
+    const desde = sumarDiasFecha(hoy, -7);
+    const hasta = sumarDiasFecha(hoy, -1);
+
+    let snap;
+    try {
+      snap = await db.collection("albaranes_acopal")
+        .where("fecha", ">=", desde).where("fecha", "<=", hasta).get();
+    } catch (e) { console.error("enviarBalanceSemanalAcopal: consulta:", e.message); return; }
+
+    const docs = []; snap.forEach(d => docs.push(d.data()));
+    if (!docs.length) { console.log("enviarBalanceSemanalAcopal: sin albaranes esta semana, no se envia."); return; }
+
+    const fechaDesdeFmt = new Date(desde + "T00:00:00Z").toLocaleDateString("es-ES", { timeZone: "UTC" });
+    const fechaHastaFmt = new Date(hasta + "T00:00:00Z").toLocaleDateString("es-ES", { timeZone: "UTC" });
+    const asunto = "Balance semanal albaranes ACOPAL — " + fechaDesdeFmt + " a " + fechaHastaFmt;
+    const tabla = tablaAlbaranesAcopalHtml(docs, "Sin albaranes esta semana.");
+
+    await enviarBalanceAcopalATodos(
+      asunto,
+      "Balance semanal albaranes ACOPAL",
+      "Semana del " + fechaDesdeFmt + " al " + fechaHastaFmt + " — " + docs.length + " albaran(es) con aviso.",
+      tabla
+    );
+    console.log("enviarBalanceSemanalAcopal: enviado,", docs.length, "albaranes de la semana.");
+  }
+);
