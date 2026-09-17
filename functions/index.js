@@ -1486,74 +1486,12 @@ async function crearPedidoTransferencia(pt, almacen, resultado, origen, fecha) {
       fecha: fechaFinal, activado: fechaFinal <= hoy,
       creado: admin.firestore.Timestamp.now()
     });
+    console.log("crearPedidoTransferencia: creado", pt, almacen, resultado.palets, "palets, fecha", fechaFinal, "origen", origen);
   } catch (e) {
     // Ya existe (mismo PT procesado antes, p.ej. el correo llego duplicado):
     // no se pisa el progreso de recogida que ya pudiera tener.
     if (e.code !== 6 /* ALREADY_EXISTS */) throw e;
     console.log("PT ya existia, no se repite:", pt);
-  }
-}
-
-// Caserfri: el correo de "verificacion de camaras" crea un pedido
-// PROVISIONAL (codigo VP-...), y mas tarde llega el documento PT real, que
-// a veces no trae el 100% de lo propuesto. En vez de crear un segundo
-// pedido (duplicando el pendiente), se busca la propuesta abierta cuyos
-// SSCC coincidan y se sustituyen sus datos por los del PT real - pero solo
-// si todavia no se ha recogido nada de ella (si ya se marco algo a mano,
-// se deja tal cual y se descarta el PT para no pisar progreso real).
-// Si no hay ninguna propuesta que encaje, se crea un pedido normal.
-async function sustituirOCrearPtCaserfri(pt, resultado) {
-  const ssccPt = new Set((resultado.lineas || []).map(l => l.sscc));
-  let propuesta = null;
-  if (ssccPt.size) {
-    // Sin filtrar por cerrado: si el SSCC coincide con una propuesta que ya
-    // se recogio del todo (cerrada), el PT tiene que descartarse igual que
-    // si coincidiera con una abierta a medio recoger - si solo mirara las
-    // abiertas, una propuesta ya cerrada no se encontraria y se crearia un
-    // pedido nuevo por error para algo que ya esta hecho.
-    const snap = await db.collection("pedidos_transferencia")
-      .where("almacen", "==", "caserfri").get();
-    for (const doc of snap.docs) {
-      const d = doc.data();
-      const ssccProp = (d.lineas || []).map(l => l.sscc);
-      if (ssccProp.some(s => ssccPt.has(s))) { propuesta = doc; break; }
-    }
-  }
-
-  if (!propuesta) {
-    // Ninguna propuesta coincide: se trata como un pedido normal. Caserfri
-    // no aplica el corte de las 15:00 (un PT que llega tarde sigue siendo
-    // de hoy), asi que la fecha es siempre la de hoy.
-    console.log("sustituirOCrearPtCaserfri: sin propuesta con SSCC coincidente para PT", pt,
-      "( SSCC del PT:", [...ssccPt].join(","), "), se crea como pedido nuevo.");
-    await crearPedidoTransferencia(pt, "caserfri", resultado, "email", fechaHoyMadrid());
-    return;
-  }
-
-  const ref = propuesta.ref;
-  try {
-    await db.runTransaction(async (tx) => {
-      const fresh = await tx.get(ref);
-      if (!fresh.exists) return;
-      const d = fresh.data();
-      if ((d.recogido || 0) > 0) {
-        console.log("sustituirOCrearPtCaserfri: propuesta", ref.id, "ya tiene recogido (o esta cerrada), se descarta el PT", pt);
-        return;
-      }
-      const delta = (resultado.palets || 0) - (d.palets || 0);
-      tx.update(ref, {
-        palets: resultado.palets, lineas: resultado.lineas || [],
-        ptReal: pt, fecha: fechaHoyMadrid(), activado: true
-      });
-      if (delta !== 0) {
-        tx.set(db.collection("almacenes_pendientes").doc("caserfri"), {
-          pedido: admin.firestore.FieldValue.increment(delta)
-        }, { merge: true });
-      }
-      console.log("sustituirOCrearPtCaserfri: propuesta", ref.id, "sustituida por PT real", pt, "(", d.palets, "->", resultado.palets, "palets)");
-    });
-  } catch (e) {
-    console.error("sustituirOCrearPtCaserfri:", e.message);
   }
 }
 
@@ -1820,57 +1758,6 @@ function fechaPedidoParaCorreo(receivedDateTime) {
   return fecha;
 }
 
-// Ciertos correos (por ahora, los de "Verificacion de camaras completada"
-// del ERP de Caserfri, remitente @ufsat.com) no traen ningun adjunto: el
-// propio cuerpo del correo YA es el documento, con una tabla de SSCC
-// liberados. Convertir <td>/<tr> a tabulaciones/saltos de linea antes de
-// quitar el resto de las etiquetas conserva las columnas razonablemente,
-// aunque no siempre perfecto (por eso el conteo de SSCC no depende de la
-// posicion de columna, solo la descripcion best-effort si sale limpia).
-function htmlATextoTabla(html) {
-  return String(html || "")
-    .replace(/<\/(td|th)>/gi, "\t")
-    .replace(/<\/tr>/gi, "\n")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/[ \t]+\n/g, "\n");
-}
-
-// El almacen no viene en un campo "Origen" fijo como en los PDF de pedidos:
-// aqui basta con que el nombre aparezca en algun sitio del texto (columna
-// "DONDE" en el caso de Caserfri).
-function detectarAlmacenEnTexto(texto) {
-  const up = texto.toUpperCase();
-  for (const nombre of ["AVITRANS", "CASERFRI", "TXT"]) {
-    if (new RegExp("\\b" + nombre + "\\b").test(up)) return normalizarAlmacen(nombre);
-  }
-  return null;
-}
-
-// Cada SSCC (siempre 18 digitos) es un palet, igual que en los PDF/Excel. La
-// descripcion se intenta sacar de la misma linea (columna siguiente tras el
-// SSCC, si el texto conserva las tabulaciones de htmlATextoTabla); si no
-// sale limpia, se deja vacia en vez de arriesgarse a poner algo erroneo.
-function contarPaletsCorreoTexto(texto) {
-  const porSscc = new Map();
-  texto.split("\n").forEach(linea => {
-    const m = linea.match(/\b(\d{18})\b/);
-    if (!m) return;
-    const sscc = m[1];
-    if (porSscc.has(sscc)) return;
-    const cols = linea.split("\t").map(c => c.trim());
-    const idx = cols.findIndex(c => c === sscc);
-    const descripcion = (idx !== -1 && cols[idx + 2]) ? cols[idx + 2] : "";
-    porSscc.set(sscc, descripcion);
-  });
-  const lineas = [...porSscc].map(([sscc, descripcion]) => ({ sscc, descripcion }));
-  return { palets: lineas.length, lineas };
-}
-
 exports.revisarCorreoPedidos = onSchedule(
   { schedule: "every 10 minutes", timeZone: "Europe/Madrid" },
   async () => {
@@ -1895,43 +1782,6 @@ exports.revisarCorreoPedidos = onSchedule(
         // las dos funciones podria marcarlos como leidos antes de que la
         // otra llegue a verlos.
         if (remitenteDeUsieto(msg)) continue;
-
-        // "Verificacion de camaras completada" (ERP @ufsat.com): sustituye
-        // por completo al flujo de documento adjunto para Caserfri, que se
-        // dejo de usar porque llegaba tarde (el palet ya estaba recogido
-        // para cuando llegaba el documento oficial). No tiene adjunto: el
-        // cuerpo del correo es la propia lista de SSCC liberados.
-        // Se reconoce por remitente (lo normal) o por el propio asunto (un
-        // reenvio cambia el remitente a quien reenvia, pero el asunto es
-        // bastante caracteristico y sirve igual para poder probarlo).
-        const remitenteDireccion = (msg.from && msg.from.emailAddress && msg.from.emailAddress.address || "").toLowerCase();
-        const esVerificacionCamaras = remitenteDireccion.endsWith("@ufsat.com")
-          || /verificaci[oó]n de c[aá]maras completada/i.test(msg.subject || "");
-        if (esVerificacionCamaras) {
-          // El cuerpo NO se pide en el listado inicial (que trae hasta 25
-          // correos a la vez): pedirlo para todos de golpe puede hacer
-          // fallar esa consulta si algun correo trae un cuerpo pesado
-          // (firmas con imagenes, etc.), y si esa consulta falla se aborta
-          // la funcion entera sin procesar NINGUN correo. Se pide aqui, uno
-          // a uno, solo para el correo que de verdad lo necesita.
-          const detalle = await graphGet(token,
-            "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS + "/messages/" + msg.id + "?$select=body");
-          const textoCuerpo = htmlATextoTabla(detalle.body && detalle.body.content);
-          const resultado = contarPaletsCorreoTexto(textoCuerpo);
-          if (!resultado.palets) { await graphMarcarLeido(token, msg.id); continue; }
-          const almacen = detectarAlmacenEnTexto(textoCuerpo) || detectarAlmacenEnTexto(msg.subject || "");
-          if (!almacen) {
-            console.log("revisarCorreoPedidos: correo ufsat.com sin almacen reconocido en", msg.subject);
-            await graphMarcarLeido(token, msg.id);
-            continue;
-          }
-          const vpMatch = (msg.subject || "").match(/VP-\d{4}-\d{2}-\d{2}-\d+/) || textoCuerpo.match(/VP-\d{4}-\d{2}-\d{2}-\d+/);
-          const pt = vpMatch ? vpMatch[0] : ("SINPT-" + msg.id.slice(-8));
-          await crearPedidoTransferencia(pt, almacen, resultado, "email-verificacion", fechaPedidoParaCorreo(msg.receivedDateTime));
-          await graphMarcarLeido(token, msg.id);
-          continue;
-        }
-
         if (!msg.hasAttachments) { await graphMarcarLeido(token, msg.id); continue; }
 
         const adjuntos = await graphGet(token,
@@ -1954,46 +1804,10 @@ exports.revisarCorreoPedidos = onSchedule(
           continue;
         }
 
-        // Si no se han podido contar palets (no se reconocio la columna SSCC
-        // del Excel, o el PDF no trae SSCC de 18 digitos), el pedido se va a
-        // descartar sin crearse: antes esto pasaba en silencio y el correo se
-        // marcaba igualmente como leido, asi que el pedido desaparecia sin
-        // que nadie se enterase. Se avisa por correo para poder revisarlo a
-        // mano el mismo dia (el documento en si no se va a poder reprocesar
-        // solo, hace falta mirarlo).
-        if (!resultado.palets) {
-          console.warn("revisarCorreoPedidos: 0 palets detectados en", elegido.name, "-", msg.subject);
-          try {
-            const destinatarios = await emailsDeConfig("alertas", []);
-            if (destinatarios.length) {
-              await enviarALista(destinatarios,
-                "ALERTA Aldelis — Pedido no reconocido (" + almacen + ")",
-                "No se ha podido leer el documento adjunto de este correo, asi que NO se ha creado ningun pedido:\n\n" +
-                "Asunto: " + (msg.subject || "-") + "\n" +
-                "Adjunto: " + elegido.name + "\n" +
-                "Almacen detectado: " + almacen + "\n\n" +
-                "Revisa el correo original en el buzon y crea el pedido a mano si corresponde.",
-                null, null);
-            }
-          } catch (e) { console.error("revisarCorreoPedidos: aviso 0 palets:", e.message); }
-          await graphMarcarLeido(token, msg.id);
-          continue;
-        }
-
         const pt = (resultado.pt)
           || (elegido.name.match(/PT\d{6}/) || [])[0]
           || ((msg.subject || "").match(/PT\d{6}/) || [])[0]
           || ("SINPT-" + msg.id.slice(-8));
-
-        // Caserfri: este documento es la version real de una propuesta
-        // (correo de verificacion de camaras) previa; se busca y se
-        // sustituye por SSCC en vez de crear un pedido nuevo. Ver
-        // sustituirOCrearPtCaserfri para el porque.
-        if (almacen === "caserfri") {
-          await sustituirOCrearPtCaserfri(pt, resultado);
-          await graphMarcarLeido(token, msg.id);
-          continue;
-        }
 
         await crearPedidoTransferencia(pt, almacen, resultado, "email", fechaPedidoParaCorreo(msg.receivedDateTime));
         await graphMarcarLeido(token, msg.id);
