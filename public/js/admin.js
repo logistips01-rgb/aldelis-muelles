@@ -3517,6 +3517,12 @@ function cargarConfigListeners() {
     renderCambiosEmails();
   }, () => {});
 
+  // Lista aparte para el aviso con PDF adjunto (cambios de fecha fija).
+  db.collection("config").doc("cambios_pdf").onSnapshot(d => {
+    _cambiosPdfEmailsCache = (d.exists && Array.isArray(d.data().emails)) ? d.data().emails : [];
+    renderCambiosPdfEmails();
+  }, () => {});
+
   // config/app ya está escuchado en vigilarVersion() — no duplicar
 
   db.collection("config").doc("destinos").onSnapshot(d => {
@@ -3878,6 +3884,45 @@ async function eliminarEmailCambios(idx) {
   } catch (e) { alert("Error al guardar: " + e.message); }
 }
 
+// Lista aparte para el aviso con PDF adjunto de los cambios de fecha fija
+// (distinta de la de arriba, ver cargarConfigListeners).
+let _cambiosPdfEmailsCache = [];
+
+function renderCambiosPdfEmails() {
+  const div = document.getElementById("cambios-pdf-emails-lista");
+  if (!div) return;
+  if (!_cambiosPdfEmailsCache.length) {
+    div.innerHTML = "<p style='font-size:13px;color:#9CA3AF'>Sin destinatarios configurados.</p>";
+    return;
+  }
+  div.innerHTML = _cambiosPdfEmailsCache.map((email, i) =>
+    "<div style='display:flex;align-items:center;gap:8px;margin-bottom:6px'>" +
+    "<span style='flex:1;font-size:14px'>" + esc(email) + "</span>" +
+    "<button class='btn-reject' style='padding:4px 10px;font-size:12px;cursor:pointer' onclick='eliminarEmailCambiosPdf(" + i + ")'>Eliminar</button>" +
+    "</div>"
+  ).join("");
+}
+
+async function agregarEmailCambiosPdf() {
+  const inp = document.getElementById("cambios-pdf-email-nuevo");
+  const email = (inp.value || "").trim().toLowerCase();
+  if (!email || !email.includes("@")) { alert("Introduce un email valido."); return; }
+  if (_cambiosPdfEmailsCache.includes(email)) { alert("Ese email ya esta en la lista."); return; }
+  const nuevos = [..._cambiosPdfEmailsCache, email];
+  try {
+    await db.collection("config").doc("cambios_pdf").set({ emails: nuevos }, { merge: true });
+    inp.value = "";
+  } catch (e) { alert("Error al guardar: " + e.message); }
+}
+
+async function eliminarEmailCambiosPdf(idx) {
+  if (!confirm("Eliminar este destinatario?")) return;
+  const nuevos = _cambiosPdfEmailsCache.filter((_, i) => i !== idx);
+  try {
+    await db.collection("config").doc("cambios_pdf").set({ emails: nuevos }, { merge: true });
+  } catch (e) { alert("Error al guardar: " + e.message); }
+}
+
 function estadoCambioLabel(e) {
   if (e === "ejecutado") return { texto: "Ejecutado", color: "#1D9E75" };
   if (e === "confirmado") return { texto: "Confirmado", color: "#F59E0B" };
@@ -3917,6 +3962,7 @@ function abrirModalCambio() {
   document.getElementById("cm-descripcion").value = "";
   document.getElementById("cm-observaciones").value = "";
   document.getElementById("cm-imagen").value = "";
+  document.getElementById("cm-pdf").value = "";
   document.querySelector("input[name='cm-tipo'][value='etiqueta']").checked = true;
   _cambioImagenB64 = null;
   document.getElementById("cm-error").style.display = "none";
@@ -3951,6 +3997,43 @@ function comprimirImagenCambio(file, cb) {
   img.src = url;
 }
 
+if (window.pdfjsLib) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+}
+
+// Limite alineado con firestore.rules (validCambioMaterial): 700.000
+// caracteres en base64 son ~525 KB reales, de sobra para un documento de
+// cambio de una o pocas paginas.
+const CM_PDF_MAX_B64 = 700000;
+
+// Devuelve { pdfBase64, pdfPreviewBase64 } o null si el PDF pesa demasiado o
+// no se puede leer. La vista previa es solo la primera pagina renderizada a
+// imagen, para poder verla directamente en el correo sin abrir el adjunto.
+async function leerPdfCambio(file) {
+  const pdfBase64 = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+  if (pdfBase64.length > CM_PDF_MAX_B64) return { error: "El PDF pesa demasiado (maximo aprox. 500 KB)." };
+
+  let pdfPreviewBase64 = null;
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    const page = await pdf.getPage(1);
+    const viewport = page.getViewport({ scale: 1.5 });
+    const canvas = document.createElement("canvas");
+    canvas.width = viewport.width; canvas.height = viewport.height;
+    await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+    pdfPreviewBase64 = canvas.toDataURL("image/jpeg", 0.75).split(",")[1];
+  } catch (e) {
+    console.warn("leerPdfCambio: no se pudo generar la vista previa:", e.message);
+  }
+  return { pdfBase64, pdfPreviewBase64, pdfNombre: file.name };
+}
+
 async function registrarCambioMaterial() {
   const tipo = document.querySelector("input[name='cm-tipo']:checked").value;
   const referenciaActual = document.getElementById("cm-ref-actual").value.trim();
@@ -3967,12 +4050,15 @@ async function registrarCambioMaterial() {
   const btn = document.getElementById("cm-btn-guardar");
   btn.disabled = true; btn.textContent = "Guardando...";
 
-  const guardar = async () => {
+  const guardar = async (pdfDatos) => {
     try {
       await db.collection("cambios_material").add({
         tipo, referenciaActual, referenciaNueva, motivo, agotarStock, fechaArranque,
         descripcion, observaciones,
         imagen: _cambioImagenB64 || null,
+        pdfBase64: (pdfDatos && pdfDatos.pdfBase64) || null,
+        pdfPreviewBase64: (pdfDatos && pdfDatos.pdfPreviewBase64) || null,
+        pdfNombre: (pdfDatos && pdfDatos.pdfNombre) || null,
         estado: "pendiente",
         creadoPor: (auth.currentUser && auth.currentUser.email) || "",
         creado: firebase.firestore.Timestamp.now()
@@ -3986,12 +4072,25 @@ async function registrarCambioMaterial() {
     }
   };
 
+  const pdfInp = document.getElementById("cm-pdf");
+  const pdfFile = !agotarStock && pdfInp.files && pdfInp.files[0];
+  let pdfDatos = null;
+  if (pdfFile) {
+    pdfDatos = await leerPdfCambio(pdfFile);
+    if (pdfDatos.error) {
+      errEl.textContent = pdfDatos.error;
+      errEl.style.display = "block";
+      btn.disabled = false; btn.textContent = "Registrar cambio";
+      return;
+    }
+  }
+
   const fileInp = document.getElementById("cm-imagen");
   const file = fileInp.files && fileInp.files[0];
   if (file) {
-    comprimirImagenCambio(file, b64 => { _cambioImagenB64 = b64; guardar(); });
+    comprimirImagenCambio(file, b64 => { _cambioImagenB64 = b64; guardar(pdfDatos); });
   } else {
-    guardar();
+    guardar(pdfDatos);
   }
 }
 

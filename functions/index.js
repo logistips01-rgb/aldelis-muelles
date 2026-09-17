@@ -32,7 +32,29 @@ async function obtenerTokenMS() {
   return data.access_token;
 }
 
-async function enviarConGraph(token, to, subject, html, body, imageBase64) {
+// adjuntosExtra: array opcional de adjuntos "de verdad" (no inline), p.ej.
+// [{ name, contentType, contentBytes }], para mandar un archivo descargable
+// ademas de (o en vez de) la imagen inline de siempre.
+async function enviarConGraph(token, to, subject, html, body, imageBase64, adjuntosExtra) {
+  const attachments = imageBase64 ? [{
+    "@odata.type": "#microsoft.graph.fileAttachment",
+    name: "informe.png",
+    contentType: "image/png",
+    contentBytes: imageBase64,
+    contentId: "informe-costes",
+    isInline: true
+  }] : [];
+  (adjuntosExtra || []).forEach(a => {
+    attachments.push({
+      "@odata.type": "#microsoft.graph.fileAttachment",
+      name: a.name,
+      contentType: a.contentType,
+      contentBytes: a.contentBytes,
+      contentId: a.contentId || undefined,
+      isInline: !!a.isInline
+    });
+  });
+
   const res = await fetch(
     "https://graph.microsoft.com/v1.0/users/" + MS_SENDER + "/sendMail",
     {
@@ -46,14 +68,7 @@ async function enviarConGraph(token, to, subject, html, body, imageBase64) {
           subject,
           body: html ? { contentType: "HTML", content: html } : { contentType: "Text", content: body },
           toRecipients: [{ emailAddress: { address: to } }],
-          attachments: imageBase64 ? [{
-            "@odata.type": "#microsoft.graph.fileAttachment",
-            name: "informe.png",
-            contentType: "image/png",
-            contentBytes: imageBase64,
-            contentId: "informe-costes",
-            isInline: true
-          }] : []
+          attachments
         },
         saveToSentItems: false
       })
@@ -2151,6 +2166,35 @@ function htmlCambioMaterial(d, titulo, colorCabecera) {
     "</div></body></html>";
 }
 
+// Correo aparte, solo para el aviso con documento PDF de un cambio de fecha
+// fija: misma cabecera que htmlCambioMaterial, con la vista previa (primera
+// pagina del PDF, ya renderizada a imagen en el navegador) incrustada con
+// cid: ademas de mencionar que el PDF va adjunto para verlo completo.
+function htmlCambioMaterialPdf(d) {
+  const motivoTxt = MOTIVO_LABEL_CAMBIO[d.motivo] || d.motivo || "-";
+  return HEAD_EMAIL + "<body bgcolor='#f6f6f7' style='margin:0;padding:16px;background-color:#f6f6f7;" + FONT + "'>" +
+    "<div style='max-width:480px;margin:0 auto'>" +
+    "<table width='100%' cellpadding='0' cellspacing='0' style='margin-bottom:18px'><tr>" +
+    "<td width='38' style='padding-right:12px'><img src='https://aldelis-muelles.web.app/icon-512.png' width='30' height='30' style='display:block;border-radius:7px'></td>" +
+    "<td style='border-bottom:2px solid #D41F3A;padding-bottom:9px'>" +
+    "<div style='font-size:14px;font-weight:700;color:#1A1A1A'>Aldelis</div>" +
+    "<div style='font-size:11.5px;color:#8A8F98;margin-top:2px'>Documento de cambio de material</div>" +
+    "</td></tr></table>" +
+    "<table width='100%' cellpadding='0' cellspacing='0'>" +
+    filaCambio("Referencia actual", esc(d.referenciaActual || "-")) +
+    filaCambio("Referencia nueva", esc(d.referenciaNueva || "-")) +
+    filaCambio("Motivo", esc(motivoTxt)) +
+    filaCambio("Fecha de arranque", d.fechaArranque ? esc(d.fechaArranque) : "Sin fecha fijada todavia") +
+    "</table>" +
+    (d.pdfPreviewBase64
+      ? "<div style='margin:16px 0'><img src='cid:cambio-pdf-preview' style='max-width:100%;border:1px solid #e5e5e7;border-radius:6px'></div>"
+      : "") +
+    "<div style='font-size:12.5px;color:#6B7280'>El documento completo va adjunto en PDF.</div>" +
+    "<div style='height:1px;background:#e5e5e7;margin:18px 0 12px'></div>" +
+    "<div style='font-size:10.5px;color:#B0B4BB'>Cambios de material &middot; Aldelis</div>" +
+    "</div></body></html>";
+}
+
 exports.notifCambioMaterial = onDocumentWritten("cambios_material/{id}", async (event) => {
   const antes = event.data && event.data.before && event.data.before.exists ? event.data.before.data() : null;
   const despues = event.data && event.data.after && event.data.after.exists ? event.data.after.data() : null;
@@ -2178,6 +2222,32 @@ exports.notifCambioMaterial = onDocumentWritten("cambios_material/{id}", async (
     const token = await obtenerTokenMS();
     for (const email of emails) {
       await enviarConGraph(token, email, asunto, html, cuerpo, null);
+    }
+
+    // Aviso aparte, con el documento adjunto, solo al darse de alta un
+    // cambio de fecha fija (no "agotar stock") que traiga un PDF. Lista de
+    // destinatarios independiente (config/cambios_pdf).
+    if (!antes && !despues.agotarStock && despues.pdfBase64) {
+      const destinatariosPdf = await emailsDeConfig("cambios_pdf", []);
+      if (!destinatariosPdf.length) {
+        console.log("notifCambioMaterial: PDF sin destinatarios configurados (config/cambios_pdf)");
+      } else {
+        const asuntoPdf = "Documento de cambio de material: " + (despues.referenciaActual || "?") + " -> " + (despues.referenciaNueva || "?");
+        const htmlPdf = htmlCambioMaterialPdf(despues);
+        const adjuntos = [{
+          name: despues.pdfNombre || "documento.pdf", contentType: "application/pdf",
+          contentBytes: despues.pdfBase64, isInline: false
+        }];
+        if (despues.pdfPreviewBase64) {
+          adjuntos.push({
+            name: "vista-previa.jpg", contentType: "image/jpeg",
+            contentBytes: despues.pdfPreviewBase64, contentId: "cambio-pdf-preview", isInline: true
+          });
+        }
+        for (const email of destinatariosPdf) {
+          await enviarConGraph(token, email, asuntoPdf, htmlPdf, "Documento adjunto del cambio de material.", null, adjuntos);
+        }
+      }
     }
   } catch (e) {
     console.error("notifCambioMaterial: envio:", e.message);

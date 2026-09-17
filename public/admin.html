@@ -394,6 +394,20 @@
       </div>
 
       <div class="informe-card" style="margin-top:16px">
+        <div class="informe-card-title">Avisos de Cambios de material con documento (fecha fija)</div>
+        <p style="font-size:13px;color:#6B7280;margin-bottom:12px">
+          Cuando un cambio de material de fecha fija (no "agotar stock") lleva un PDF adjunto, estos destinatarios
+          reciben un correo aparte con el PDF adjunto y una vista previa. Lista independiente de la de arriba.
+        </p>
+        <div id="cambios-pdf-emails-lista"></div>
+        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+          <input type="email" id="cambios-pdf-email-nuevo" placeholder="email@ejemplo.com"
+            style="flex:1;min-width:200px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
+          <button class="btn-informe" onclick="agregarEmailCambiosPdf()">Agregar</button>
+        </div>
+      </div>
+
+      <div class="informe-card" style="margin-top:16px">
         <div class="informe-card-title">Tiempo maximo de lanzadera</div>
         <p style="font-size:13px;color:#6B7280;margin-bottom:12px">Si una lanzadera lleva mas de este tiempo parada en una nave, se envia la alerta por correo. El banner rojo aparece 30 minutos despues.</p>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -627,6 +641,11 @@
           <label>Fecha de arranque <span class="opt">(si se conoce)</span></label>
           <input type="date" id="cm-fecha-arranque">
         </div>
+        <div class="field" id="cm-pdf-wrap">
+          <label>Documento del cambio (PDF) <span class="opt">(opcional)</span></label>
+          <input type="file" id="cm-pdf" accept="application/pdf">
+          <p class="card-desc" style="margin-top:4px">Si se adjunta, se envía por correo aparte (con el PDF adjunto y una vista previa) a los destinatarios configurados en Config para este aviso.</p>
+        </div>
         <div class="field"><label>Descripcion del cambio</label><textarea id="cm-descripcion" rows="2"></textarea></div>
         <div class="field"><label>Observaciones</label><textarea id="cm-observaciones" rows="2"></textarea></div>
         <div class="field">
@@ -739,6 +758,7 @@
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js"></script>
 
   <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script src="js/firebase-config-compat.js"></script>
   <script src="js/fotos.js"></script>

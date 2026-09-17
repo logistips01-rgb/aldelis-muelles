@@ -418,6 +418,9 @@ service cloud.firestore {
         && d.descripcion  is string && d.descripcion.size()  <= 1000
         && d.observaciones is string && d.observaciones.size() <= 1000
         && (!('imagen' in d) || d.imagen == null || (d.imagen is string && d.imagen.size() <= 700000))
+        && (!('pdfBase64' in d) || d.pdfBase64 == null || (d.pdfBase64 is string && d.pdfBase64.size() <= 700000))
+        && (!('pdfPreviewBase64' in d) || d.pdfPreviewBase64 == null || (d.pdfPreviewBase64 is string && d.pdfPreviewBase64.size() <= 700000))
+        && (!('pdfNombre' in d) || d.pdfNombre == null || (d.pdfNombre is string && d.pdfNombre.size() <= 150))
         && d.estado in ['pendiente', 'confirmado', 'ejecutado']
         && d.creadoPor is string;
     }
