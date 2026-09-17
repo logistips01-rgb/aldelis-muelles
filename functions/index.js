@@ -3063,14 +3063,66 @@ async function iaEjecutarHerramienta(nombre, input) {
 }
 
 const IA_SYSTEM_PROMPT =
-  "Eres el asistente personal de almacen de Aldelis Muelles, una empresa de logistica de aves/alimentacion. " +
-  "Tienes acceso de LECTURA a cualquier coleccion de la base de datos (listar_documentos, buscar_documentos) " +
-  "y al buzon de correo de pedidos (leer_correos_recientes, leer_cuerpo_correo). Solo puedes ESCRIBIR mediante " +
-  "enviar_mensaje_chat (a una lanzadera, numero 1 a 4) y enviar_correo: no puedes modificar pedidos, permisos, " +
-  "configuracion ni ninguna otra cosa directamente, y nunca debes usar enviar_mensaje_chat o enviar_correo por " +
-  "iniciativa propia, solo cuando el usuario lo pida explicitamente. Responde en español, de forma breve y " +
-  "concreta, como un asistente de confianza que conoce bien el almacen. Si necesitas datos para responder, usa " +
-  "las herramientas de lectura antes de contestar en vez de inventarte numeros.";
+  "Te llamas Robin y eres el asistente personal de almacen de Aldelis Muelles, una empresa de logistica de " +
+  "aves/alimentacion. Tienes acceso de LECTURA a cualquier coleccion de la base de datos (listar_documentos, " +
+  "buscar_documentos) y al buzon de correo de pedidos (leer_correos_recientes, leer_cuerpo_correo). Solo puedes " +
+  "ESCRIBIR mediante enviar_mensaje_chat (a una lanzadera, numero 1 a 4) y enviar_correo, si las tienes " +
+  "disponibles: no puedes modificar pedidos, permisos, configuracion ni ninguna otra cosa directamente, y nunca " +
+  "debes usar enviar_mensaje_chat o enviar_correo por iniciativa propia, solo cuando el usuario lo pida " +
+  "explicitamente. Responde en español, de forma breve y concreta, como un asistente de confianza que conoce " +
+  "bien el almacen. Si necesitas datos para responder, usa las herramientas de lectura antes de contestar en " +
+  "vez de inventarte numeros.";
+
+// Bucle de uso de herramientas compartido entre el asistente del panel
+// (preguntarAsistente) y el que responde por correo (revisarCorreoAsistenteIA):
+// misma "cabeza" en los dos sitios, cambia solo que herramientas se le dejan
+// usar y el texto de sistema.
+async function ejecutarConversacionIA(mensajeUsuario, herramientas, systemPrompt) {
+  let messages = [{ role: "user", content: mensajeUsuario }];
+  let respuestaFinal = "";
+
+  for (let vuelta = 0; vuelta < 6; vuelta++) {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-5",
+        max_tokens: 1500,
+        system: systemPrompt,
+        tools: herramientas,
+        messages
+      })
+    });
+    const json = await res.json();
+    if (!res.ok) {
+      console.error("ejecutarConversacionIA: Anthropic error:", JSON.stringify(json));
+      throw new Error((json.error && json.error.message) || "Error llamando a la IA");
+    }
+
+    messages.push({ role: "assistant", content: json.content });
+
+    const usosHerramienta = (json.content || []).filter(b => b.type === "tool_use");
+    if (!usosHerramienta.length) {
+      respuestaFinal = (json.content || []).filter(b => b.type === "text").map(b => b.text).join("\n");
+      break;
+    }
+
+    const resultados = [];
+    for (const uso of usosHerramienta) {
+      let resultado;
+      try { resultado = await iaEjecutarHerramienta(uso.name, uso.input || {}); }
+      catch (e) { resultado = { error: e.message }; }
+      resultados.push({ type: "tool_result", tool_use_id: uso.id, content: JSON.stringify(resultado).slice(0, 8000) });
+    }
+    messages.push({ role: "user", content: resultados });
+  }
+
+  return respuestaFinal || "No he podido completar la respuesta (demasiados pasos, prueba con una pregunta mas concreta).";
+}
 
 exports.preguntarAsistente = functions.https.onCall(async (request, context) => {
   const esV2 = !!(request && typeof request === "object" && request.data !== undefined);
@@ -3086,55 +3138,91 @@ exports.preguntarAsistente = functions.https.onCall(async (request, context) => 
   if (!mensaje) return { ok: false, error: "Falta el mensaje" };
   if (mensaje.length > 4000) return { ok: false, error: "Mensaje demasiado largo" };
 
-  let messages = [{ role: "user", content: mensaje }];
-  let respuestaFinal = "";
-
   try {
-    for (let vuelta = 0; vuelta < 6; vuelta++) {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "x-api-key": ANTHROPIC_API_KEY,
-          "anthropic-version": "2023-06-01",
-          "content-type": "application/json"
-        },
-        body: JSON.stringify({
-          model: "claude-sonnet-5",
-          max_tokens: 1500,
-          system: IA_SYSTEM_PROMPT,
-          tools: HERRAMIENTAS_IA,
-          messages
-        })
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        console.error("preguntarAsistente: Anthropic error:", JSON.stringify(json));
-        return { ok: false, error: (json.error && json.error.message) || "Error llamando a la IA" };
-      }
-
-      messages.push({ role: "assistant", content: json.content });
-
-      const usosHerramienta = (json.content || []).filter(b => b.type === "tool_use");
-      if (!usosHerramienta.length) {
-        respuestaFinal = (json.content || []).filter(b => b.type === "text").map(b => b.text).join("\n");
-        break;
-      }
-
-      const resultados = [];
-      for (const uso of usosHerramienta) {
-        let resultado;
-        try { resultado = await iaEjecutarHerramienta(uso.name, uso.input || {}); }
-        catch (e) { resultado = { error: e.message }; }
-        resultados.push({ type: "tool_result", tool_use_id: uso.id, content: JSON.stringify(resultado).slice(0, 8000) });
-      }
-      messages.push({ role: "user", content: resultados });
-    }
-
-    if (!respuestaFinal) respuestaFinal = "No he podido completar la respuesta (demasiados pasos, prueba con una pregunta mas concreta).";
+    const respuesta = await ejecutarConversacionIA(mensaje, HERRAMIENTAS_IA, IA_SYSTEM_PROMPT);
     console.log("preguntarAsistente:", email, "->", mensaje.slice(0, 100));
-    return { ok: true, respuesta: respuestaFinal };
+    return { ok: true, respuesta };
   } catch (e) {
     console.error("preguntarAsistente:", e.message);
     return { ok: false, error: e.message };
   }
 });
+
+// ── Robin por correo: asunto "info" ─────────────────────────────────────
+//
+// Los mismos compañeros autorizados pueden preguntarle a Robin por correo en
+// vez de entrar al panel: mandan un correo con asunto "info" (el cuerpo es
+// la pregunta) al buzon de pedidos, y Robin responde al mismo correo.
+//
+// Funcion de lectura de correo COMPLETAMENTE APARTE de revisarCorreoPedidos,
+// por la misma razon de siempre: un fallo aqui no puede bloquear la
+// creacion de pedidos. Solo lee el cuerpo del correo candidato, uno a uno,
+// nunca de varios de golpe. Aqui Robin NO tiene las herramientas de
+// escribir chat/correo sueltas: la unica salida posible es la respuesta al
+// propio correo que la disparo, para no abrir la puerta a que responda o
+// escriba a cualquier otro sitio por su cuenta.
+const IA_CORREO_PERMITIDOS = [
+  "mlorente@aldelis.com", "dgamarra@aldelis.com", "jbotaya@aldelis.com",
+  "dbotaya@aldelis.com", "jpina@aldelis.com"
+];
+const HERRAMIENTAS_IA_SOLO_LECTURA = HERRAMIENTAS_IA.filter(h =>
+  h.name !== "enviar_mensaje_chat" && h.name !== "enviar_correo");
+const IA_CORREO_SYSTEM_PROMPT = IA_SYSTEM_PROMPT +
+  " En esta conversacion en concreto no tienes herramientas para enviar nada: tu respuesta de texto ES el " +
+  "correo que se va a mandar, redactala ya como el cuerpo final de un email (sin encabezados tipo \"Asunto:\").";
+
+async function graphResponderCorreo(token, msgId, textoRespuesta) {
+  await fetch("https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS + "/messages/" + msgId + "/reply", {
+    method: "POST",
+    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+    body: JSON.stringify({ comment: textoRespuesta })
+  });
+}
+
+exports.revisarCorreoAsistenteIA = onSchedule(
+  { schedule: "every 10 minutes", timeZone: "Europe/Madrid" },
+  async () => {
+    if (!MS_SECRET) { console.warn("revisarCorreoAsistenteIA: falta MS_SECRET"); return; }
+    if (!ANTHROPIC_API_KEY) { console.warn("revisarCorreoAsistenteIA: falta ANTHROPIC_API_KEY"); return; }
+
+    let token;
+    try { token = await obtenerTokenMS(); }
+    catch (e) { console.error("revisarCorreoAsistenteIA: token:", e.message); return; }
+
+    let data;
+    try {
+      data = await graphGet(token,
+        "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS +
+        "/mailFolders/inbox/messages?$filter=isRead eq false&$top=25" +
+        "&$select=id,subject,from,receivedDateTime");
+    } catch (e) { console.error("revisarCorreoAsistenteIA: listar mensajes:", e.message); return; }
+
+    const candidatos = (data.value || []).filter(msg => {
+      const asunto = (msg.subject || "").trim().toLowerCase();
+      const remitente = (msg.from && msg.from.emailAddress && msg.from.emailAddress.address || "").toLowerCase();
+      return asunto === "info" && IA_CORREO_PERMITIDOS.includes(remitente);
+    });
+    console.log("revisarCorreoAsistenteIA: " + candidatos.length + " correo(s) para Robin de "
+      + (data.value || []).length + " no leido(s).");
+
+    for (const msg of candidatos) {
+      try {
+        const detalle = await graphGet(token,
+          "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS + "/messages/" + msg.id + "?$select=body");
+        const pregunta = iaHtmlATexto(detalle.body && detalle.body.content).slice(0, 4000);
+        if (!pregunta) {
+          console.log("revisarCorreoAsistenteIA: correo de", msg.from.emailAddress.address, "sin texto util, se ignora.");
+          await graphMarcarLeido(token, msg.id);
+          continue;
+        }
+
+        const respuesta = await ejecutarConversacionIA(pregunta, HERRAMIENTAS_IA_SOLO_LECTURA, IA_CORREO_SYSTEM_PROMPT);
+        await graphResponderCorreo(token, msg.id, respuesta);
+        await graphMarcarLeido(token, msg.id);
+        console.log("revisarCorreoAsistenteIA: respondido a", msg.from.emailAddress.address);
+      } catch (e) {
+        console.error("revisarCorreoAsistenteIA: mensaje", msg.id, e.message);
+      }
+    }
+  }
+);
