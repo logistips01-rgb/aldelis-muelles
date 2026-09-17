@@ -1004,26 +1004,69 @@ function resetPedidosPruebas() {
 // ya cerrados hace dias), asi que con el tiempo "Pedido"/"Recogido" dejan de
 // representar lo que hay abierto ahora mismo, aunque la resta (pendiente)
 // siga siendo correcta. Calculandolo asi nunca puede desincronizarse.
+const LANZ_RECOGIDAS_EXTERNAS = [2, 3];
+
+function minutoDelDiaMadrid(ms) {
+  const local = new Date(ms).toLocaleString("sv-SE", { timeZone: "Europe/Madrid" });
+  const [h, m] = local.split(" ")[1].split(":").map(Number);
+  return h * 60 + m;
+}
+
 // Hora estimada de fin de las recogidas en un almacen: parte de la media
 // historica (calculada una vez al dia en el servidor, ver
-// calcularEstimacionRecogidas en functions/index.js) y le suma el retraso en
-// vivo si hoy una lanzadera lleva en ese almacen mas tiempo del habitual.
+// calcularEstimacionRecogidas en functions/index.js) y la ajusta segun donde
+// este cada lanzadera 2/3 AHORA MISMO (misma logica que ajusteFinMinutos en
+// functions/index.js, usada tambien por la alerta de cierre):
+// - Si esta en ese almacen: se compara su hora real de llegada con la media
+//   historica de llegada (adelanto o retraso de horario), y si ya lleva mas
+//   tiempo del habitual se suma ese exceso.
+// - Si va en transito hacia ese almacen: solo se suma exceso si el trayecto
+//   ya dura mas de lo habitual.
+// - Si ninguna de las dos trabaja ese almacen ahora mismo, se usa el peor
+//   retraso que ya lleve cualquiera de las dos en lo que este haciendo
+//   (Plaza, otro almacen u otro transito), como aviso preventivo.
 // Sin datos historicos todavia (primeros dias del modulo) no se muestra
 // nada, en vez de inventarse una hora.
 function estimacionFinMinutos(almacenId) {
-  const est = (window._estimacionRecogidas || {})[almacenId];
+  const todo = window._estimacionRecogidas || {};
+  const est = todo[almacenId];
   if (!est || est.finMedioMin == null) return null;
 
-  let minutos = est.finMedioMin;
-  const lz = Object.values(window._lanzLive || {}).find(l =>
-    l && l.activa && l.estado === "en_nave" && l.nave === almacenId);
-  if (lz && lz.desde) {
-    const llevaMin = (Date.now() - lz.desde.toMillis()) / 60000;
-    if (est.duracionMediaMin != null && llevaMin > est.duracionMediaMin) {
-      minutos += (llevaMin - est.duracionMediaMin);
+  const ahoraMs = Date.now();
+  const activas = LANZ_RECOGIDAS_EXTERNAS
+    .map(n => (window._lanzLive || {})[n])
+    .filter(l => l && l.activa && l.desde);
+
+  let ajuste = 0;
+  const enEsteAlmacen = activas.find(l => l.estado === "en_nave" && l.nave === almacenId);
+  if (enEsteAlmacen) {
+    const inicioReal = enEsteAlmacen.desde.toMillis();
+    const elapsedMin = (ahoraMs - inicioReal) / 60000;
+    if (est.inicioMedioMin != null) ajuste += minutoDelDiaMadrid(inicioReal) - est.inicioMedioMin;
+    if (est.duracionMediaMin != null) ajuste += Math.max(0, elapsedMin - est.duracionMediaMin);
+  } else {
+    const enTransitoAqui = activas.find(l => l.estado === "transito" && l.destino === almacenId);
+    if (enTransitoAqui && est.transitoMedioMin != null) {
+      const elapsedMin = (ahoraMs - enTransitoAqui.desde.toMillis()) / 60000;
+      ajuste = Math.max(0, elapsedMin - est.transitoMedioMin);
+    } else {
+      let peor = 0;
+      activas.forEach(l => {
+        const elapsedMin = (ahoraMs - l.desde.toMillis()) / 60000;
+        let media = null;
+        if (l.estado === "en_nave" && l.nave === "plaza") media = todo.plaza && todo.plaza.duracionMediaMin;
+        else if (l.estado === "en_nave") media = todo[l.nave] && todo[l.nave].duracionMediaMin;
+        else if (l.estado === "transito") {
+          media = (l.destino && todo[l.destino] && todo[l.destino].transitoMedioMin != null)
+            ? todo[l.destino].transitoMedioMin : todo.transitoGenericoMedioMin;
+        }
+        if (media != null) peor = Math.max(peor, elapsedMin - media);
+      });
+      ajuste = Math.max(0, peor);
     }
   }
-  return minutos;
+
+  return est.finMedioMin + ajuste;
 }
 
 function estimacionFinTexto(almacenId) {
@@ -2000,8 +2043,9 @@ function autoEnviarCostesAlFinalDelDia() {
 
 // ─── LINEA DE TIEMPO (GANTT) DE LANZADERAS ───────────────────────────
 function minToHHMM(min) {
-  const h = Math.floor(min / 60) % 24, m = Math.round(min) % 60;
-  return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0");
+  let m = Math.round(min) % 1440;
+  if (m < 0) m += 1440;
+  return String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0");
 }
 
 function ganttNow() {

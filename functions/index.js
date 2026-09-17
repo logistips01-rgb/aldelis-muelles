@@ -2313,17 +2313,51 @@ exports.notifCambioMaterial = onDocumentWritten("cambios_material/{id}", async (
 //
 // Cada noche se calcula, con el historico de los ultimos 14 dias, a que hora
 // suelen terminar las recogidas en cada almacen externo (Avitrans/Caserfri/
-// Txt) y cuanto se tarda de media por visita. Solo se usan las lanzaderas 2
-// y 3 para la media: la 4 solo entra quando hay exceso de trabajo (segun el
-// usuario) y metida en la media historica la desvirtuaria.
+// Txt), cuanto se tarda de media por visita, y tambien cuanto se tarda en
+// llegar hasta alli (transito) y cuanto se tarda cargando en Plaza antes de
+// salir. Solo se usan las lanzaderas 2 y 3 para la media: la 4 solo entra
+// quando hay exceso de trabajo (segun el usuario) y metida en la media
+// historica la desvirtuaria.
 //
 // El resultado se guarda en config/estimacion_recogidas y lo lee el panel
-// para pintar "Fin estimado: HH:MM" en cada tarjeta, sumando en el propio
-// cliente el retraso si hoy una lanzadera lleva mas tiempo del habitual
-// parada en ese almacen (ver renderPedidosCards en admin.js).
+// para pintar "Fin estimado: HH:MM" en cada tarjeta, ajustando en el propio
+// cliente segun donde este cada lanzadera ahora mismo: si va con retraso (en
+// la nave, en el transito, o en cualquier otro punto) el fin estimado se
+// retrasa, y si ha llegado antes de lo habitual, se adelanta (ver
+// estimacionFinMinutos en admin.js).
+//
+// Solo la ULTIMA visita de cada dia a cada almacen cuenta para la hora media
+// de inicio/fin: si un almacen recibe mas de una visita al dia, promediar
+// todas mezclaria la hora de la visita de la mañana con la de la tarde y
+// saldria una hora que no corresponde a ninguna visita real.
 
 const LANZ_RECOGIDAS_EXTERNAS = [2, 3];
 const DIAS_HISTORICO_RECOGIDAS = 14;
+const DURACION_MAX_MIN = 240; // descarta segmentos absurdamente largos (registro sin cerrar, etc.)
+
+function minutoDelDiaMadrid(ms) {
+  const local = new Date(ms).toLocaleString("sv-SE", { timeZone: "Europe/Madrid" });
+  const [h, m] = local.split(" ")[1].split(":").map(Number);
+  return h * 60 + m;
+}
+
+function diaMadrid(ms) {
+  return new Date(ms).toLocaleString("sv-SE", { timeZone: "Europe/Madrid" }).split(" ")[0];
+}
+
+function media(arr) { return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null; }
+
+// De una lista de segmentos {diaKey, inicioMs, finMs, duracionMin}, se queda
+// solo con el ultimo de cada dia (el de inicioMs mas alto), para no mezclar
+// varias visitas del mismo dia en una sola media.
+function ultimoPorDia(segmentos) {
+  const porDia = {};
+  segmentos.forEach(s => {
+    const actual = porDia[s.diaKey];
+    if (!actual || s.inicioMs > actual.inicioMs) porDia[s.diaKey] = s;
+  });
+  return Object.values(porDia);
+}
 
 exports.calcularEstimacionRecogidas = onSchedule(
   { schedule: "0 3 * * *", timeZone: "Europe/Madrid" },
@@ -2348,39 +2382,50 @@ exports.calcularEstimacionRecogidas = onSchedule(
       (porLanz[d.numero] = porLanz[d.numero] || []).push(d);
     });
 
-    // Por almacen: lista de duraciones (minutos) de cada visita, y lista de
-    // "minuto del dia" en que termino cada visita (para la hora media de fin).
-    const datos = {};
-    ALMACENES_PT.forEach(a => { datos[a] = { duraciones: [], finesMin: [] }; });
+    const segmentosNave = { avitrans: [], caserfri: [], txt: [] }; // ultima visita del dia
+    const segmentosTransito = { avitrans: [], caserfri: [], txt: [] }; // todos, sin distinguir dia
+    const segmentosPlaza = []; // todos
+    const segmentosTransitoGenerico = []; // transitos sin destino reconocido (o hacia plaza/merca/arento)
 
     Object.values(porLanz).forEach(eventos => {
       for (let i = 0; i < eventos.length; i++) {
         const ev = eventos[i];
-        if (ev.estado !== "en_nave" || !ALMACENES_PT.includes(ev.nave)) continue;
-        const inicioMs = ev.desde.toMillis();
-        const finMs = (i + 1 < eventos.length) ? eventos[i + 1].desde.toMillis() : null;
-        if (!finMs) continue; // ultimo evento del historico, sin cierre fiable: se descarta
-        const duracionMin = (finMs - inicioMs) / 60000;
-        if (duracionMin <= 0 || duracionMin > 240) continue; // descarta valores absurdos
-        datos[ev.nave].duraciones.push(duracionMin);
+        const siguiente = (i + 1 < eventos.length) ? eventos[i + 1] : null;
+        if (!siguiente) continue; // ultimo evento del historico, sin cierre fiable: se descarta
 
-        const finLocal = new Date(finMs).toLocaleString("sv-SE", { timeZone: "Europe/Madrid" });
-        const horaFin = finLocal.split(" ")[1]; // "HH:MM:SS"
-        const [h, m] = horaFin.split(":").map(Number);
-        datos[ev.nave].finesMin.push(h * 60 + m);
+        const inicioMs = ev.desde.toMillis();
+        const finMs = siguiente.desde.toMillis();
+        const duracionMin = (finMs - inicioMs) / 60000;
+        if (duracionMin <= 0 || duracionMin > DURACION_MAX_MIN) continue; // descarta valores absurdos
+
+        if (ev.estado === "en_nave" && ALMACENES_PT.includes(ev.nave)) {
+          segmentosNave[ev.nave].push({ diaKey: diaMadrid(inicioMs), inicioMs, finMs, duracionMin });
+        } else if (ev.estado === "en_nave" && ev.nave === "plaza") {
+          segmentosPlaza.push({ duracionMin });
+        } else if (ev.estado === "transito") {
+          if (ev.destino && ALMACENES_PT.includes(ev.destino)) {
+            segmentosTransito[ev.destino].push({ duracionMin });
+          } else {
+            segmentosTransitoGenerico.push({ duracionMin });
+          }
+        }
       }
     });
 
-    function media(arr) { return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null; }
-
     const resultado = {};
     ALMACENES_PT.forEach(a => {
+      const ultimas = ultimoPorDia(segmentosNave[a]);
       resultado[a] = {
-        duracionMediaMin: media(datos[a].duraciones),
-        finMedioMin: media(datos[a].finesMin),
-        muestras: datos[a].duraciones.length
+        inicioMedioMin: media(ultimas.map(s => minutoDelDiaMadrid(s.inicioMs))),
+        finMedioMin: media(ultimas.map(s => minutoDelDiaMadrid(s.finMs))),
+        duracionMediaMin: media(ultimas.map(s => s.duracionMin)),
+        muestras: ultimas.length,
+        transitoMedioMin: media(segmentosTransito[a].map(s => s.duracionMin)),
+        muestrasTransito: segmentosTransito[a].length
       };
     });
+    resultado.plaza = { duracionMediaMin: media(segmentosPlaza.map(s => s.duracionMin)) };
+    resultado.transitoGenericoMedioMin = media(segmentosTransitoGenerico.map(s => s.duracionMin));
     resultado.calculadoEn = admin.firestore.Timestamp.now();
 
     try {
@@ -2389,6 +2434,60 @@ exports.calcularEstimacionRecogidas = onSchedule(
     } catch (e) { console.error("calcularEstimacionRecogidas: guardar:", e.message); }
   }
 );
+
+// Ajuste en vivo (adelanto o retraso) que hay que sumarle a finMedioMin para
+// un almacen, segun donde este cada lanzadera 2/3 AHORA MISMO. Compartido
+// entre el panel (admin.js, misma logica) y la alerta de cierre (mas abajo).
+// - Si una lanzadera esta en ese almacen: se compara la hora real de llegada
+//   con la hora media historica de llegada (adelanto/retraso de horario), y
+//   si ya lleva mas tiempo del habitual, se suma ese exceso.
+// - Si una lanzadera va en transito hacia ese almacen: solo se suma exceso si
+//   el trayecto ya dura mas de lo habitual (no hay forma fiable de saber si
+//   "iba a salir antes" sin fecha de salida de referencia clara).
+// - Si ninguna de las dos esta trabajando ese almacen ahora mismo, se usa el
+//   peor exceso que este acumulando cualquiera de las dos en lo que este
+//   haciendo (Plaza, otro almacen, u otro transito): si van tarde en general,
+//   es de esperar que tambien lleguen tarde aqui.
+function ajusteFinMinutos(almacenId, est, lanzaderasLive, ahoraMs) {
+  const e = est[almacenId];
+  if (!e || e.finMedioMin == null) return null;
+
+  const activas = LANZ_RECOGIDAS_EXTERNAS
+    .map(n => lanzaderasLive[n])
+    .filter(l => l && l.activa && l.desde);
+
+  const enEsteAlmacen = activas.find(l => l.estado === "en_nave" && l.nave === almacenId);
+  if (enEsteAlmacen) {
+    const inicioReal = enEsteAlmacen.desde.toMillis();
+    const elapsedMin = (ahoraMs - inicioReal) / 60000;
+    let ajuste = 0;
+    if (e.inicioMedioMin != null) ajuste += minutoDelDiaMadrid(inicioReal) - e.inicioMedioMin;
+    if (e.duracionMediaMin != null) ajuste += Math.max(0, elapsedMin - e.duracionMediaMin);
+    return ajuste;
+  }
+
+  const enTransitoAqui = activas.find(l => l.estado === "transito" && l.destino === almacenId);
+  if (enTransitoAqui && e.transitoMedioMin != null) {
+    const elapsedMin = (ahoraMs - enTransitoAqui.desde.toMillis()) / 60000;
+    return Math.max(0, elapsedMin - e.transitoMedioMin);
+  }
+
+  // Ninguna de las dos va hacia aqui ahora mismo: usar el peor retraso que
+  // ya se este acumulando en lo que esten haciendo, como aviso preventivo.
+  let peor = 0;
+  activas.forEach(l => {
+    const elapsedMin = (ahoraMs - l.desde.toMillis()) / 60000;
+    let media = null;
+    if (l.estado === "en_nave" && l.nave === "plaza") media = est.plaza && est.plaza.duracionMediaMin;
+    else if (l.estado === "en_nave" && ALMACENES_PT.includes(l.nave)) media = est[l.nave] && est[l.nave].duracionMediaMin;
+    else if (l.estado === "transito") {
+      media = (l.destino && est[l.destino] && est[l.destino].transitoMedioMin != null)
+        ? est[l.destino].transitoMedioMin : est.transitoGenericoMedioMin;
+    }
+    if (media != null) peor = Math.max(peor, elapsedMin - media);
+  });
+  return Math.max(0, peor);
+}
 
 // ── Alerta de cierre de almacen en riesgo ───────────────────────────────────
 //
@@ -2431,11 +2530,9 @@ exports.revisarCierresAlmacenes = onSchedule(
       pendientePorAlmacen[d.almacen] += Math.max((d.palets || 0) - (d.recogido || 0), 0);
     });
 
-    const lanzEnNave = {};
-    lanzSnap.forEach(doc => {
-      const d = doc.data();
-      if (d.activa && d.estado === "en_nave" && ALMACENES_PT.includes(d.nave)) lanzEnNave[d.nave] = d;
-    });
+    const lanzaderasLive = {};
+    lanzSnap.forEach(doc => { lanzaderasLive[doc.data().numero] = doc.data(); });
+    const ahoraMs = Date.now();
 
     const enRiesgo = [];
     for (const almacen of ALMACENES_PT) {
@@ -2445,14 +2542,8 @@ exports.revisarCierresAlmacenes = onSchedule(
       const e = est[almacen];
       if (!e || e.finMedioMin == null) continue;
 
-      let finEstimadoMin = e.finMedioMin;
-      const lz = lanzEnNave[almacen];
-      if (lz && lz.desde) {
-        const llevaMin = (Date.now() - lz.desde.toMillis()) / 60000;
-        if (e.duracionMediaMin != null && llevaMin > e.duracionMediaMin) {
-          finEstimadoMin += (llevaMin - e.duracionMediaMin);
-        }
-      }
+      const ajuste = ajusteFinMinutos(almacen, est, lanzaderasLive, ahoraMs);
+      const finEstimadoMin = e.finMedioMin + (ajuste || 0);
 
       const cierreMin = minutosDeHHMM(cierres[almacen]);
       if (cierreMin == null || finEstimadoMin <= cierreMin) continue;
