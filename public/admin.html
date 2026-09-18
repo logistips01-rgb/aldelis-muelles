@@ -154,6 +154,10 @@
             <div><div class="metric-value" id="rend-muestras">0</div><div class="metric-label">Descargas con datos</div></div>
           </div>
         </div>
+        <div class="informe-card" style="margin-bottom:16px">
+          <div class="informe-card-title">Reservas por dia</div>
+          <div style="height:220px"><canvas id="inf-chart-dias"></canvas></div>
+        </div>
         <div class="informe-grid">
           <div class="informe-card"><div class="informe-card-title">Franjas mas demandadas</div><div id="tabla-franjas"></div></div>
           <div class="informe-card"><div class="informe-card-title">Empresas mas frecuentes</div><div id="tabla-empresas"></div></div>
@@ -402,6 +406,7 @@
       <div class="informe-header">
         <div class="section-title" style="margin-bottom:0">Costes de operacion diarios</div>
         <button class="btn-informe" onclick="enviarInformeDiarioCostes(false)">Enviar informe por correo</button>
+        <button class="btn-excel" onclick="exportarCostesExcel()">Exportar Excel</button>
           <span id="costes-envio-ok" style="font-size:13px;color:#1D9E75;display:none">Enviado</span>
       </div>
       <div id="costes-historial" style="margin-top:12px"></div>
@@ -947,9 +952,10 @@
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js"></script>
 
-  <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="js/firebase-config-compat.js"></script>
   <script src="js/fotos.js"></script>
   <script src="js/push.js"></script>

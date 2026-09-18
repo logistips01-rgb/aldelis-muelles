@@ -883,6 +883,36 @@ function switchLanzVista(v) {
 let _llegadasInit = false;
 let _llegadasUltimasFilas = [];
 
+// Da estilo a una hoja de Excel recien creada con json_to_sheet: cabecera en
+// negrita sobre el verde corporativo, ancho de columna segun el contenido y
+// filtro automatico. La libreria xlsx-js-style (mismo API que SheetJS, con
+// soporte de estilos) reemplaza a la version "xlsx" plana que se usaba antes.
+// Se reutiliza en todos los exports de Excel del panel.
+function estilizarHojaExcel(ws, filas) {
+  if (!filas.length) return;
+  const columnas = Object.keys(filas[0]);
+  ws["!cols"] = columnas.map(col => {
+    const maxLen = filas.reduce((m, f) => Math.max(m, String(f[col] == null ? "" : f[col]).length), col.length);
+    return { wch: Math.min(Math.max(maxLen + 2, 10), 40) };
+  });
+  columnas.forEach((col, i) => {
+    const addr = XLSX.utils.encode_cell({ r: 0, c: i });
+    if (ws[addr]) {
+      ws[addr].s = {
+        font: { bold: true, color: { rgb: "FFFFFF" } },
+        fill: { fgColor: { rgb: "1D9E75" } },
+        alignment: { vertical: "center" }
+      };
+    }
+  });
+  const ultimaCol = XLSX.utils.encode_col(columnas.length - 1);
+  ws["!autofilter"] = { ref: "A1:" + ultimaCol + (filas.length + 1) };
+}
+
+// Colores consistentes con el resto del panel (verde corporativo + paleta
+// de apoyo), reutilizados en todos los graficos de los informes.
+const PALETA_GRAFICOS = ["#1D9E75", "#3B82F6", "#F59E0B", "#D41F3A", "#8B5CF6", "#0EA5E9", "#EC4899", "#84CC16"];
+
 function iniciarInformeLlegadas() {
   if (_llegadasInit) return;
   _llegadasInit = true;
@@ -950,6 +980,10 @@ async function generarInformeLlegadas() {
 
     resultado.innerHTML = "<div style='display:flex;justify-content:flex-end;margin-bottom:8px'>" +
       "<button class='btn-excel' onclick='exportarLlegadasExcel()'>Exportar Excel</button></div>" +
+      "<div class='informe-card' style='margin-bottom:16px'>" +
+      "<div class='informe-card-title'>Llegadas por nave</div>" +
+      "<div style='height:240px'><canvas id='llegadas-chart'></canvas></div>" +
+      "</div>" +
       "<div class='tabla-scroll'><table class='tabla-inf'><thead><tr>" +
       "<th>Fecha</th><th>Hora</th><th>Lanzadera</th><th>Nave</th><th>Muelle</th></tr></thead><tbody>" +
       filas.map(f => "<tr>" +
@@ -961,9 +995,38 @@ async function generarInformeLlegadas() {
         "</tr>"
       ).join("") + "</tbody></table></div>" +
       "<p style='font-size:12px;color:#9CA3AF;margin-top:8px'>" + filas.length + " llegada(s).</p>";
+
+    dibujarGraficoLlegadas(filas);
   } catch (e) {
     resultado.innerHTML = "<p style='color:#D41F3A;font-size:13px'>Error al consultar: " + e.message + "</p>";
   }
+}
+
+let _llegadasChart = null;
+
+function dibujarGraficoLlegadas(filas) {
+  const canvas = document.getElementById("llegadas-chart");
+  if (!canvas || typeof Chart === "undefined") return;
+  const porNave = {};
+  filas.forEach(f => { porNave[f.nave] = (porNave[f.nave] || 0) + 1; });
+  const etiquetas = Object.keys(porNave);
+  if (_llegadasChart) { _llegadasChart.destroy(); _llegadasChart = null; }
+  _llegadasChart = new Chart(canvas, {
+    type: "bar",
+    data: {
+      labels: etiquetas,
+      datasets: [{
+        label: "Llegadas",
+        data: etiquetas.map(n => porNave[n]),
+        backgroundColor: etiquetas.map((_, i) => PALETA_GRAFICOS[i % PALETA_GRAFICOS.length])
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+    }
+  });
 }
 
 function exportarLlegadasExcel() {
@@ -972,6 +1035,7 @@ function exportarLlegadasExcel() {
     "Fecha": f.fecha, "Hora": f.hora, "Lanzadera": f.lanzadera, "Nave": f.nave, "Muelle": f.muelle
   }));
   const ws = XLSX.utils.json_to_sheet(filas);
+  estilizarHojaExcel(ws, filas);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Llegadas");
   const desde = document.getElementById("llegadas-desde").value;
@@ -1891,6 +1955,11 @@ function cargarHistorialDiario() {
     : "<div class='empty-state' style='padding:12px'>Sin datos</div>";
 
   html += "<div class='informe-card' style='margin-top:12px'>" +
+    "<div class='informe-card-title'>Coste por lanzadera</div>" +
+    "<div style='height:220px'><canvas id='costes-chart'></canvas></div>" +
+  "</div>";
+
+  html += "<div class='informe-card' style='margin-top:12px'>" +
     "<div class='informe-card-title'>Costes de operacion</div>" +
     "<div class='informe-metricas' style='margin-top:8px;margin-bottom:12px'>" + lanzCosteHtml + "</div>" +
     "<div class='informe-grid'>" +
@@ -1929,6 +1998,74 @@ function cargarHistorialDiario() {
   });
 
   cont.innerHTML = html;
+  window._costesUltimo = { fecha, allSegs, costePorLanz, navesCosteSorted, topEsperas };
+  dibujarGraficoCostes(costePorLanz);
+}
+
+let _costesChart = null;
+
+function dibujarGraficoCostes(costePorLanz) {
+  const canvas = document.getElementById("costes-chart");
+  if (!canvas || typeof Chart === "undefined") return;
+  const etiquetas = [1, 2, 3, 4].map(n => "Lanzadera " + n);
+  if (_costesChart) { _costesChart.destroy(); _costesChart = null; }
+  _costesChart = new Chart(canvas, {
+    type: "bar",
+    data: {
+      labels: etiquetas,
+      datasets: [{
+        label: "Coste (€)",
+        data: [1, 2, 3, 4].map(n => Math.round((costePorLanz[n] || 0) * 100) / 100),
+        backgroundColor: PALETA_GRAFICOS[3]
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true } }
+    }
+  });
+}
+
+function exportarCostesExcel() {
+  const datos = window._costesUltimo;
+  if (!datos || !datos.allSegs.length) { alert("Primero consulta un dia con datos."); return; }
+
+  const filasDetalle = datos.allSegs.map(s => {
+    const d = new Date(s.startMs);
+    return {
+      "Hora": String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"),
+      "Lanzadera": s.numero,
+      "Estado": s.estado === "en_nave" ? "En nave" : "Transito",
+      "Nave": NAVE_NOMBRE[s.nave] || s.nave || "",
+      "Muelle": s.muelle || "",
+      "Accion": s.accion ? (ACCION_LABEL[s.accion] || s.accion) : "",
+      "Duracion": formatDuracion(s.durMin),
+      "Coste (€)": Math.round(s.coste * 100) / 100
+    };
+  });
+  const filasLanz = [1, 2, 3, 4].filter(n => datos.costePorLanz[n] > 0).map(n => ({
+    "Lanzadera": "Lanzadera " + n, "Coste (€)": Math.round(datos.costePorLanz[n] * 100) / 100
+  }));
+  const filasNave = datos.navesCosteSorted.map(([nave, coste]) => ({
+    "Nave": NAVE_NOMBRE[nave] || nave, "Coste (€)": Math.round(coste * 100) / 100
+  }));
+
+  const wb = XLSX.utils.book_new();
+  const wsDetalle = XLSX.utils.json_to_sheet(filasDetalle);
+  estilizarHojaExcel(wsDetalle, filasDetalle);
+  XLSX.utils.book_append_sheet(wb, wsDetalle, "Detalle");
+  if (filasLanz.length) {
+    const wsLanz = XLSX.utils.json_to_sheet(filasLanz);
+    estilizarHojaExcel(wsLanz, filasLanz);
+    XLSX.utils.book_append_sheet(wb, wsLanz, "Coste por lanzadera");
+  }
+  if (filasNave.length) {
+    const wsNave = XLSX.utils.json_to_sheet(filasNave);
+    estilizarHojaExcel(wsNave, filasNave);
+    XLSX.utils.book_append_sheet(wb, wsNave, "Coste por nave");
+  }
+  XLSX.writeFile(wb, "Aldelis_Costes_" + datos.fecha + ".xlsx");
 }
 
 function renderCostesEmails() {
@@ -3108,6 +3245,11 @@ async function cargarInformeBizerba() {
     "<div class='metric-card'><div class='metric-value'>" + (mReso != null ? formatDuracion(mReso) : "—") + "</div><div class='metric-label'>T. medio resolucion</div></div>" +
     "</div>";
 
+  html += "<div class='informe-card'>" +
+    "<div class='informe-card-title'>Incidencias por linea</div>" +
+    "<div style='height:240px'><canvas id='bz-chart'></canvas></div>" +
+    "</div>";
+
   const filas = inc.slice().sort((a, b) => (b.creada ? b.creada.toMillis() : 0) - (a.creada ? a.creada.toMillis() : 0));
   html += "<div class='informe-card'><div class='tabla-scroll'><table class='tabla-inf'><thead><tr>" +
     "<th>Fecha</th><th>Linea</th><th>Averia</th><th>Estado</th><th>Tecnico</th><th>Observaciones</th><th>Emitida</th><th>Cogida</th><th>Resuelta</th><th>T. resp.</th><th>T. resol.</th>" +
@@ -3126,6 +3268,34 @@ async function cargarInformeBizerba() {
         "<td>" + (tReso != null ? formatDuracion(tReso) : "—") + "</td></tr>";
     }).join("") + "</tbody></table></div></div>";
   cont.innerHTML = html;
+  dibujarGraficoBizerba(inc);
+}
+
+let _bzChart = null;
+
+function dibujarGraficoBizerba(inc) {
+  const canvas = document.getElementById("bz-chart");
+  if (!canvas || typeof Chart === "undefined") return;
+  const porLinea = {};
+  inc.forEach(i => { const l = "Linea " + i.linea; porLinea[l] = (porLinea[l] || 0) + 1; });
+  const etiquetas = Object.keys(porLinea).sort();
+  if (_bzChart) { _bzChart.destroy(); _bzChart = null; }
+  _bzChart = new Chart(canvas, {
+    type: "bar",
+    data: {
+      labels: etiquetas,
+      datasets: [{
+        label: "Incidencias",
+        data: etiquetas.map(l => porLinea[l]),
+        backgroundColor: PALETA_GRAFICOS[0]
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+    }
+  });
 }
 
 function exportarBizerba() {
@@ -3145,6 +3315,7 @@ function exportarBizerba() {
     "T. resolucion (min)": difMin(i.aceptada, i.resuelta)
   }));
   const ws = XLSX.utils.json_to_sheet(filas);
+  estilizarHojaExcel(ws, filas);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Incidencias");
   XLSX.writeFile(wb, "incidencias_bizerba.xlsx");
@@ -3384,10 +3555,38 @@ async function cargarInformeLanz() {
       "<div><div class='metric-value'>" + viajes + "</div><div class='metric-label'>Viajes (llegadas a nave)</div></div>" +
       "<div><div class='metric-value'>" + logs.length + "</div><div class='metric-label'>Movimientos totales</div></div>" +
     "</div></div>" +
+    "<div class='informe-card' style='margin-top:12px'>" +
+      "<div class='informe-card-title'>Viajes por lanzadera</div>" +
+      "<div style='height:220px'><canvas id='lz-chart'></canvas></div>" +
+    "</div>" +
     "<div class='informe-grid' style='margin-top:12px'>" +
       "<div class='informe-card'><div class='informe-card-title'>Tiempo medio por nave</div>" + navesHtml + "</div>" +
       "<div class='informe-card'><div class='informe-card-title'>Actividad por lanzadera</div>" + lanzHtml + "</div>" +
     "</div>";
+
+  dibujarGraficoLanzaderas(porLanz);
+}
+
+let _lzChart = null;
+
+function dibujarGraficoLanzaderas(porLanz) {
+  const canvas = document.getElementById("lz-chart");
+  if (!canvas || typeof Chart === "undefined") return;
+  const etiquetas = [1, 2, 3, 4].map(n => "Lanzadera " + n);
+  const viajesPorLanz = [1, 2, 3, 4].map(n => porLanz[n].filter(x => x.estado === "en_nave").length);
+  if (_lzChart) { _lzChart.destroy(); _lzChart = null; }
+  _lzChart = new Chart(canvas, {
+    type: "bar",
+    data: {
+      labels: etiquetas,
+      datasets: [{ label: "Viajes", data: viajesPorLanz, backgroundColor: PALETA_GRAFICOS[1] }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+    }
+  });
 }
 
 // ─── Helpers de fecha/hora para exportar ─────────────────────────────
@@ -3435,7 +3634,33 @@ async function cargarInformeCargas() {
       "<div><div class='metric-value'>" + completadas.length + "</div><div class='metric-label'>Completadas</div></div>" +
     "</div></div>" +
     "<div class='informe-card' style='margin-top:12px'><div class='informe-card-title'>Horas calientes (cargas por hora)</div>" + renderHeatmap(horas) + "</div>" +
+    "<div class='informe-card' style='margin-top:12px'>" +
+      "<div class='informe-card-title'>Cargas por hora</div>" +
+      "<div style='height:220px'><canvas id='cg-chart'></canvas></div>" +
+    "</div>" +
     "<div class='informe-card' style='margin-top:12px'><div class='informe-card-title'>Listado de cargas del periodo</div>" + renderTablaCargas(cargas) + "</div>";
+
+  dibujarGraficoCargas(horas);
+}
+
+let _cgChart = null;
+
+function dibujarGraficoCargas(horas) {
+  const canvas = document.getElementById("cg-chart");
+  if (!canvas || typeof Chart === "undefined") return;
+  if (_cgChart) { _cgChart.destroy(); _cgChart = null; }
+  _cgChart = new Chart(canvas, {
+    type: "bar",
+    data: {
+      labels: horas.map(h => h[0]),
+      datasets: [{ label: "Cargas", data: horas.map(h => h[1]), backgroundColor: PALETA_GRAFICOS[2] }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+    }
+  });
 }
 
 function renderTablaCargas(cargas) {
@@ -3469,6 +3694,7 @@ function exportarCargas() {
     "Estado": c.estado || ""
   }));
   const ws = XLSX.utils.json_to_sheet(filas);
+  estilizarHojaExcel(ws, filas);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Cargas");
   XLSX.writeFile(wb, "Aldelis_Cargas_" + document.getElementById("cg-desde").value + "_" + document.getElementById("cg-hasta").value + ".xlsx");
@@ -3497,6 +3723,7 @@ async function exportarLanzaderas() {
     "Destino": l.destino ? (NAVE_NOMBRE[l.destino] || l.destino) : ""
   }));
   const ws = XLSX.utils.json_to_sheet(filas);
+  estilizarHojaExcel(ws, filas);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Lanzaderas");
   XLSX.writeFile(wb, "Aldelis_Lanzaderas_" + desde + "_" + hasta + ".xlsx");
@@ -3635,6 +3862,37 @@ async function cargarInforme() {
   document.getElementById("tabla-muelles").innerHTML    = renderBarras(count("muelle").filter(x=>x[0]&&x[0]!=="null"), informeData.length);
   document.getElementById("tabla-heatmap").innerHTML    = renderHeatmap(count("franja").sort((a,b)=>a[0].localeCompare(b[0])));
   document.getElementById("tabla-completa").innerHTML   = renderTablaCompleta(informeData);
+
+  dibujarGraficoInforme(informeData);
+}
+
+let _infChart = null;
+
+function dibujarGraficoInforme(datos) {
+  const canvas = document.getElementById("inf-chart-dias");
+  if (!canvas || typeof Chart === "undefined") return;
+  const porDia = {};
+  datos.forEach(r => { porDia[r.fecha] = (porDia[r.fecha] || 0) + 1; });
+  const dias = Object.keys(porDia).sort();
+  if (_infChart) { _infChart.destroy(); _infChart = null; }
+  _infChart = new Chart(canvas, {
+    type: "line",
+    data: {
+      labels: dias,
+      datasets: [{
+        label: "Reservas",
+        data: dias.map(d => porDia[d]),
+        borderColor: PALETA_GRAFICOS[0],
+        backgroundColor: PALETA_GRAFICOS[0] + "33",
+        fill: true, tension: 0.25
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+    }
+  });
 }
 
 // Mapa de calor: cada franja coloreada segun su demanda (verde -> rojo)
@@ -3683,6 +3941,7 @@ function exportarExcel() {
     "Motivo": r.motivo||"", "Nota almacen": r.nota_almacen||"", "Codigo": r.codigo
   }));
   const ws = XLSX.utils.json_to_sheet(filas);
+  estilizarHojaExcel(ws, filas);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Reservas");
   XLSX.writeFile(wb, "Aldelis_Reservas_" + document.getElementById("informe-desde").value + "_" + document.getElementById("informe-hasta").value + ".xlsx");

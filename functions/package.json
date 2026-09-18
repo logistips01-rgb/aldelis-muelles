@@ -18,7 +18,7 @@
     "node-fetch": "^3.3.2",
     "nodemailer": "^8.0.10",
     "pdf-parse": "^2.4.5",
-    "xlsx": "^0.18.5"
+    "xlsx-js-style": "^1.2.0"
   },
   "devDependencies": {
     "firebase-functions-test": "^3.4.1"

@@ -1441,7 +1441,7 @@ function normalizarAlmacen(valor) {
 // "Origen", se toma el almacen de ahi; si hay "Referencia"/"Descripcion"/
 // "Producto", se guarda como descripcion de cada palet.
 function contarPaletsExcel(buffer) {
-  const XLSX = require("xlsx");
+  const XLSX = require("xlsx-js-style");
   const wb = XLSX.read(buffer, { type: "buffer" });
   const ws = wb.Sheets[wb.SheetNames[0]];
   const filas = XLSX.utils.sheet_to_json(ws, { header: 1 });
@@ -3293,10 +3293,35 @@ async function iaEnviarCorreo(input) {
   return { ok: status === 200 || status === 202, status };
 }
 
-// Genera un Excel de verdad (misma libreria "xlsx" que usa el resto de la
-// app para leer los pedidos por correo) a partir de filas que la propia IA
-// construye (normalmente con datos que ya ha sacado con listar_documentos/
-// buscar_documentos), y lo manda como adjunto real.
+// Da estilo a una hoja recien creada con json_to_sheet: cabecera en negrita
+// sobre el verde corporativo, ancho de columna segun el contenido y filtro
+// automatico. Se usa tanto aqui (Robin) como en el resto de exports de
+// Excel del panel (misma logica, version cliente en admin.js).
+function estilizarHojaExcel(XLSX, ws, filas) {
+  if (!filas.length) return;
+  const columnas = Object.keys(filas[0]);
+  ws["!cols"] = columnas.map(col => {
+    const maxLen = filas.reduce((m, f) => Math.max(m, String(f[col] == null ? "" : f[col]).length), col.length);
+    return { wch: Math.min(Math.max(maxLen + 2, 10), 40) };
+  });
+  columnas.forEach((col, i) => {
+    const addr = XLSX.utils.encode_cell({ r: 0, c: i });
+    if (ws[addr]) {
+      ws[addr].s = {
+        font: { bold: true, color: { rgb: "FFFFFF" } },
+        fill: { fgColor: { rgb: "1D9E75" } },
+        alignment: { vertical: "center" }
+      };
+    }
+  });
+  const ultimaCol = XLSX.utils.encode_col(columnas.length - 1);
+  ws["!autofilter"] = { ref: "A1:" + ultimaCol + (filas.length + 1) };
+}
+
+// Genera un Excel de verdad (con estilo, misma logica que el resto del
+// panel) a partir de filas que la propia IA construye (normalmente con
+// datos que ya ha sacado con listar_documentos/buscar_documentos), y lo
+// manda como adjunto real.
 async function iaEnviarCorreoConExcel(input) {
   const destinatario = String((input && input.destinatario) || "").trim().toLowerCase();
   if (!destinatarioValido(destinatario)) return { error: "Destinatario no valido" };
@@ -3311,8 +3336,9 @@ async function iaEnviarCorreoConExcel(input) {
 
   let base64;
   try {
-    const XLSX = require("xlsx");
+    const XLSX = require("xlsx-js-style");
     const ws = XLSX.utils.json_to_sheet(filas);
+    estilizarHojaExcel(XLSX, ws, filas);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, nombreHoja);
     base64 = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }).toString("base64");
