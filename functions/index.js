@@ -3010,6 +3010,37 @@ async function iaProgramarAccion(input) {
   return { ok: true, id: ref.id, momento: momento.toDate().toISOString() };
 }
 
+// Ampliacion pedida explicitamente por el admin: Robin puede marcar palets
+// como recogidos de un PT, pero SOLO si el usuario se lo pide en esa misma
+// conversacion (nunca por iniciativa propia, igual que el resto de
+// herramientas que escriben algo). Reutiliza el mismo mecanismo que el boton
+// "Marcar recogido" del panel (cerrarPedidoManual): un documento en
+// recogidas_palets, que el trigger restarRecogidaPalets ya sabe procesar -
+// no se toca pedidos_transferencia directamente aqui.
+async function iaMarcarRecogida(input) {
+  const pt = String((input && input.pt) || "").trim();
+  const palets = Number(input && input.palets);
+  if (!pt) return { error: "Falta el codigo del pedido (pt)" };
+  if (!(palets > 0)) return { error: "Cantidad de palets no valida" };
+
+  const ref = db.collection("pedidos_transferencia").doc(pt);
+  const doc = await ref.get();
+  if (!doc.exists) return { error: "No existe ningun pedido con el codigo " + pt };
+  const d = doc.data();
+  if (!ALMACENES_PT.includes(d.almacen)) return { error: "Almacen no valido en ese pedido" };
+  const pendiente = Math.max((d.palets || 0) - (d.recogido || 0), 0);
+  if (palets > pendiente) return { error: "No puede ser mayor que lo pendiente (" + pendiente + " palets)" };
+
+  try {
+    await db.collection("recogidas_palets").add({
+      numero: 0, almacen: d.almacen, palets, pts: [{ pt, palets }],
+      manual: true, marcadoPor: "Robin (IA)",
+      ts: admin.firestore.Timestamp.now()
+    });
+  } catch (e) { return { error: "No se pudo registrar: " + e.message }; }
+  return { ok: true };
+}
+
 const HERRAMIENTAS_IA = [
   {
     name: "listar_documentos",
@@ -3101,6 +3132,18 @@ const HERRAMIENTAS_IA = [
       required: ["tipo", "minutosDesdeAhora", "parametros"]
     }
   },
+  {
+    name: "marcar_recogida",
+    description: "Marca palets como recogidos de un pedido (PT) concreto, si el chofer no lo ha registrado. Solo usar si el usuario lo pide explicitamente en esta conversacion, nunca por iniciativa propia.",
+    input_schema: {
+      type: "object",
+      properties: {
+        pt: { type: "string", description: "Codigo del pedido, ej: PT028980" },
+        palets: { type: "number", description: "Cuantos palets marcar como recogidos" }
+      },
+      required: ["pt", "palets"]
+    }
+  },
   // Herramienta de busqueda web nativa de Anthropic: la ejecuta el propio
   // servidor de Claude, no hace falta implementar nada aqui.
   { type: "web_search_20250305", name: "web_search", max_uses: 5 }
@@ -3115,6 +3158,7 @@ async function iaEjecutarHerramienta(nombre, input) {
     case "enviar_mensaje_chat": return iaEnviarMensajeChat(input);
     case "enviar_correo": return iaEnviarCorreo(input);
     case "programar_accion": return iaProgramarAccion(input);
+    case "marcar_recogida": return iaMarcarRecogida(input);
     default: return { error: "Herramienta desconocida: " + nombre };
   }
 }
@@ -3125,14 +3169,19 @@ const IA_SYSTEM_PROMPT =
   "(listar_documentos, buscar_documentos), al buzon de correo de pedidos (leer_correos_recientes, " +
   "leer_cuerpo_correo), y a internet (web_search) para consultar cosas externas (por ejemplo, buscar empresas, " +
   "fabricantes o precios de un producto). Solo puedes ESCRIBIR mediante enviar_mensaje_chat (a una lanzadera, " +
-  "numero 1 a 4), enviar_correo, y programar_accion (para dejar programado un envio de correo o chat para " +
-  "dentro de un rato en vez de al momento), si las tienes disponibles: no puedes modificar pedidos, permisos, " +
-  "configuracion ni ninguna otra cosa directamente, y nunca debes usar enviar_mensaje_chat, enviar_correo o " +
-  "programar_accion por iniciativa propia, solo cuando el usuario lo pida explicitamente. Si el usuario pide " +
-  "mandar algo \"dentro de X minutos\", \"mañana\" o en un momento futuro, usa programar_accion en vez de " +
-  "enviarlo ya. Responde en español, de forma breve y concreta, como un asistente de confianza que conoce bien " +
-  "el almacen. Si necesitas datos para responder, usa las herramientas de lectura (o de busqueda web, si es " +
-  "algo externo) antes de contestar en vez de inventarte numeros.";
+  "numero 1 a 4), enviar_correo, programar_accion (para dejar programado un envio de correo o chat para dentro " +
+  "de un rato en vez de al momento), y marcar_recogida (para marcar palets recogidos de un pedido, si el " +
+  "usuario lo pide), si las tienes disponibles: no puedes modificar pedidos de ninguna otra forma (no puedes " +
+  "cambiar fechas, cerrar pedidos sin que se haya recogido de verdad, etc.), ni tocar permisos, configuracion " +
+  "ni ninguna otra cosa directamente. Nunca debes usar enviar_mensaje_chat, enviar_correo, programar_accion o " +
+  "marcar_recogida por iniciativa propia, solo cuando el usuario lo pida explicitamente en esa misma " +
+  "conversacion. Si el usuario pide mandar algo \"dentro de X minutos\", \"mañana\" o en un momento futuro, usa " +
+  "programar_accion en vez de enviarlo ya. Si el usuario te pide mandar algo a una persona por su nombre (no " +
+  "por su email), consulta primero el documento \"contactos\" de la coleccion config (con listar_documentos) " +
+  "para sacar su direccion real; si no aparece ahi, pregunta el email en vez de inventartelo. Responde en " +
+  "español, de forma breve y concreta, como un asistente de confianza que conoce bien el almacen. Si necesitas " +
+  "datos para responder, usa las herramientas de lectura (o de busqueda web, si es algo externo) antes de " +
+  "contestar en vez de inventarte numeros.";
 
 // Bucle de uso de herramientas compartido entre el asistente del panel
 // (preguntarAsistente) y el que responde por correo (revisarCorreoAsistenteIA):
@@ -3227,7 +3276,8 @@ const IA_CORREO_PERMITIDOS = [
   "dbotaya@aldelis.com", "jpina@aldelis.com"
 ];
 const HERRAMIENTAS_IA_SOLO_LECTURA = HERRAMIENTAS_IA.filter(h =>
-  h.name !== "enviar_mensaje_chat" && h.name !== "enviar_correo" && h.name !== "programar_accion");
+  h.name !== "enviar_mensaje_chat" && h.name !== "enviar_correo" && h.name !== "programar_accion"
+  && h.name !== "marcar_recogida");
 const IA_CORREO_SYSTEM_PROMPT = IA_SYSTEM_PROMPT +
   " En esta conversacion en concreto no tienes herramientas para enviar nada: tu respuesta de texto ES el " +
   "correo que se va a mandar, redactala ya como el cuerpo final de un email (sin encabezados tipo \"Asunto:\").";

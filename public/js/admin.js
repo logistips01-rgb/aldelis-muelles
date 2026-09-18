@@ -3687,6 +3687,11 @@ function cargarConfigListeners() {
     renderCambiosPdfEmails();
   }, () => {});
 
+  db.collection("config").doc("contactos").onSnapshot(d => {
+    _contactosCache = (d.exists && Array.isArray(d.data().personas)) ? d.data().personas : [];
+    renderContactos();
+  }, () => {});
+
   // config/app ya está escuchado en vigilarVersion() — no duplicar
 
   db.collection("config").doc("destinos").onSnapshot(d => {
@@ -4083,6 +4088,53 @@ async function eliminarEmailCambiosPdf(idx) {
   const nuevos = _cambiosPdfEmailsCache.filter((_, i) => i !== idx);
   try {
     await db.collection("config").doc("cambios_pdf").set({ emails: nuevos }, { merge: true });
+  } catch (e) { alert("Error al guardar: " + e.message); }
+}
+
+// Directorio de nombre -> email para que Robin (el asistente) sepa a quien
+// mandar algo cuando se le da un nombre en vez de una direccion. Vive en
+// config/contactos ({personas: [{nombre, email}, ...]}), que Robin ya puede
+// leer con su herramienta listar_documentos sobre la coleccion "config".
+let _contactosCache = [];
+
+function renderContactos() {
+  const div = document.getElementById("contactos-lista");
+  if (!div) return;
+  if (!_contactosCache.length) {
+    div.innerHTML = "<p style='font-size:13px;color:#9CA3AF'>Sin contactos guardados todavia.</p>";
+    return;
+  }
+  div.innerHTML = _contactosCache.map((c, i) =>
+    "<div class='lista-config-fila'>" +
+    "<span class='lista-config-email'><b>" + esc(c.nombre) + "</b> — " + esc(c.email) + "</span>" +
+    "<button class='btn-quitar-mini' onclick='eliminarContacto(" + i + ")'>Quitar</button>" +
+    "</div>"
+  ).join("");
+}
+
+async function agregarContacto() {
+  const inpNombre = document.getElementById("contacto-nombre-nuevo");
+  const inpEmail = document.getElementById("contacto-email-nuevo");
+  const nombre = (inpNombre.value || "").trim();
+  const email = (inpEmail.value || "").trim().toLowerCase();
+  if (!nombre) { alert("Introduce un nombre."); return; }
+  if (!email || !email.includes("@")) { alert("Introduce un email valido."); return; }
+  if (_contactosCache.some(c => c.nombre.toLowerCase() === nombre.toLowerCase())) {
+    alert("Ya hay un contacto guardado con ese nombre.");
+    return;
+  }
+  const nuevos = [..._contactosCache, { nombre, email }];
+  try {
+    await db.collection("config").doc("contactos").set({ personas: nuevos }, { merge: true });
+    inpNombre.value = ""; inpEmail.value = "";
+  } catch (e) { alert("Error al guardar: " + e.message); }
+}
+
+async function eliminarContacto(idx) {
+  if (!confirm("Quitar este contacto?")) return;
+  const nuevos = _contactosCache.filter((_, i) => i !== idx);
+  try {
+    await db.collection("config").doc("contactos").set({ personas: nuevos }, { merge: true });
   } catch (e) { alert("Error al guardar: " + e.message); }
 }
 

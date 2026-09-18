@@ -463,6 +463,22 @@
       </div>
 
       <div class="informe-card" style="margin-top:16px">
+        <div class="informe-card-title">Directorio de contactos (para Robin)</div>
+        <p style="font-size:13px;color:#6B7280;margin-bottom:12px">
+          Para que Robin sepa a qué dirección mandar algo cuando le dices un nombre en vez de un email
+          ("mándale esto a Jorge"). No afecta a ninguna otra lista de destinatarios.
+        </p>
+        <div id="contactos-lista"></div>
+        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+          <input type="text" id="contacto-nombre-nuevo" placeholder="Nombre"
+            style="width:160px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
+          <input type="email" id="contacto-email-nuevo" placeholder="email@ejemplo.com"
+            style="flex:1;min-width:200px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
+          <button class="btn-informe" onclick="agregarContacto()">Agregar</button>
+        </div>
+      </div>
+
+      <div class="informe-card" style="margin-top:16px">
         <div class="informe-card-title">Tiempo maximo de lanzadera</div>
         <p style="font-size:13px;color:#6B7280;margin-bottom:12px">Si una lanzadera lleva mas de este tiempo parada en una nave, se envia la alerta por correo. El banner rojo aparece 30 minutos despues.</p>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
