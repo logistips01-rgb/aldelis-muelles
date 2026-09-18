@@ -1160,6 +1160,37 @@ exports.liberarChoferAlSalir = onDocumentWritten("lanzaderas/{id}", async (event
   } catch (e) { console.error("liberar al salir:", e.message); }
 });
 
+// Robin saluda cuando un chofer se registra por primera vez ese dia (se crea
+// el documento en lanzaderas_chofer) y se despide cuando termina su jornada
+// (liberarChoferAlSalir, justo arriba, borra ese mismo documento). Funcion
+// aparte y puramente aditiva: solo escribe un mensaje de chat, nunca toca el
+// estado de la lanzadera ni nada mas.
+exports.robinSaludaChofer = onDocumentWritten("lanzaderas_chofer/{numero}", async (event) => {
+  const antes = event.data && event.data.before && event.data.before.exists ? event.data.before.data() : null;
+  const despues = event.data && event.data.after && event.data.after.exists ? event.data.after.data() : null;
+  const numero = Number(event.params.numero);
+  if (!(numero >= 1 && numero <= 4)) return;
+
+  let texto = null;
+  if (!antes && despues) {
+    const nombre = (despues.nombre || "").trim().split(" ")[0];
+    texto = (nombre ? "¡Buenos días, " + nombre + "! " : "¡Buenos días! ") +
+      "Soy Robin, el asistente de Aldelis. Que tengas un buen turno 🚚";
+  } else if (antes && !despues) {
+    const nombre = (antes.nombre || "").trim().split(" ")[0];
+    texto = (nombre ? "¡Hasta la próxima, " + nombre + "! " : "¡Hasta la próxima! ") + "Buen descanso 👋";
+  } else {
+    return; // actualizacion normal (mismo chofer, mismo dia): no saludar de nuevo
+  }
+
+  try {
+    await db.collection("mensajes").add({
+      lanzadera: numero, de: "almacen", emisor: "Robin (IA Muelles)", texto,
+      ts: admin.firestore.Timestamp.now()
+    });
+  } catch (e) { console.error("robinSaludaChofer:", e.message); }
+});
+
 // ── Notificación push al chat de lanzaderas ─────────────────────────────────
 
 exports.notifChat = onDocumentCreated("mensajes/{msgId}", async (event) => {
