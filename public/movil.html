@@ -176,6 +176,19 @@
       <div id="vista-lanz"></div>
       <div id="vista-recog" style="display:none"></div>
       <div id="vista-chat" style="display:none"></div>
+      <div id="vista-robin" style="display:none;padding:14px">
+        <div id="robin-conversacion" style="display:flex;flex-direction:column;gap:10px;margin-bottom:12px"></div>
+        <div style="display:flex;gap:8px">
+          <textarea id="robin-input" rows="2" placeholder="Escribe o dicta..."
+            style="flex:1;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit;resize:none"
+            onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();preguntarRobinMovil();}"></textarea>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button onclick="toggleMicRobinMovil()" id="robin-btn-mic" style="flex:1;padding:10px;border-radius:8px;border:none;background:#F1F2F5;color:#374151;font-size:16px">&#127908;</button>
+          <button onclick="preguntarRobinMovil()" style="flex:2;padding:10px;border-radius:8px;border:none;background:#1A1A1A;color:#fff;font-size:14px;font-weight:600">Preguntar</button>
+        </div>
+        <div id="robin-estado" style="font-size:12px;color:#9CA3AF;margin-top:8px"></div>
+      </div>
     </div>
 
     <div class="escribir" id="barra-escribir" style="display:none">
@@ -192,6 +205,7 @@
       <div class="tab on" id="tab-lanz" onclick="irA('lanz')"><span class="i">&#128666;</span>Lanzaderas</div>
       <div class="tab" id="tab-recog" onclick="irA('recog')"><span class="i">&#128230;</span>Recogidas</div>
       <div class="tab" id="tab-chat" onclick="irA('chat')"><span class="i">&#128172;</span>Chat</div>
+      <div class="tab" id="tab-robin" onclick="irA('robin')" style="display:none"><span class="i">&#129302;</span>Robin</div>
       <div class="tab" onclick="salir()"><span class="i">&#9099;</span>Salir</div>
     </div>
   </div>

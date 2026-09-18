@@ -140,6 +140,9 @@
     var email = (user.email || "").toLowerCase();
     _emisor = email.split("@")[0];
 
+    // Robin (asistente de IA): solo visible para el admin, igual que en el panel.
+    if (ADMINS.indexOf(email) !== -1) el("tab-robin").style.display = "";
+
     leerPermisos(email).then(function (p) {
       _perms = p;
       if (!p.chat) {
@@ -504,7 +507,8 @@
     if (r) r.textContent = "Actualizado " + hhmm(firebase.firestore.Timestamp.now());
     if (_vista === "lanz") pintarLanzaderas();
     else if (_vista === "recog") pintarRecogidas();
-    else pintarChat();
+    else if (_vista === "chat") pintarChat();
+    // "robin" no necesita repintado periodico: su vista solo cambia al enviar/recibir.
   }
 
   // ── Navegacion ────────────────────────────────────────────────────────────
@@ -512,15 +516,18 @@
   window.irA = function (v) {
     if (v === "chat" && !_perms.chat) return;
     if (v === "recog" && !_perms.lanzaderas) return;
+    if (v === "robin" && ADMINS.indexOf((firebase.auth().currentUser && firebase.auth().currentUser.email || "").toLowerCase()) === -1) return;
     _vista = v;
     el("vista-lanz").style.display = v === "lanz" ? "" : "none";
     el("vista-recog").style.display = v === "recog" ? "" : "none";
     el("vista-chat").style.display = v === "chat" ? "" : "none";
+    el("vista-robin").style.display = v === "robin" ? "" : "none";
     el("barra-escribir").style.display = v === "chat" ? "flex" : "none";
     el("tab-lanz").className = "tab" + (v === "lanz" ? " on" : "");
     el("tab-recog").className = "tab" + (v === "recog" ? " on" : "");
     el("tab-chat").className = "tab" + (v === "chat" ? " on" : "");
-    el("titulo").textContent = v === "lanz" ? "Lanzaderas" : v === "recog" ? "Recogidas" : "Chat";
+    el("tab-robin").className = "tab" + (v === "robin" ? " on" : "");
+    el("titulo").textContent = v === "lanz" ? "Lanzaderas" : v === "recog" ? "Recogidas" : v === "robin" ? "Robin" : "Chat";
     pintar();
     if (v === "chat") window.scrollTo(0, document.body.scrollHeight);
   };
@@ -569,5 +576,76 @@
       alert("No se pudo enviar el mensaje.");
       inp.value = texto;
     });
+  };
+
+  // ── Robin (asistente de IA), version movil: misma funcion de servidor
+  // que en el panel de escritorio, solo cambia la interfaz.
+  function agregarMensajeRobin(rol, texto) {
+    var cont = el("robin-conversacion");
+    if (!cont) return;
+    var esUsuario = rol === "usuario";
+    var burbuja = document.createElement("div");
+    burbuja.style.cssText = "align-self:" + (esUsuario ? "flex-end" : "flex-start") +
+      ";max-width:85%;padding:9px 13px;border-radius:12px;font-size:14px;white-space:pre-wrap;" +
+      (esUsuario ? "background:#1A1A1A;color:#fff" : "background:#F1F2F5;color:#1A1A1A");
+    burbuja.textContent = texto;
+    cont.appendChild(burbuja);
+    cont.scrollIntoView({ block: "end" });
+  }
+
+  window.preguntarRobinMovil = function () {
+    var inp = el("robin-input");
+    var mensaje = (inp.value || "").trim();
+    if (!mensaje) return;
+    var estado = el("robin-estado");
+    agregarMensajeRobin("usuario", mensaje);
+    inp.value = "";
+    estado.textContent = "Pensando...";
+    firebase.functions().httpsCallable("preguntarAsistente")({ mensaje: mensaje })
+      .then(function (res) {
+        if (res.data && res.data.ok) {
+          agregarMensajeRobin("asistente", res.data.respuesta);
+          estado.textContent = "";
+        } else {
+          estado.textContent = (res.data && res.data.error) || "No se pudo obtener respuesta.";
+        }
+      })
+      .catch(function (e) {
+        console.error("preguntarRobinMovil:", e);
+        estado.textContent = "Error al preguntar.";
+      });
+  };
+
+  var _robinReconocimiento = null;
+  var _robinEscuchando = false;
+
+  window.toggleMicRobinMovil = function () {
+    var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    var btn = el("robin-btn-mic");
+    if (!SR) { alert("Este navegador no admite dictado por voz. Escribe la pregunta."); return; }
+
+    if (_robinEscuchando) {
+      if (_robinReconocimiento) _robinReconocimiento.stop();
+      return;
+    }
+
+    _robinReconocimiento = new SR();
+    _robinReconocimiento.lang = "es-ES";
+    _robinReconocimiento.interimResults = false;
+    _robinReconocimiento.onstart = function () {
+      _robinEscuchando = true;
+      if (btn) { btn.style.background = "#D41F3A"; btn.style.color = "#fff"; }
+    };
+    _robinReconocimiento.onresult = function (ev) {
+      var texto = ev.results[0][0].transcript;
+      var inp = el("robin-input");
+      if (inp) inp.value = (inp.value ? inp.value + " " : "") + texto;
+    };
+    _robinReconocimiento.onerror = function (ev) { console.warn("reconocimiento de voz:", ev.error); };
+    _robinReconocimiento.onend = function () {
+      _robinEscuchando = false;
+      if (btn) { btn.style.background = "#F1F2F5"; btn.style.color = "#374151"; }
+    };
+    _robinReconocimiento.start();
   };
 })();
