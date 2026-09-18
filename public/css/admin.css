@@ -284,6 +284,48 @@ body.dark .lista-config-email { color: #E5E5E7; }
 body.dark .btn-quitar-mini { border-color: #5C2530; }
 body.dark .btn-quitar-mini:hover { background: #3A1E22; }
 
+/* Acordeon de la pestaña Configuracion: agrupa las tarjetas relacionadas
+   para que no crezca sin fin. Solo un grupo abierto a la vez
+   (toggleCfgGrupo en admin.js cierra los demas). */
+.cfg-grupo {
+  border: 1px solid #E5E7EB;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #fff;
+}
+.cfg-grupo-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1A1A1A;
+  user-select: none;
+}
+.cfg-grupo-header:hover { background: #F9FAFB; }
+.cfg-grupo-flecha {
+  transition: transform 0.2s ease;
+  color: #9CA3AF;
+  font-size: 13px;
+}
+.cfg-grupo.abierto .cfg-grupo-flecha { transform: rotate(90deg); }
+.cfg-grupo-contenido {
+  max-height: 0;
+  overflow: hidden;
+  padding: 0 18px;
+  transition: max-height 0.25s ease;
+}
+.cfg-grupo.abierto .cfg-grupo-contenido {
+  max-height: none;
+  padding-bottom: 18px;
+}
+.cfg-grupo-contenido .informe-card:first-child { margin-top: 0 !important; }
+body.dark .cfg-grupo { background: #1E1E20; border-color: #2A2A2E; }
+body.dark .cfg-grupo-header { color: #E5E5E7; }
+body.dark .cfg-grupo-header:hover { background: #26262A; }
+
 .empty-state {
   text-align: center;
   padding: 40px;

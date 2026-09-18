@@ -435,144 +435,235 @@
         <div class="section-title" style="margin-bottom:0">Configuracion del sistema</div>
       </div>
 
-      <div class="informe-card" style="margin-top:16px">
-        <div class="informe-card-title">Destinatarios de alertas de lanzaderas</div>
-        <p style="font-size:13px;color:#6B7280;margin-bottom:12px">Cuando una lanzadera supera el tiempo maximo, se envia un correo a todos estos destinatarios.</p>
-        <div id="cfg-alertas-lista"></div>
-        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
-          <input type="email" id="cfg-alerta-email" placeholder="nuevo@email.com" style="flex:1;min-width:200px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
-          <button class="btn-informe" onclick="agregarEmailAlerta()">Agregar</button>
+      <div class="cfg-grupo" style="margin-top:16px">
+        <div class="cfg-grupo-header" onclick="toggleCfgGrupo(this)">
+          <span>Alertas y avisos</span>
+          <span class="cfg-grupo-flecha">▸</span>
+        </div>
+        <div class="cfg-grupo-contenido">
+
+          <div class="informe-card" style="margin-top:16px">
+            <div class="informe-card-title">Destinatarios de alertas de lanzaderas</div>
+            <p style="font-size:13px;color:#6B7280;margin-bottom:12px">Cuando una lanzadera supera el tiempo maximo, se envia un correo a todos estos destinatarios.</p>
+            <div id="cfg-alertas-lista"></div>
+            <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+              <input type="email" id="cfg-alerta-email" placeholder="nuevo@email.com" style="flex:1;min-width:200px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
+              <button class="btn-informe" onclick="agregarEmailAlerta()">Agregar</button>
+            </div>
+          </div>
+
+          <div class="informe-card" style="margin-top:16px">
+            <div class="informe-card-title">Avisos de nuevas reservas de muelle</div>
+            <p style="font-size:13px;color:#6B7280;margin-bottom:12px">Cuando se hace una reserva nueva, se envia un correo a todos estos destinatarios.</p>
+            <div id="cfg-reservas-lista"></div>
+            <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+              <input type="email" id="cfg-reserva-email" placeholder="nuevo@email.com" style="flex:1;min-width:200px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
+              <button class="btn-informe" onclick="agregarEmailReserva()">Agregar</button>
+            </div>
+          </div>
+
+          <div class="informe-card" style="margin-top:16px">
+            <div class="informe-card-title">Tiempo maximo de lanzadera</div>
+            <p style="font-size:13px;color:#6B7280;margin-bottom:12px">Si una lanzadera lleva mas de este tiempo parada en una nave, se envia la alerta por correo. El banner rojo aparece 30 minutos despues.</p>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <input type="number" id="cfg-tiempo-max" min="15" max="480" step="5" value="90" style="width:90px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
+              <span style="font-size:14px;color:#6B7280">minutos</span>
+              <button class="btn-informe" onclick="guardarTiempoMax()">Guardar</button>
+              <span id="cfg-tiempo-ok" style="font-size:13px;color:#1D9E75;display:none">Guardado correctamente</span>
+            </div>
+          </div>
+
+          <div class="informe-card" style="margin-top:16px">
+            <div class="informe-card-title">Horarios de cierre de almacenes</div>
+            <p style="font-size:13px;color:#6B7280;margin-bottom:12px">Si con el ritmo de hoy no se va a llegar a recoger todo antes de esta hora, se avisa por correo (a los mismos destinatarios de arriba) y con un aviso en el panel, en la pestaña Pedidos.</p>
+            <div style="display:flex;gap:16px;flex-wrap:wrap">
+              <div><label style="font-size:13px;color:#374151;display:block;margin-bottom:4px">Avitrans</label>
+                <input type="time" id="cfg-cierre-avitrans" style="padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit"></div>
+              <div><label style="font-size:13px;color:#374151;display:block;margin-bottom:4px">Caserfri</label>
+                <input type="time" id="cfg-cierre-caserfri" style="padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit"></div>
+              <div><label style="font-size:13px;color:#374151;display:block;margin-bottom:4px">Txt</label>
+                <input type="time" id="cfg-cierre-txt" style="padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit"></div>
+            </div>
+            <div style="margin-top:12px">
+              <button class="btn-informe" onclick="guardarCierresAlmacenes()">Guardar</button>
+              <span id="cfg-cierres-ok" style="font-size:13px;color:#1D9E75;display:none;margin-left:8px">Guardado correctamente</span>
+            </div>
+          </div>
+
         </div>
       </div>
 
-      <div class="informe-card" style="margin-top:16px">
-        <div class="informe-card-title">Avisos de nuevas reservas de muelle</div>
-        <p style="font-size:13px;color:#6B7280;margin-bottom:12px">Cuando se hace una reserva nueva, se envia un correo a todos estos destinatarios.</p>
-        <div id="cfg-reservas-lista"></div>
-        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
-          <input type="email" id="cfg-reserva-email" placeholder="nuevo@email.com" style="flex:1;min-width:200px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
-          <button class="btn-informe" onclick="agregarEmailReserva()">Agregar</button>
+      <div class="cfg-grupo" style="margin-top:16px">
+        <div class="cfg-grupo-header" onclick="toggleCfgGrupo(this)">
+          <span>Cambios de material</span>
+          <span class="cfg-grupo-flecha">▸</span>
+        </div>
+        <div class="cfg-grupo-contenido">
+
+          <div class="informe-card" style="margin-top:16px">
+            <div class="informe-card-title">Avisos de Cambios de material</div>
+            <p style="font-size:13px;color:#6B7280;margin-bottom:12px">
+              Reciben un correo al darse de alta un cambio de material, y otro cuando se marca como ejecutado.
+              Aparte del permiso de "Cambios de material", solo quien tenga acceso a Configuracion puede ver o tocar esta lista.
+            </p>
+            <div id="cambios-emails-lista"></div>
+            <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+              <input type="email" id="cambios-email-nuevo" placeholder="email@ejemplo.com"
+                style="flex:1;min-width:200px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
+              <button class="btn-informe" onclick="agregarEmailCambios()">Agregar</button>
+            </div>
+          </div>
+
+          <div class="informe-card" style="margin-top:16px">
+            <div class="informe-card-title">Avisos de Cambios de material con documento (fecha fija)</div>
+            <p style="font-size:13px;color:#6B7280;margin-bottom:12px">
+              Cuando un cambio de material de fecha fija (no "agotar stock") lleva un PDF adjunto, estos destinatarios
+              reciben un correo aparte con el PDF adjunto y una vista previa. Lista independiente de la de arriba.
+            </p>
+            <div id="cambios-pdf-emails-lista"></div>
+            <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+              <input type="email" id="cambios-pdf-email-nuevo" placeholder="email@ejemplo.com"
+                style="flex:1;min-width:200px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
+              <button class="btn-informe" onclick="agregarEmailCambiosPdf()">Agregar</button>
+            </div>
+            <div style="margin-top:14px;padding-top:14px;border-top:1px solid #eee">
+              <label style="font-size:13px;color:#374151;display:block;margin-bottom:6px">Añadir varias de golpe</label>
+              <p style="font-size:12.5px;color:#6B7280;margin-bottom:8px">
+                Pega aquí el bloque de destinatarios (vale tal cual salga al ver el origen/detalles del correo, con
+                nombres y todo — solo se cogen las direcciones), separadas por comas, espacios o saltos de línea.
+              </p>
+              <textarea id="cambios-pdf-email-bulk" rows="4" placeholder="Nombre Apellido &lt;correo1@ejemplo.com&gt;; Otro Nombre &lt;correo2@ejemplo.com&gt;; ..."
+                style="width:100%;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:13px;font-family:inherit;resize:vertical"></textarea>
+              <button class="btn-informe" style="margin-top:8px" onclick="agregarEmailsCambiosPdfBulk()">Añadir todas</button>
+              <span id="cambios-pdf-bulk-resultado" style="font-size:13px;margin-left:10px"></span>
+            </div>
+          </div>
+
         </div>
       </div>
 
-      <div class="informe-card" style="margin-top:16px">
-        <div class="informe-card-title">Avisos de Cambios de material</div>
-        <p style="font-size:13px;color:#6B7280;margin-bottom:12px">
-          Reciben un correo al darse de alta un cambio de material, y otro cuando se marca como ejecutado.
-          Aparte del permiso de "Cambios de material", solo quien tenga acceso a Configuracion puede ver o tocar esta lista.
-        </p>
-        <div id="cambios-emails-lista"></div>
-        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
-          <input type="email" id="cambios-email-nuevo" placeholder="email@ejemplo.com"
-            style="flex:1;min-width:200px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
-          <button class="btn-informe" onclick="agregarEmailCambios()">Agregar</button>
+      <div class="cfg-grupo" style="margin-top:16px">
+        <div class="cfg-grupo-header" onclick="toggleCfgGrupo(this)">
+          <span>Robin / IA</span>
+          <span class="cfg-grupo-flecha">▸</span>
+        </div>
+        <div class="cfg-grupo-contenido">
+
+          <div class="informe-card" style="margin-top:16px">
+            <div class="informe-card-title">Directorio de contactos (para Robin)</div>
+            <p style="font-size:13px;color:#6B7280;margin-bottom:12px">
+              Para que Robin sepa a qué dirección mandar algo cuando le dices un nombre en vez de un email
+              ("mándale esto a Jorge"). No afecta a ninguna otra lista de destinatarios.
+            </p>
+            <div id="contactos-lista"></div>
+            <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+              <input type="text" id="contacto-nombre-nuevo" placeholder="Nombre"
+                style="width:160px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
+              <input type="email" id="contacto-email-nuevo" placeholder="email@ejemplo.com"
+                style="flex:1;min-width:200px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
+              <button class="btn-informe" onclick="agregarContacto()">Agregar</button>
+            </div>
+          </div>
+
+          <div class="informe-card" style="margin-top:16px">
+            <div class="informe-card-title">Tareas programadas</div>
+            <p style="font-size:13px;color:#6B7280;margin-bottom:12px">
+              Correos o mensajes de chat que se envian solos en la fecha/hora indicada, sin pasar por Robin
+              (no consume ninguna peticion de IA). Se pueden repetir a diario o cada semana.
+            </p>
+            <div id="tareas-prog-lista"></div>
+            <div style="margin-top:12px;padding-top:12px;border-top:1px solid #eee;display:flex;flex-direction:column;gap:8px">
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <select id="tarea-prog-tipo" onchange="cambioTipoTareaProgramada()" style="padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
+                  <option value="enviar_correo">Enviar correo</option>
+                  <option value="enviar_mensaje_chat">Mensaje de chat a lanzadera</option>
+                </select>
+                <select id="tarea-prog-recurrencia" style="padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
+                  <option value="ninguna">Una sola vez</option>
+                  <option value="diaria">Cada dia</option>
+                  <option value="semanal">Cada semana</option>
+                </select>
+                <input type="datetime-local" id="tarea-prog-momento" style="padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
+              </div>
+              <div id="tarea-prog-campos-correo" style="display:flex;gap:8px;flex-wrap:wrap">
+                <input type="email" id="tarea-prog-destinatario" placeholder="destinatario@ejemplo.com" style="flex:1;min-width:200px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
+                <input type="text" id="tarea-prog-asunto" placeholder="Asunto" style="flex:1;min-width:200px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
+                <textarea id="tarea-prog-cuerpo" rows="3" placeholder="Cuerpo del correo" style="width:100%;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit;resize:vertical"></textarea>
+              </div>
+              <div id="tarea-prog-campos-chat" style="display:none;gap:8px;flex-wrap:wrap">
+                <select id="tarea-prog-lanzadera" style="padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
+                  <option value="1">Lanzadera 1</option>
+                  <option value="2">Lanzadera 2</option>
+                  <option value="3">Lanzadera 3</option>
+                  <option value="4">Lanzadera 4</option>
+                </select>
+                <textarea id="tarea-prog-texto" rows="2" placeholder="Texto del mensaje" style="width:100%;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit;resize:vertical"></textarea>
+              </div>
+              <div>
+                <button class="btn-informe" onclick="crearTareaProgramada()">Programar tarea</button>
+                <span id="tarea-prog-msg" style="font-size:13px;margin-left:10px"></span>
+              </div>
+            </div>
+          </div>
+
         </div>
       </div>
 
-      <div class="informe-card" style="margin-top:16px">
-        <div class="informe-card-title">Avisos de Cambios de material con documento (fecha fija)</div>
-        <p style="font-size:13px;color:#6B7280;margin-bottom:12px">
-          Cuando un cambio de material de fecha fija (no "agotar stock") lleva un PDF adjunto, estos destinatarios
-          reciben un correo aparte con el PDF adjunto y una vista previa. Lista independiente de la de arriba.
-        </p>
-        <div id="cambios-pdf-emails-lista"></div>
-        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
-          <input type="email" id="cambios-pdf-email-nuevo" placeholder="email@ejemplo.com"
-            style="flex:1;min-width:200px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
-          <button class="btn-informe" onclick="agregarEmailCambiosPdf()">Agregar</button>
+      <div class="cfg-grupo" style="margin-top:16px">
+        <div class="cfg-grupo-header" onclick="toggleCfgGrupo(this)">
+          <span>Lanzaderas y costes</span>
+          <span class="cfg-grupo-flecha">▸</span>
         </div>
-        <div style="margin-top:14px;padding-top:14px;border-top:1px solid #eee">
-          <label style="font-size:13px;color:#374151;display:block;margin-bottom:6px">Añadir varias de golpe</label>
-          <p style="font-size:12.5px;color:#6B7280;margin-bottom:8px">
-            Pega aquí el bloque de destinatarios (vale tal cual salga al ver el origen/detalles del correo, con
-            nombres y todo — solo se cogen las direcciones), separadas por comas, espacios o saltos de línea.
-          </p>
-          <textarea id="cambios-pdf-email-bulk" rows="4" placeholder="Nombre Apellido &lt;correo1@ejemplo.com&gt;; Otro Nombre &lt;correo2@ejemplo.com&gt;; ..."
-            style="width:100%;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:13px;font-family:inherit;resize:vertical"></textarea>
-          <button class="btn-informe" style="margin-top:8px" onclick="agregarEmailsCambiosPdfBulk()">Añadir todas</button>
-          <span id="cambios-pdf-bulk-resultado" style="font-size:13px;margin-left:10px"></span>
+        <div class="cfg-grupo-contenido">
+
+          <div class="informe-card" style="margin-top:16px">
+            <div class="informe-card-title">Dias laborables al mes</div>
+            <p style="font-size:13px;color:#6B7280;margin-bottom:12px">Numero de dias laborables del mes actual. Afecta al coste diario de las lanzaderas 1, 2 y 3 (12.500 € / mes). Usa 20 para meses con festivos extra, 24 para meses completos.</p>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <input type="number" id="cfg-dias-lab" min="18" max="26" step="1" value="22" style="width:90px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
+              <span style="font-size:14px;color:#6B7280">dias</span>
+              <button class="btn-informe" onclick="guardarDiasLaborables()">Guardar</button>
+              <span id="cfg-dias-ok" style="font-size:13px;color:#1D9E75;display:none">Guardado correctamente</span>
+            </div>
+          </div>
+
+          <div class="informe-card" style="margin-top:16px">
+            <div class="informe-card-title">Destinos de lanzadera</div>
+            <p style="font-size:13px;color:#6B7280;margin-bottom:12px">Naves y ubicaciones disponibles. Los cambios se aplican de inmediato en este panel y en las apps de los conductores.</p>
+            <div id="cfg-destinos-lista"></div>
+            <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+              <input type="text" id="cfg-destino-id" placeholder="ID (ej: nueva_nave)" style="width:160px;flex-shrink:0;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
+              <input type="text" id="cfg-destino-nombre" placeholder="Nombre (ej: Nueva Nave)" style="flex:1;min-width:140px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
+              <button class="btn-informe" onclick="agregarDestino()">Agregar</button>
+            </div>
+          </div>
+
         </div>
       </div>
 
-      <div class="informe-card" style="margin-top:16px">
-        <div class="informe-card-title">Directorio de contactos (para Robin)</div>
-        <p style="font-size:13px;color:#6B7280;margin-bottom:12px">
-          Para que Robin sepa a qué dirección mandar algo cuando le dices un nombre en vez de un email
-          ("mándale esto a Jorge"). No afecta a ninguna otra lista de destinatarios.
-        </p>
-        <div id="contactos-lista"></div>
-        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
-          <input type="text" id="contacto-nombre-nuevo" placeholder="Nombre"
-            style="width:160px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
-          <input type="email" id="contacto-email-nuevo" placeholder="email@ejemplo.com"
-            style="flex:1;min-width:200px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
-          <button class="btn-informe" onclick="agregarContacto()">Agregar</button>
+      <div class="cfg-grupo" style="margin-top:16px">
+        <div class="cfg-grupo-header" onclick="toggleCfgGrupo(this)">
+          <span>Usuarios</span>
+          <span class="cfg-grupo-flecha">▸</span>
         </div>
-      </div>
+        <div class="cfg-grupo-contenido">
 
-      <div class="informe-card" style="margin-top:16px">
-        <div class="informe-card-title">Tiempo maximo de lanzadera</div>
-        <p style="font-size:13px;color:#6B7280;margin-bottom:12px">Si una lanzadera lleva mas de este tiempo parada en una nave, se envia la alerta por correo. El banner rojo aparece 30 minutos despues.</p>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <input type="number" id="cfg-tiempo-max" min="15" max="480" step="5" value="90" style="width:90px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
-          <span style="font-size:14px;color:#6B7280">minutos</span>
-          <button class="btn-informe" onclick="guardarTiempoMax()">Guardar</button>
-          <span id="cfg-tiempo-ok" style="font-size:13px;color:#1D9E75;display:none">Guardado correctamente</span>
-        </div>
-      </div>
+          <div class="informe-card" style="margin-top:16px">
+            <div class="informe-card-title">Permisos de usuario</div>
+            <p style="font-size:13px;color:#6B7280;margin-bottom:12px">
+              Marca que secciones puede ver cada usuario. Los cambios se aplican la proxima vez que el usuario entre.
+              Cada usuario solo lee de la base de datos las secciones que tiene marcadas.
+            </p>
+            <div id="cfg-permisos-lista"></div>
+            <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;align-items:center">
+              <input type="email" id="cfg-permiso-email" placeholder="usuario@aldelis.com"
+                style="flex:1;min-width:220px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
+              <button class="btn-informe" onclick="agregarUsuarioPermisos()">Agregar usuario</button>
+            </div>
+            <p id="cfg-permisos-msg" style="font-size:13px;margin-top:10px;display:none"></p>
+          </div>
 
-      <div class="informe-card" style="margin-top:16px">
-        <div class="informe-card-title">Horarios de cierre de almacenes</div>
-        <p style="font-size:13px;color:#6B7280;margin-bottom:12px">Si con el ritmo de hoy no se va a llegar a recoger todo antes de esta hora, se avisa por correo (a los mismos destinatarios de arriba) y con un aviso en el panel, en la pestaña Pedidos.</p>
-        <div style="display:flex;gap:16px;flex-wrap:wrap">
-          <div><label style="font-size:13px;color:#374151;display:block;margin-bottom:4px">Avitrans</label>
-            <input type="time" id="cfg-cierre-avitrans" style="padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit"></div>
-          <div><label style="font-size:13px;color:#374151;display:block;margin-bottom:4px">Caserfri</label>
-            <input type="time" id="cfg-cierre-caserfri" style="padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit"></div>
-          <div><label style="font-size:13px;color:#374151;display:block;margin-bottom:4px">Txt</label>
-            <input type="time" id="cfg-cierre-txt" style="padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit"></div>
         </div>
-        <div style="margin-top:12px">
-          <button class="btn-informe" onclick="guardarCierresAlmacenes()">Guardar</button>
-          <span id="cfg-cierres-ok" style="font-size:13px;color:#1D9E75;display:none;margin-left:8px">Guardado correctamente</span>
-        </div>
-      </div>
-
-      <div class="informe-card" style="margin-top:16px">
-        <div class="informe-card-title">Dias laborables al mes</div>
-        <p style="font-size:13px;color:#6B7280;margin-bottom:12px">Numero de dias laborables del mes actual. Afecta al coste diario de las lanzaderas 1, 2 y 3 (12.500 € / mes). Usa 20 para meses con festivos extra, 24 para meses completos.</p>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <input type="number" id="cfg-dias-lab" min="18" max="26" step="1" value="22" style="width:90px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
-          <span style="font-size:14px;color:#6B7280">dias</span>
-          <button class="btn-informe" onclick="guardarDiasLaborables()">Guardar</button>
-          <span id="cfg-dias-ok" style="font-size:13px;color:#1D9E75;display:none">Guardado correctamente</span>
-        </div>
-      </div>
-
-      <div class="informe-card" style="margin-top:16px">
-        <div class="informe-card-title">Destinos de lanzadera</div>
-        <p style="font-size:13px;color:#6B7280;margin-bottom:12px">Naves y ubicaciones disponibles. Los cambios se aplican de inmediato en este panel y en las apps de los conductores.</p>
-        <div id="cfg-destinos-lista"></div>
-        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
-          <input type="text" id="cfg-destino-id" placeholder="ID (ej: nueva_nave)" style="width:160px;flex-shrink:0;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
-          <input type="text" id="cfg-destino-nombre" placeholder="Nombre (ej: Nueva Nave)" style="flex:1;min-width:140px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
-          <button class="btn-informe" onclick="agregarDestino()">Agregar</button>
-        </div>
-      </div>
-
-      <div class="informe-card" style="margin-top:16px">
-        <div class="informe-card-title">Permisos de usuario</div>
-        <p style="font-size:13px;color:#6B7280;margin-bottom:12px">
-          Marca que secciones puede ver cada usuario. Los cambios se aplican la proxima vez que el usuario entre.
-          Cada usuario solo lee de la base de datos las secciones que tiene marcadas.
-        </p>
-        <div id="cfg-permisos-lista"></div>
-        <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;align-items:center">
-          <input type="email" id="cfg-permiso-email" placeholder="usuario@aldelis.com"
-            style="flex:1;min-width:220px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
-          <button class="btn-informe" onclick="agregarUsuarioPermisos()">Agregar usuario</button>
-        </div>
-        <p id="cfg-permisos-msg" style="font-size:13px;margin-top:10px;display:none"></p>
       </div>
     </div>
 

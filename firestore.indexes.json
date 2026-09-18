@@ -39,6 +39,14 @@
         { "fieldPath": "turno", "order": "ASCENDING" },
         { "fieldPath": "fechaEnvio", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "tareas_programadas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "activa", "order": "ASCENDING" },
+        { "fieldPath": "proximaEjecucion", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

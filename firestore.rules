@@ -438,5 +438,27 @@ service cloud.firestore {
         && d.texto is string && d.texto.size() > 0 && d.texto.size() <= 1000;
     }
 
+    // ── Tareas programadas (sin IA, sin gasto de tokens) ────────────────────
+    // El propio panel crea/edita/borra estos documentos directamente (sin
+    // Cloud Function): solo el administrador puede usarlos. La ejecucion la
+    // hace unicamente el servidor (ejecutarTareasProgramadas), que reutiliza
+    // iaEnviarCorreo/iaEnviarMensajeChat sin llamar nunca a la IA.
+    match /tareas_programadas/{id} {
+      allow read: if esAdmin();
+      allow create, update: if esAdmin() && validTareaProgramada();
+      allow delete: if esAdmin();
+    }
+
+    function validTareaProgramada() {
+      let d = request.resource.data;
+      return d.tipo in ['enviar_correo', 'enviar_mensaje_chat']
+        && d.recurrencia in ['ninguna', 'diaria', 'semanal']
+        && d.activa is bool
+        && d.proximaEjecucion is timestamp
+        && d.parametros is map
+        && d.creadoPor is string
+        && d.creado is timestamp;
+    }
+
   }
 }

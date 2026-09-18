@@ -3765,3 +3765,63 @@ exports.ejecutarAccionesProgramadasRobin = onSchedule(
     }
   }
 );
+
+// Tareas programadas por el propio administrador desde el panel (sin pasar
+// por Robin, sin gastar tokens de IA): reutiliza exactamente las mismas
+// funciones de envio que las herramientas de Robin (iaEnviarCorreo/
+// iaEnviarMensajeChat), asi que esta funcion NUNCA llama a la IA. El panel
+// crea/edita/borra los documentos directamente en Firestore (permitido solo
+// al admin via firestore.rules); esta funcion solo se encarga de ejecutar
+// y, si la tarea es recurrente, reprogramar la siguiente ejecucion.
+function sumarDiasTimestamp(ts, dias) {
+  return admin.firestore.Timestamp.fromMillis(ts.toMillis() + dias * 24 * 60 * 60 * 1000);
+}
+
+exports.ejecutarTareasProgramadas = onSchedule(
+  { schedule: "every 5 minutes", timeZone: "Europe/Madrid" },
+  async () => {
+    const ahora = admin.firestore.Timestamp.now();
+    let snap;
+    try {
+      snap = await db.collection("tareas_programadas")
+        .where("activa", "==", true).where("proximaEjecucion", "<=", ahora).get();
+    } catch (e) { console.error("ejecutarTareasProgramadas: consulta:", e.message); return; }
+
+    if (snap.empty) return;
+    console.log("ejecutarTareasProgramadas: " + snap.size + " tarea(s) por ejecutar.");
+
+    for (const doc of snap.docs) {
+      const d = doc.data();
+      try {
+        let resultado;
+        if (d.tipo === "enviar_correo") resultado = await iaEnviarCorreo(d.parametros || {});
+        else if (d.tipo === "enviar_mensaje_chat") resultado = await iaEnviarMensajeChat(d.parametros || {});
+        else resultado = { error: "Tipo de tarea desconocido: " + d.tipo };
+
+        const cambios = { ultimaEjecucion: admin.firestore.Timestamp.now() };
+        if (resultado && resultado.error) {
+          cambios.ultimoError = resultado.error;
+          console.error("ejecutarTareasProgramadas: tarea", doc.id, "fallo:", resultado.error);
+        } else {
+          cambios.ultimoError = null;
+          console.log("ejecutarTareasProgramadas: tarea", doc.id, "(" + d.tipo + ") ejecutada.");
+        }
+
+        if (d.recurrencia === "diaria") {
+          cambios.proximaEjecucion = sumarDiasTimestamp(d.proximaEjecucion, 1);
+        } else if (d.recurrencia === "semanal") {
+          cambios.proximaEjecucion = sumarDiasTimestamp(d.proximaEjecucion, 7);
+        } else {
+          cambios.activa = false;
+        }
+
+        await doc.ref.update(cambios);
+      } catch (e) {
+        console.error("ejecutarTareasProgramadas: tarea", doc.id, e.message);
+        await doc.ref.update({
+          ultimoError: e.message, ultimaEjecucion: admin.firestore.Timestamp.now()
+        }).catch(() => {});
+      }
+    }
+  }
+);

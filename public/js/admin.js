@@ -3832,6 +3832,13 @@ function cargarConfigListeners() {
     }
     renderCfgDestinos();
   }, () => {});
+
+  // Tareas programadas (sin IA): coleccion aparte, no un doc de config.
+  db.collection("tareas_programadas").orderBy("proximaEjecucion", "asc")
+    .onSnapshot(snap => {
+      _tareasProgCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderTareasProgramadas();
+    }, () => {});
 }
 
 function actualizarNavesPanel(lista) {
@@ -4268,6 +4275,109 @@ async function eliminarContacto(idx) {
   try {
     await db.collection("config").doc("contactos").set({ personas: nuevos }, { merge: true });
   } catch (e) { alert("Error al guardar: " + e.message); }
+}
+
+// ── Acordeon de Configuracion ────────────────────────────────────────────
+// Un solo grupo abierto a la vez: al pulsar uno se cierran todos los demas.
+function toggleCfgGrupo(header) {
+  const grupo = header.closest(".cfg-grupo");
+  if (!grupo) return;
+  const yaAbierto = grupo.classList.contains("abierto");
+  document.querySelectorAll("#vista-config .cfg-grupo.abierto")
+    .forEach(g => g.classList.remove("abierto"));
+  if (!yaAbierto) grupo.classList.add("abierto");
+}
+
+// ── Tareas programadas (sin IA, sin gasto de tokens) ─────────────────────
+// El panel escribe/borra directamente en Firestore (permitido solo al
+// admin via firestore.rules); la ejecucion la hace la Cloud Function
+// ejecutarTareasProgramadas, que reutiliza iaEnviarCorreo/iaEnviarMensajeChat
+// sin llamar nunca a la IA.
+let _tareasProgCache = [];
+
+function cambioTipoTareaProgramada() {
+  const tipo = document.getElementById("tarea-prog-tipo").value;
+  document.getElementById("tarea-prog-campos-correo").style.display = tipo === "enviar_correo" ? "flex" : "none";
+  document.getElementById("tarea-prog-campos-chat").style.display = tipo === "enviar_mensaje_chat" ? "flex" : "none";
+}
+
+function renderTareasProgramadas() {
+  const div = document.getElementById("tareas-prog-lista");
+  if (!div) return;
+  if (!_tareasProgCache.length) {
+    div.innerHTML = "<p style='font-size:13px;color:#9CA3AF'>Sin tareas programadas todavia.</p>";
+    return;
+  }
+  const recurrenciaTexto = { ninguna: "una sola vez", diaria: "cada dia", semanal: "cada semana" };
+  div.innerHTML = _tareasProgCache.map(t => {
+    const fecha = t.proximaEjecucion && t.proximaEjecucion.toDate
+      ? t.proximaEjecucion.toDate().toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" })
+      : "-";
+    const desc = t.tipo === "enviar_correo"
+      ? "Correo a " + esc((t.parametros && t.parametros.destinatario) || "?") + ": " + esc((t.parametros && t.parametros.asunto) || "")
+      : "Mensaje a lanzadera " + esc(String((t.parametros && t.parametros.lanzadera) || "?"));
+    const estado = t.activa === false
+      ? "<span style='color:#9CA3AF'>(inactiva)</span>"
+      : (t.ultimoError ? "<span style='color:#D41F3A'>(ultimo intento con error)</span>" : "");
+    return "<div class='lista-config-fila'>" +
+      "<span class='lista-config-email'>" + desc + " — " + fecha +
+      " (" + recurrenciaTexto[t.recurrencia] + ") " + estado + "</span>" +
+      "<button class='btn-quitar-mini' onclick='eliminarTareaProgramada(\"" + t.id + "\")'>Quitar</button>" +
+      "</div>";
+  }).join("");
+}
+
+async function crearTareaProgramada() {
+  const tipo = document.getElementById("tarea-prog-tipo").value;
+  const recurrencia = document.getElementById("tarea-prog-recurrencia").value;
+  const momentoStr = document.getElementById("tarea-prog-momento").value;
+  const msg = document.getElementById("tarea-prog-msg");
+  msg.textContent = ""; msg.style.color = "";
+
+  if (!momentoStr) { alert("Elige fecha y hora."); return; }
+  const momentoMs = new Date(momentoStr).getTime();
+  if (!(momentoMs > 0)) { alert("Fecha/hora no valida."); return; }
+
+  let parametros;
+  if (tipo === "enviar_correo") {
+    const destinatario = (document.getElementById("tarea-prog-destinatario").value || "").trim().toLowerCase();
+    const asunto = (document.getElementById("tarea-prog-asunto").value || "").trim();
+    const cuerpo = (document.getElementById("tarea-prog-cuerpo").value || "").trim();
+    if (!destinatario || !destinatario.includes("@")) { alert("Destinatario no valido."); return; }
+    if (!asunto) { alert("Falta el asunto."); return; }
+    parametros = { destinatario, asunto, cuerpo };
+  } else {
+    const lanzadera = Number(document.getElementById("tarea-prog-lanzadera").value);
+    const texto = (document.getElementById("tarea-prog-texto").value || "").trim();
+    if (!texto) { alert("Falta el texto del mensaje."); return; }
+    parametros = { lanzadera, texto };
+  }
+
+  try {
+    await db.collection("tareas_programadas").add({
+      tipo, recurrencia, parametros,
+      activa: true,
+      proximaEjecucion: firebase.firestore.Timestamp.fromMillis(momentoMs),
+      creadoPor: (auth.currentUser && auth.currentUser.email) || "",
+      creado: firebase.firestore.Timestamp.now()
+    });
+    msg.style.color = "#1D9E75";
+    msg.textContent = "Tarea programada correctamente.";
+    document.getElementById("tarea-prog-momento").value = "";
+    document.getElementById("tarea-prog-asunto").value = "";
+    document.getElementById("tarea-prog-cuerpo").value = "";
+    document.getElementById("tarea-prog-texto").value = "";
+  } catch (e) {
+    msg.style.color = "#D41F3A";
+    msg.textContent = "Error al programar: " + e.message;
+  }
+}
+
+async function eliminarTareaProgramada(id) {
+  if (!confirm("Quitar esta tarea programada?")) return;
+  try {
+    await db.collection("tareas_programadas").doc(id).delete();
+  } catch (e) { alert("Error al borrar: " + e.message); }
 }
 
 // Pegar un bloque entero (por ejemplo, el "Para"/"CC" tal cual sale al ver el
