@@ -1165,6 +1165,16 @@ exports.liberarChoferAlSalir = onDocumentWritten("lanzaderas/{id}", async (event
 // (liberarChoferAlSalir, justo arriba, borra ese mismo documento). Funcion
 // aparte y puramente aditiva: solo escribe un mensaje de chat, nunca toca el
 // estado de la lanzadera ni nada mas.
+// Segun la hora real en Madrid, para que un cambio de turno de tarde no
+// salude con un "buenos dias" que no toca.
+function saludoSegunHora() {
+  const local = new Date().toLocaleString("sv-SE", { timeZone: "Europe/Madrid" }); // "YYYY-MM-DD HH:MM:SS"
+  const hora = Number(local.split(" ")[1].split(":")[0]);
+  if (hora >= 6 && hora < 14) return "Buenos días";
+  if (hora >= 14 && hora < 21) return "Buenas tardes";
+  return "Buenas noches";
+}
+
 exports.robinSaludaChofer = onDocumentWritten("lanzaderas_chofer/{numero}", async (event) => {
   const antes = event.data && event.data.before && event.data.before.exists ? event.data.before.data() : null;
   const despues = event.data && event.data.after && event.data.after.exists ? event.data.after.data() : null;
@@ -1174,11 +1184,12 @@ exports.robinSaludaChofer = onDocumentWritten("lanzaderas_chofer/{numero}", asyn
   let texto = null;
   if (!antes && despues) {
     const nombre = (despues.nombre || "").trim().split(" ")[0];
-    texto = (nombre ? "¡Buenos días, " + nombre + "! " : "¡Buenos días! ") +
+    const saludo = saludoSegunHora();
+    texto = (nombre ? "¡" + saludo + ", " + nombre + "! " : "¡" + saludo + "! ") +
       "Soy Robin, el asistente de Aldelis. Que tengas un buen turno 🚚";
   } else if (antes && !despues) {
     const nombre = (antes.nombre || "").trim().split(" ")[0];
-    texto = (nombre ? "¡Hasta la próxima, " + nombre + "! " : "¡Hasta la próxima! ") + "Buen descanso 👋";
+    texto = (nombre ? "¡Hasta la próxima, " + nombre + "! " : "¡Hasta la próxima! ") + saludoSegunHora() + " 👋";
   } else {
     return; // actualizacion normal (mismo chofer, mismo dia): no saludar de nuevo
   }
