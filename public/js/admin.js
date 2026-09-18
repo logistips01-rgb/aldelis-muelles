@@ -1651,6 +1651,35 @@ function enviarPedidoEnvasesDetallado() {
     .finally(() => { btn.disabled = false; btn.textContent = "Mandar pedido a Avitrans"; });
 }
 
+// Dispara ya la estimacion (sin esperar a las 10:45/11:15 ni a que falte el
+// envio manual de hoy), para poder ver el correo de prueba al momento.
+function probarEstimacionEnvasesTurno() {
+  const turno = document.querySelector("input[name='envases-det-turno']:checked").value;
+  const resEl = document.getElementById("envases-det-prueba-resultado");
+  const btn = document.getElementById("envases-det-btn-probar");
+  btn.disabled = true; btn.textContent = "Calculando...";
+  resEl.style.color = "#9CA3AF";
+  resEl.textContent = "Calculando estimación...";
+
+  firebase.functions().httpsCallable("probarEstimacionEnvasesTurno")({ turno })
+    .then(res => {
+      if (res.data && res.data.ok) {
+        resEl.style.color = "#1D9E75";
+        resEl.textContent = "Enviado " + res.data.pt + " a " + res.data.enviadoA + " (" + res.data.total +
+          " huecos de camión, media de " + res.data.muestras + " semana(s)).";
+      } else {
+        resEl.style.color = "#D41F3A";
+        resEl.textContent = (res.data && res.data.error) || "No se pudo generar la estimación.";
+      }
+    })
+    .catch(e => {
+      console.error("probarEstimacionEnvasesTurno:", e);
+      resEl.style.color = "#D41F3A";
+      resEl.textContent = "No se pudo generar la estimación.";
+    })
+    .finally(() => { btn.disabled = false; btn.textContent = "🧪 Probar estimación ahora (turno elegido)"; });
+}
+
 function cargarLanzaderas() {
   const fecha = document.getElementById("fecha-dashboard").value;
   const dayStart = new Date(fecha + "T00:00:00").getTime();

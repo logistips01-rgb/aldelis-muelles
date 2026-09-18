@@ -1794,22 +1794,28 @@ async function estimarPedidoEnvasesTurno(turno, hoy) {
 // "avitrans@aldelis.com" y descomentar la creacion del pedido real.
 const ENVASES_DESTINATARIO_PRUEBA = "mlorente@aldelis.com";
 
-async function revisarEnvasesTurno(turno) {
+// forzar=true (boton "probar ahora" del panel) se salta la comprobacion de
+// "ya enviado hoy", para poder ver el correo de prueba sin esperar a la
+// hora de corte ni a que no haya pedido de hoy todavia.
+async function revisarEnvasesTurno(turno, forzar) {
   const hoy = fechaHoyMadrid();
-  let yaEnviado;
-  try {
-    yaEnviado = await db.collection("envases_avitrans_turnos")
-      .where("fechaEnvio", "==", hoy).where("turno", "==", turno).limit(1).get();
-  } catch (e) { console.error("revisarEnvasesTurno: consulta:", e.message); return; }
-  if (!yaEnviado.empty) {
-    console.log("revisarEnvasesTurno: turno", turno, "ya tiene envio manual hoy, no se hace nada.");
-    return;
+
+  if (!forzar) {
+    let yaEnviado;
+    try {
+      yaEnviado = await db.collection("envases_avitrans_turnos")
+        .where("fechaEnvio", "==", hoy).where("turno", "==", turno).limit(1).get();
+    } catch (e) { console.error("revisarEnvasesTurno: consulta:", e.message); return { ok: false, motivo: "error_consulta" }; }
+    if (!yaEnviado.empty) {
+      console.log("revisarEnvasesTurno: turno", turno, "ya tiene envio manual hoy, no se hace nada.");
+      return { ok: false, motivo: "ya_enviado_hoy" };
+    }
   }
 
   const estimado = await estimarPedidoEnvasesTurno(turno, hoy);
   if (!estimado) {
     console.log("revisarEnvasesTurno: turno", turno, "sin historico todavia para estimar, no se manda nada.");
-    return;
+    return { ok: false, motivo: "sin_historico" };
   }
 
   const fechaRecogida = fechaRecogidaTurno(turno, hoy);
@@ -1835,7 +1841,10 @@ async function revisarEnvasesTurno(turno) {
     console.log("revisarEnvasesTurno: turno", turno, "estimado de prueba enviado a", ENVASES_DESTINATARIO_PRUEBA);
   } catch (e) {
     console.error("revisarEnvasesTurno: envio de correo:", e.message);
+    return { ok: false, motivo: "error_envio" };
   }
+
+  return { ok: true, pt, total: estimado.total, muestras: estimado.muestras, enviadoA: ENVASES_DESTINATARIO_PRUEBA };
 }
 
 exports.revisarEnvasesTurnoNoche = onSchedule(
@@ -1847,6 +1856,33 @@ exports.revisarEnvasesTurnoDia = onSchedule(
   { schedule: "15 11 * * *", timeZone: "Europe/Madrid" },
   async () => { await revisarEnvasesTurno("dia"); }
 );
+
+// Boton "Probar estimacion ahora" del panel: dispara la misma logica que el
+// cron, pero al momento y sin importar si ya hay un envio manual hoy (es
+// solo para ver el correo de prueba, no cambia el comportamiento real).
+exports.probarEstimacionEnvasesTurno = functions.https.onCall(async (request, context) => {
+  const esV2 = !!(request && typeof request === "object" && request.data !== undefined);
+  const data = esV2 ? request.data : request;
+  const ctx  = esV2 ? request : (context || {});
+
+  if (!ctx.app) return { ok: false, error: "No autorizado" };
+  const email = (ctx.auth && ctx.auth.token && ctx.auth.token.email || "").toLowerCase();
+  if (!ADMINS_APP.includes(email)) return { ok: false, error: "Sin permiso" };
+
+  const turno = data && data.turno;
+  if (!["noche", "dia"].includes(turno)) return { ok: false, error: "Falta el turno (noche o dia)" };
+
+  const resultado = await revisarEnvasesTurno(turno, true);
+  if (!resultado || !resultado.ok) {
+    const motivos = {
+      sin_historico: "Todavia no hay historico suficiente para estimar este turno (hace falta al menos una semana igual).",
+      error_consulta: "Error consultando el historico.",
+      error_envio: "Se calculo la estimacion pero fallo el envio del correo."
+    };
+    return { ok: false, error: (resultado && motivos[resultado.motivo]) || "No se pudo generar la estimacion." };
+  }
+  return { ok: true, pt: resultado.pt, total: resultado.total, muestras: resultado.muestras, enviadoA: resultado.enviadoA };
+});
 
 // A veces el chofer se olvida de marcarlo al salir: se registra a mano desde
 // el panel, exactamente igual que si lo hubiera marcado el (misma coleccion
