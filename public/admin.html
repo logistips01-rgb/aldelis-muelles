@@ -308,11 +308,21 @@
         <p class="card-desc" style="margin-bottom:12px">
           Rellena las cantidades y se manda un correo automático a avitrans@aldelis.com con el desglose, y se suma
           el total de huecos de camión a los pendientes de Avitrans (el Europool cuenta la mitad, redondeando hacia arriba).
+          Si un turno no se manda a mano a su hora, la app manda un estimado (de momento solo de prueba, a tu correo).
         </p>
+        <div style="display:flex;gap:16px;margin-bottom:14px;flex-wrap:wrap">
+          <label style="font-weight:400;display:flex;align-items:center;gap:6px">
+            <input type="radio" name="envases-det-turno" value="noche" style="width:auto" checked onchange="cambioTurnoEnvasesDet()"> Turno noche (recogida hoy)</label>
+          <label style="font-weight:400;display:flex;align-items:center;gap:6px">
+            <input type="radio" name="envases-det-turno" value="dia" style="width:auto" onchange="cambioTurnoEnvasesDet()"> Turno día (recogida mañana, o lunes si hoy es viernes)</label>
+        </div>
         <div class="field" style="max-width:220px;margin-bottom:14px">
           <label>Fecha de recogida</label>
           <input type="date" id="envases-det-fecha">
         </div>
+        <label style="font-weight:400;display:flex;align-items:center;gap:6px;margin-bottom:14px">
+          <input type="checkbox" id="envases-det-sin-pedido" style="width:auto" onchange="toggleSinPedidoEnvasesDet()">
+          Sin pedido este turno (hoy no hace falta pedir nada)</label>
         <div class="tabla-scroll">
           <table class="tabla-inf" id="envases-det-tabla">
             <thead><tr><th>Referencia</th><th>Descripción envase</th><th style="width:110px">Cantidad</th></tr></thead>

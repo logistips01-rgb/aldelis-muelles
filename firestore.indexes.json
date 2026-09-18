@@ -31,6 +31,14 @@
         { "fieldPath": "estado", "order": "ASCENDING" },
         { "fieldPath": "momento", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "envases_avitrans_turnos",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "turno", "order": "ASCENDING" },
+        { "fieldPath": "fechaEnvio", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

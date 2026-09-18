@@ -1629,6 +1629,32 @@ const CATALOGO_ENVASES_AVITRANS = {
   "999932": { desc: "CHEP PLASTICO",   tipo: "normal" }
 };
 
+// Cada linea de envases se guarda tambien aqui (turno, si fue "sin pedido",
+// etc.), aparte de en pedidos_transferencia, para poder aprender el patron
+// de cada dia de la semana y, mas adelante, sugerir/enviar un pedido
+// estimado si un turno se queda sin mandar a la hora habitual. Ver
+// revisarEnvasesTurno mas abajo.
+function formatoFechaEs(fechaStr) {
+  return fechaStr.slice(8, 10) + "/" + fechaStr.slice(5, 7) + "/" + fechaStr.slice(0, 4);
+}
+
+function htmlPedidoEnvases(pt, filas, etiquetaExtra) {
+  const filasHtml = filas.map(f =>
+    "<tr><td style='padding:5px 10px;border-bottom:1px solid #eee'>" + esc(f.ref) + "</td>" +
+    "<td style='padding:5px 10px;border-bottom:1px solid #eee'>" + esc(f.desc) + "</td>" +
+    "<td style='padding:5px 10px;border-bottom:1px solid #eee;text-align:center'>" + f.cantidad + "</td></tr>"
+  ).join("");
+  return "<html><body style='font-family:Arial,sans-serif;font-size:13px;color:#1A1A1A'>" +
+    (etiquetaExtra || "") +
+    "<p>Pedido nº " + esc(pt) + "</p>" +
+    "<table style='border-collapse:collapse;width:100%;max-width:480px'>" +
+    "<thead><tr style='background:#F5F5F5;text-align:left'>" +
+    "<th style='padding:5px 10px'>Referencia</th><th style='padding:5px 10px'>Descripcion envase</th>" +
+    "<th style='padding:5px 10px'>Cantidad</th></tr></thead>" +
+    "<tbody>" + filasHtml + "</tbody></table>" +
+    "</body></html>";
+}
+
 exports.registrarPedidoEnvasesAvitrans = functions.https.onCall(async (request, context) => {
   const esV2 = !!(request && typeof request === "object" && request.data !== undefined);
   const data = esV2 ? request.data : request;
@@ -1640,6 +1666,26 @@ exports.registrarPedidoEnvasesAvitrans = functions.https.onCall(async (request, 
 
   const fecha = data && String(data.fecha || "");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return { ok: false, error: "Fecha no valida" };
+  const turno = data && data.turno;
+  if (!["noche", "dia"].includes(turno)) return { ok: false, error: "Falta el turno (noche o dia)" };
+  const sinPedido = !!(data && data.sinPedido);
+
+  // "Sin pedido": deja constancia de que hoy no hacia falta pedir nada para
+  // este turno, sin crear ningun pedido ni mandar correo a Avitrans - pero
+  // asi el envio automatico de mas abajo sabe que ya se decidio a mano y no
+  // tiene que inventarse una estimacion.
+  if (sinPedido) {
+    try {
+      await db.collection("envases_avitrans_turnos").add({
+        fecha, turno, sinPedido: true, lineas: [], total: 0, origen: "manual", pt: null,
+        fechaEnvio: fechaHoyMadrid(), creado: admin.firestore.Timestamp.now()
+      });
+    } catch (e) {
+      console.error("registrarPedidoEnvasesAvitrans: guardar sin pedido:", e.message);
+      return { ok: false, error: "No se pudo guardar" };
+    }
+    return { ok: true, sinPedido: true };
+  }
 
   const lineasEntrada = Array.isArray(data && data.lineas) ? data.lineas : [];
   const filas = [];
@@ -1652,7 +1698,7 @@ exports.registrarPedidoEnvasesAvitrans = functions.https.onCall(async (request, 
     filas.push({ ref, desc: cat.desc, cantidad });
     if (cat.tipo === "europool") europool += cantidad; else normal += cantidad;
   }
-  if (!filas.length) return { ok: false, error: "Pon al menos una cantidad" };
+  if (!filas.length) return { ok: false, error: "Pon al menos una cantidad (o marca \"sin pedido\")" };
 
   const total = normal + Math.ceil(europool / 2);
   const pt = "ENV-" + Date.now().toString(36).toUpperCase();
@@ -1663,36 +1709,144 @@ exports.registrarPedidoEnvasesAvitrans = functions.https.onCall(async (request, 
     return { ok: false, error: "No se pudo guardar el pedido" };
   }
 
+  try {
+    await db.collection("envases_avitrans_turnos").add({
+      fecha, turno, sinPedido: false, lineas: filas, total, origen: "manual", pt,
+      fechaEnvio: fechaHoyMadrid(), creado: admin.firestore.Timestamp.now()
+    });
+  } catch (e) { console.error("registrarPedidoEnvasesAvitrans: guardar historico:", e.message); }
+
   // El correo es informativo para Avitrans: si fallara, el pedido ya se ha
   // guardado igualmente (lo importante es que cuente en los pendientes), asi
   // que no se hace fallar la peticion completa por un problema de envio.
   try {
-    const [dd, mm, yyyy] = [fecha.slice(8, 10), fecha.slice(5, 7), fecha.slice(0, 4)];
-    const fechaFmt = dd + "/" + mm + "/" + yyyy;
-    const filasHtml = filas.map(f =>
-      "<tr><td style='padding:5px 10px;border-bottom:1px solid #eee'>" + esc(f.ref) + "</td>" +
-      "<td style='padding:5px 10px;border-bottom:1px solid #eee'>" + esc(f.desc) + "</td>" +
-      "<td style='padding:5px 10px;border-bottom:1px solid #eee;text-align:center'>" + f.cantidad + "</td></tr>"
-    ).join("");
-    const html = "<html><body style='font-family:Arial,sans-serif;font-size:13px;color:#1A1A1A'>" +
-      "<p>Pedido nº " + esc(pt) + "</p>" +
-      "<table style='border-collapse:collapse;width:100%;max-width:480px'>" +
-      "<thead><tr style='background:#F5F5F5;text-align:left'>" +
-      "<th style='padding:5px 10px'>Referencia</th><th style='padding:5px 10px'>Descripcion envase</th>" +
-      "<th style='padding:5px 10px'>Cantidad</th></tr></thead>" +
-      "<tbody>" + filasHtml + "</tbody></table>" +
-      "</body></html>";
-    const cuerpo = "Pedido nº " + pt + "\n\n" +
-      filas.map(f => f.ref + " - " + f.desc + ": " + f.cantidad).join("\n");
-
+    const html = htmlPedidoEnvases(pt, filas);
+    const cuerpo = "Pedido nº " + pt + "\n\n" + filas.map(f => f.ref + " - " + f.desc + ": " + f.cantidad).join("\n");
     const token = await obtenerTokenMS();
-    await enviarConGraph(token, "avitrans@aldelis.com", "Recogida " + fechaFmt, html, cuerpo, null);
+    await enviarConGraph(token, "avitrans@aldelis.com", "Recogida " + formatoFechaEs(fecha), html, cuerpo, null);
   } catch (e) {
     console.error("registrarPedidoEnvasesAvitrans: envio de correo:", e.message);
   }
 
   return { ok: true, pt, palets: total };
 });
+
+// Que dia de la semana (0=domingo...6=sabado) es una fecha "YYYY-MM-DD",
+// tratandola como fecha de calendario en Madrid (mediodia UTC evita
+// cualquier lio de borde de dia).
+function diaSemanaDeFecha(fechaStr) {
+  return new Date(fechaStr + "T12:00:00Z").getUTCDay();
+}
+
+// Turno "dia": recogida mañana, salvo que hoy sea viernes, que entonces es
+// el lunes (se salta el fin de semana). Turno "noche": siempre hoy.
+function fechaRecogidaTurno(turno, hoy) {
+  if (turno === "noche") return hoy;
+  return diaSemanaDeFecha(hoy) === 5 ? sumarDiasFecha(hoy, 3) : sumarDiasFecha(hoy, 1);
+}
+
+// Media de los ultimos envios manuales (no "sin pedido") del mismo turno Y
+// del mismo dia de la semana que hoy - un viernes se compara con viernes
+// anteriores, no con el resto de dias, porque el patron es distinto. Con una
+// sola semana de historico (1 muestra) ya da una estimacion; sin ninguna,
+// no se inventa nada.
+async function estimarPedidoEnvasesTurno(turno, hoy) {
+  const diaSemanaHoy = diaSemanaDeFecha(hoy);
+  const desde = sumarDiasFecha(hoy, -60); // dos meses de historico, de sobra
+  let snap;
+  try {
+    snap = await db.collection("envases_avitrans_turnos")
+      .where("turno", "==", turno).where("fechaEnvio", ">=", desde).get();
+  } catch (e) { console.error("estimarPedidoEnvasesTurno: consulta:", e.message); return null; }
+
+  const muestras = [];
+  snap.forEach(doc => {
+    const d = doc.data();
+    if (d.origen !== "manual" || d.sinPedido) return;
+    if (diaSemanaDeFecha(d.fechaEnvio) !== diaSemanaHoy) return;
+    muestras.push(d);
+  });
+  if (!muestras.length) return null;
+
+  const sumaPorRef = {};
+  muestras.forEach(m => {
+    (m.lineas || []).forEach(l => { sumaPorRef[l.ref] = (sumaPorRef[l.ref] || 0) + (l.cantidad || 0); });
+  });
+  const filas = Object.keys(sumaPorRef).map(ref => {
+    const cat = CATALOGO_ENVASES_AVITRANS[ref];
+    const media = Math.round(sumaPorRef[ref] / muestras.length);
+    return media > 0 ? { ref, desc: cat ? cat.desc : ref, cantidad: media } : null;
+  }).filter(Boolean);
+  if (!filas.length) return null;
+
+  let normal = 0, europool = 0;
+  filas.forEach(f => {
+    const cat = CATALOGO_ENVASES_AVITRANS[f.ref];
+    if (cat && cat.tipo === "europool") europool += f.cantidad; else normal += f.cantidad;
+  });
+  return { filas, total: normal + Math.ceil(europool / 2), muestras: muestras.length };
+}
+
+// EN PRUEBA: el correo del pedido estimado va solo al admin (nunca a
+// Avitrans todavia), y no crea ningun pedido_transferencia real - es puramente
+// informativo, para poder afinar el formato y la logica antes de activarlo
+// de verdad. Cuando el admin lo confirme, cambiar DESTINATARIO_PRUEBA por
+// "avitrans@aldelis.com" y descomentar la creacion del pedido real.
+const ENVASES_DESTINATARIO_PRUEBA = "mlorente@aldelis.com";
+
+async function revisarEnvasesTurno(turno) {
+  const hoy = fechaHoyMadrid();
+  let yaEnviado;
+  try {
+    yaEnviado = await db.collection("envases_avitrans_turnos")
+      .where("fechaEnvio", "==", hoy).where("turno", "==", turno).limit(1).get();
+  } catch (e) { console.error("revisarEnvasesTurno: consulta:", e.message); return; }
+  if (!yaEnviado.empty) {
+    console.log("revisarEnvasesTurno: turno", turno, "ya tiene envio manual hoy, no se hace nada.");
+    return;
+  }
+
+  const estimado = await estimarPedidoEnvasesTurno(turno, hoy);
+  if (!estimado) {
+    console.log("revisarEnvasesTurno: turno", turno, "sin historico todavia para estimar, no se manda nada.");
+    return;
+  }
+
+  const fechaRecogida = fechaRecogidaTurno(turno, hoy);
+  const pt = "ENV-EST-" + Date.now().toString(36).toUpperCase();
+  try {
+    await db.collection("envases_avitrans_turnos").add({
+      fecha: fechaRecogida, turno, sinPedido: false, lineas: estimado.filas, total: estimado.total,
+      origen: "estimado_prueba", pt, fechaEnvio: hoy, creado: admin.firestore.Timestamp.now()
+    });
+  } catch (e) { console.error("revisarEnvasesTurno: guardar estimado:", e.message); }
+
+  try {
+    const etiqueta = "<div style='background:#FEF3C7;color:#92400E;padding:10px 14px;border-radius:6px;margin-bottom:14px'>" +
+      "⚠️ ESTIMADO AUTOMÁTICO (PRUEBA) — turno " + esc(turno) + ", basado en " + estimado.muestras +
+      " semana(s) anteriores del mismo día. No se ha enviado a Avitrans, es solo para revisar el formato." +
+      "</div>";
+    const html = htmlPedidoEnvases(pt, estimado.filas, etiqueta);
+    const cuerpo = "ESTIMADO AUTOMATICO (PRUEBA) - turno " + turno + "\n\n" +
+      "Pedido nº " + pt + "\n\n" + estimado.filas.map(f => f.ref + " - " + f.desc + ": " + f.cantidad).join("\n");
+    const token = await obtenerTokenMS();
+    await enviarConGraph(token, ENVASES_DESTINATARIO_PRUEBA,
+      "[PRUEBA] Recogida " + formatoFechaEs(fechaRecogida) + " (turno " + turno + ", estimado)", html, cuerpo, null);
+    console.log("revisarEnvasesTurno: turno", turno, "estimado de prueba enviado a", ENVASES_DESTINATARIO_PRUEBA);
+  } catch (e) {
+    console.error("revisarEnvasesTurno: envio de correo:", e.message);
+  }
+}
+
+exports.revisarEnvasesTurnoNoche = onSchedule(
+  { schedule: "45 10 * * *", timeZone: "Europe/Madrid" },
+  async () => { await revisarEnvasesTurno("noche"); }
+);
+
+exports.revisarEnvasesTurnoDia = onSchedule(
+  { schedule: "15 11 * * *", timeZone: "Europe/Madrid" },
+  async () => { await revisarEnvasesTurno("dia"); }
+);
 
 // A veces el chofer se olvida de marcarlo al salir: se registra a mano desde
 // el panel, exactamente igual que si lo hubiera marcado el (misma coleccion

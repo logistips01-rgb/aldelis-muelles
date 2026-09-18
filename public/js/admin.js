@@ -1590,24 +1590,54 @@ function renderEnvasesDetalladoAdmin() {
   if (inFecha && !inFecha.value) inFecha.value = new Date().toLocaleDateString("sv-SE");
 }
 
+// Turno "dia": recogida mañana, salvo que hoy sea viernes, que entonces es
+// el lunes (se salta el fin de semana). Turno "noche": siempre hoy. Mismo
+// calculo que fechaRecogidaTurno en el servidor.
+function fechaRecogidaTurnoCliente(turno) {
+  const hoy = new Date();
+  if (turno === "noche") return hoy.toLocaleDateString("sv-SE");
+  const dias = hoy.getDay() === 5 ? 3 : 1; // viernes=5 -> +3 (lunes), resto -> +1
+  const destino = new Date(hoy); destino.setDate(hoy.getDate() + dias);
+  return destino.toLocaleDateString("sv-SE");
+}
+
+function cambioTurnoEnvasesDet() {
+  const turno = document.querySelector("input[name='envases-det-turno']:checked").value;
+  document.getElementById("envases-det-fecha").value = fechaRecogidaTurnoCliente(turno);
+}
+
+function toggleSinPedidoEnvasesDet() {
+  const sinPedido = document.getElementById("envases-det-sin-pedido").checked;
+  document.querySelectorAll("#envases-det-tabla input[data-ref]").forEach(inp => { inp.disabled = sinPedido; });
+  document.getElementById("envases-det-btn").textContent = sinPedido ? "Marcar turno sin pedido" : "Mandar pedido a Avitrans";
+}
+
 function enviarPedidoEnvasesDetallado() {
   const errEl = document.getElementById("envases-det-error");
   errEl.style.display = "none";
   const fecha = document.getElementById("envases-det-fecha").value;
   if (!fecha) { errEl.textContent = "Elige la fecha de recogida."; errEl.style.display = "block"; return; }
+  const turno = document.querySelector("input[name='envases-det-turno']:checked").value;
+  const sinPedido = document.getElementById("envases-det-sin-pedido").checked;
 
-  const lineas = [...document.querySelectorAll("#envases-det-tabla input[data-ref]")]
-    .map(inp => ({ ref: inp.dataset.ref, cantidad: parseInt(inp.value, 10) || 0 }))
-    .filter(l => l.cantidad > 0);
-  if (!lineas.length) { errEl.textContent = "Pon al menos una cantidad."; errEl.style.display = "block"; return; }
+  let lineas = [];
+  if (!sinPedido) {
+    lineas = [...document.querySelectorAll("#envases-det-tabla input[data-ref]")]
+      .map(inp => ({ ref: inp.dataset.ref, cantidad: parseInt(inp.value, 10) || 0 }))
+      .filter(l => l.cantidad > 0);
+    if (!lineas.length) { errEl.textContent = "Pon al menos una cantidad (o marca \"sin pedido\")."; errEl.style.display = "block"; return; }
+  }
 
   const btn = document.getElementById("envases-det-btn");
   btn.disabled = true; btn.textContent = "Enviando...";
-  firebase.functions().httpsCallable("registrarPedidoEnvasesAvitrans")({ fecha, lineas })
+  firebase.functions().httpsCallable("registrarPedidoEnvasesAvitrans")({ fecha, turno, sinPedido, lineas })
     .then(res => {
       if (res.data && res.data.ok) {
-        alert("Pedido " + res.data.pt + " enviado a Avitrans (" + res.data.palets + " huecos de camion).");
+        if (res.data.sinPedido) alert("Anotado: turno " + turno + " sin pedido hoy.");
+        else alert("Pedido " + res.data.pt + " enviado a Avitrans (" + res.data.palets + " huecos de camion).");
         document.querySelectorAll("#envases-det-tabla input[data-ref]").forEach(inp => inp.value = "");
+        document.getElementById("envases-det-sin-pedido").checked = false;
+        toggleSinPedidoEnvasesDet();
       } else {
         errEl.textContent = (res.data && res.data.error) || "No se pudo enviar el pedido.";
         errEl.style.display = "block";
