@@ -900,7 +900,7 @@ function estilizarHojaExcel(ws, filas) {
     if (ws[addr]) {
       ws[addr].s = {
         font: { bold: true, color: { rgb: "FFFFFF" } },
-        fill: { fgColor: { rgb: "1D9E75" } },
+        fill: { fgColor: { rgb: "D41F3A" } },
         alignment: { vertical: "center" }
       };
     }
@@ -911,7 +911,7 @@ function estilizarHojaExcel(ws, filas) {
 
 // Colores consistentes con el resto del panel (verde corporativo + paleta
 // de apoyo), reutilizados en todos los graficos de los informes.
-const PALETA_GRAFICOS = ["#1D9E75", "#3B82F6", "#F59E0B", "#D41F3A", "#8B5CF6", "#0EA5E9", "#EC4899", "#84CC16"];
+const PALETA_GRAFICOS = ["#D41F3A", "#3B82F6", "#F59E0B", "#1D9E75", "#8B5CF6", "#0EA5E9", "#EC4899", "#84CC16"];
 
 function iniciarInformeLlegadas() {
   if (_llegadasInit) return;
@@ -2016,7 +2016,7 @@ function dibujarGraficoCostes(costePorLanz) {
       datasets: [{
         label: "Coste (€)",
         data: [1, 2, 3, 4].map(n => Math.round((costePorLanz[n] || 0) * 100) / 100),
-        backgroundColor: PALETA_GRAFICOS[3]
+        backgroundColor: PALETA_GRAFICOS[0]
       }]
     },
     options: {

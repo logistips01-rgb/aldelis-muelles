@@ -3309,7 +3309,7 @@ function estilizarHojaExcel(XLSX, ws, filas) {
     if (ws[addr]) {
       ws[addr].s = {
         font: { bold: true, color: { rgb: "FFFFFF" } },
-        fill: { fgColor: { rgb: "1D9E75" } },
+        fill: { fgColor: { rgb: "D41F3A" } },
         alignment: { vertical: "center" }
       };
     }
