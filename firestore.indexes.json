@@ -23,6 +23,14 @@
         { "fieldPath": "cambioId", "order": "ASCENDING" },
         { "fieldPath": "ts", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "robin_acciones_programadas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "estado", "order": "ASCENDING" },
+        { "fieldPath": "momento", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

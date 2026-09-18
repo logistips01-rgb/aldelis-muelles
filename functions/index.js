@@ -2867,7 +2867,7 @@ const COLECCIONES_IA_PERMITIDAS = [
   "reservas", "lanzaderas", "lanzaderas_log", "lanzaderas_nota", "mensajes",
   "descargas_merca", "descargas_arento", "furgoneta", "furgoneta_log",
   "recogidas_palets", "almacenes_pendientes", "albaranes_acopal", "alertas_cierre",
-  "config", "permisos", "incidencias", "ubicaciones_naves"
+  "config", "permisos", "incidencias", "ubicaciones_naves", "robin_acciones_programadas"
 ];
 
 // Los Timestamp de Firestore no se pueden mandar tal cual a la IA (no son
@@ -2973,6 +2973,43 @@ async function iaEnviarCorreo(input) {
   return { ok: status === 200 || status === 202, status };
 }
 
+// En vez de ejecutar enviar_correo/enviar_mensaje_chat al momento, los deja
+// en cola para dentro de un rato. ejecutarAccionesProgramadasRobin (funcion
+// aparte, revisa la cola cada 5 min) es quien de verdad los ejecuta - la
+// precision es de unos minutos, no exacta al segundo. Maximo una semana
+// vista para no dejar cosas "programadas" para siempre sin que nadie se
+// entere si algo va mal.
+const IA_ACCIONES_PROGRAMABLES = ["enviar_correo", "enviar_mensaje_chat"];
+
+async function iaProgramarAccion(input) {
+  const tipo = String((input && input.tipo) || "");
+  if (!IA_ACCIONES_PROGRAMABLES.includes(tipo)) {
+    return { error: "Tipo de accion no valido, debe ser: " + IA_ACCIONES_PROGRAMABLES.join(" o ") };
+  }
+  const minutos = Number(input && input.minutosDesdeAhora);
+  if (!(minutos > 0)) return { error: "Falta minutosDesdeAhora (numero de minutos desde ahora, mayor que 0)" };
+  if (minutos > 7 * 24 * 60) return { error: "No se puede programar con mas de 7 dias de antelacion" };
+
+  const parametros = (input && input.parametros) || {};
+  // Misma validacion que la version inmediata, para no aceptar una accion
+  // que sabemos de antemano que va a fallar dentro de un rato.
+  if (tipo === "enviar_correo") {
+    if (!destinatarioValido(String(parametros.destinatario || "").trim().toLowerCase())) {
+      return { error: "Destinatario no valido" };
+    }
+  } else {
+    const numero = Number(parametros.lanzadera);
+    if (!(numero >= 1 && numero <= 4)) return { error: "Lanzadera no valida (debe ser 1, 2, 3 o 4)" };
+  }
+
+  const momento = admin.firestore.Timestamp.fromMillis(Date.now() + minutos * 60000);
+  const ref = await db.collection("robin_acciones_programadas").add({
+    tipo, parametros, momento, estado: "pendiente",
+    creado: admin.firestore.Timestamp.now()
+  });
+  return { ok: true, id: ref.id, momento: momento.toDate().toISOString() };
+}
+
 const HERRAMIENTAS_IA = [
   {
     name: "listar_documentos",
@@ -3047,7 +3084,26 @@ const HERRAMIENTAS_IA = [
       },
       required: ["destinatario", "asunto", "cuerpo"]
     }
-  }
+  },
+  {
+    name: "programar_accion",
+    description: "Programa el envio de un correo o un mensaje de chat para dentro de un rato (en vez de mandarlo ya). Usar cuando el usuario pida algo tipo \"manda esto dentro de X minutos\" o \"mañana a tal hora\". La precision es de unos minutos, no exacta. Maximo 7 dias vista.",
+    input_schema: {
+      type: "object",
+      properties: {
+        tipo: { type: "string", enum: ["enviar_correo", "enviar_mensaje_chat"] },
+        minutosDesdeAhora: { type: "number", description: "Dentro de cuantos minutos a partir de ahora hay que ejecutarlo" },
+        parametros: {
+          type: "object",
+          description: "Para enviar_correo: {destinatario, asunto, cuerpo}. Para enviar_mensaje_chat: {lanzadera, texto}."
+        }
+      },
+      required: ["tipo", "minutosDesdeAhora", "parametros"]
+    }
+  },
+  // Herramienta de busqueda web nativa de Anthropic: la ejecuta el propio
+  // servidor de Claude, no hace falta implementar nada aqui.
+  { type: "web_search_20250305", name: "web_search", max_uses: 5 }
 ];
 
 async function iaEjecutarHerramienta(nombre, input) {
@@ -3058,20 +3114,25 @@ async function iaEjecutarHerramienta(nombre, input) {
     case "leer_cuerpo_correo": return iaLeerCuerpoCorreo(input);
     case "enviar_mensaje_chat": return iaEnviarMensajeChat(input);
     case "enviar_correo": return iaEnviarCorreo(input);
+    case "programar_accion": return iaProgramarAccion(input);
     default: return { error: "Herramienta desconocida: " + nombre };
   }
 }
 
 const IA_SYSTEM_PROMPT =
-  "Te llamas Robin y eres el asistente personal de almacen de Aldelis Muelles, una empresa de logistica de " +
-  "aves/alimentacion. Tienes acceso de LECTURA a cualquier coleccion de la base de datos (listar_documentos, " +
-  "buscar_documentos) y al buzon de correo de pedidos (leer_correos_recientes, leer_cuerpo_correo). Solo puedes " +
-  "ESCRIBIR mediante enviar_mensaje_chat (a una lanzadera, numero 1 a 4) y enviar_correo, si las tienes " +
-  "disponibles: no puedes modificar pedidos, permisos, configuracion ni ninguna otra cosa directamente, y nunca " +
-  "debes usar enviar_mensaje_chat o enviar_correo por iniciativa propia, solo cuando el usuario lo pida " +
-  "explicitamente. Responde en español, de forma breve y concreta, como un asistente de confianza que conoce " +
-  "bien el almacen. Si necesitas datos para responder, usa las herramientas de lectura antes de contestar en " +
-  "vez de inventarte numeros.";
+  "Te llamas Robin y eres el asistente personal de almacen (y personal) de Aldelis Muelles, una empresa de " +
+  "logistica de aves/alimentacion. Tienes acceso de LECTURA a cualquier coleccion de la base de datos " +
+  "(listar_documentos, buscar_documentos), al buzon de correo de pedidos (leer_correos_recientes, " +
+  "leer_cuerpo_correo), y a internet (web_search) para consultar cosas externas (por ejemplo, buscar empresas, " +
+  "fabricantes o precios de un producto). Solo puedes ESCRIBIR mediante enviar_mensaje_chat (a una lanzadera, " +
+  "numero 1 a 4), enviar_correo, y programar_accion (para dejar programado un envio de correo o chat para " +
+  "dentro de un rato en vez de al momento), si las tienes disponibles: no puedes modificar pedidos, permisos, " +
+  "configuracion ni ninguna otra cosa directamente, y nunca debes usar enviar_mensaje_chat, enviar_correo o " +
+  "programar_accion por iniciativa propia, solo cuando el usuario lo pida explicitamente. Si el usuario pide " +
+  "mandar algo \"dentro de X minutos\", \"mañana\" o en un momento futuro, usa programar_accion en vez de " +
+  "enviarlo ya. Responde en español, de forma breve y concreta, como un asistente de confianza que conoce bien " +
+  "el almacen. Si necesitas datos para responder, usa las herramientas de lectura (o de busqueda web, si es " +
+  "algo externo) antes de contestar en vez de inventarte numeros.";
 
 // Bucle de uso de herramientas compartido entre el asistente del panel
 // (preguntarAsistente) y el que responde por correo (revisarCorreoAsistenteIA):
@@ -3166,7 +3227,7 @@ const IA_CORREO_PERMITIDOS = [
   "dbotaya@aldelis.com", "jpina@aldelis.com"
 ];
 const HERRAMIENTAS_IA_SOLO_LECTURA = HERRAMIENTAS_IA.filter(h =>
-  h.name !== "enviar_mensaje_chat" && h.name !== "enviar_correo");
+  h.name !== "enviar_mensaje_chat" && h.name !== "enviar_correo" && h.name !== "programar_accion");
 const IA_CORREO_SYSTEM_PROMPT = IA_SYSTEM_PROMPT +
   " En esta conversacion en concreto no tienes herramientas para enviar nada: tu respuesta de texto ES el " +
   "correo que se va a mandar, redactala ya como el cuerpo final de un email (sin encabezados tipo \"Asunto:\").";
@@ -3222,6 +3283,50 @@ exports.revisarCorreoAsistenteIA = onSchedule(
         console.log("revisarCorreoAsistenteIA: respondido a", msg.from.emailAddress.address);
       } catch (e) {
         console.error("revisarCorreoAsistenteIA: mensaje", msg.id, e.message);
+      }
+    }
+  }
+);
+
+// Revisa cada 5 minutos las acciones que Robin haya dejado programadas
+// (herramienta programar_accion) y ejecuta las que ya les toque. La
+// precision es de estos 5 minutos, no exacta al segundo. Reutiliza las
+// mismas funciones que la ejecucion inmediata (iaEnviarCorreo/
+// iaEnviarMensajeChat), asi que el resultado es identico a si Robin lo
+// hubiera mandado directamente.
+exports.ejecutarAccionesProgramadasRobin = onSchedule(
+  { schedule: "every 5 minutes", timeZone: "Europe/Madrid" },
+  async () => {
+    const ahora = admin.firestore.Timestamp.now();
+    let snap;
+    try {
+      snap = await db.collection("robin_acciones_programadas")
+        .where("estado", "==", "pendiente").where("momento", "<=", ahora).get();
+    } catch (e) { console.error("ejecutarAccionesProgramadasRobin: consulta:", e.message); return; }
+
+    if (snap.empty) return;
+    console.log("ejecutarAccionesProgramadasRobin: " + snap.size + " accion(es) por ejecutar.");
+
+    for (const doc of snap.docs) {
+      const d = doc.data();
+      try {
+        let resultado;
+        if (d.tipo === "enviar_correo") resultado = await iaEnviarCorreo(d.parametros || {});
+        else if (d.tipo === "enviar_mensaje_chat") resultado = await iaEnviarMensajeChat(d.parametros || {});
+        else resultado = { error: "Tipo de accion desconocido: " + d.tipo };
+
+        if (resultado && resultado.error) {
+          await doc.ref.update({ estado: "error", error: resultado.error, ejecutadoTs: admin.firestore.Timestamp.now() });
+          console.error("ejecutarAccionesProgramadasRobin: accion", doc.id, "fallo:", resultado.error);
+        } else {
+          await doc.ref.update({ estado: "ejecutada", ejecutadoTs: admin.firestore.Timestamp.now() });
+          console.log("ejecutarAccionesProgramadasRobin: accion", doc.id, "(" + d.tipo + ") ejecutada.");
+        }
+      } catch (e) {
+        console.error("ejecutarAccionesProgramadasRobin: accion", doc.id, e.message);
+        await doc.ref.update({
+          estado: "error", error: e.message, ejecutadoTs: admin.firestore.Timestamp.now()
+        }).catch(() => {});
       }
     }
   }
