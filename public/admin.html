@@ -302,6 +302,26 @@
         </div>
       </div>
       <button class="btn-primary" style="width:auto;padding:9px 20px" onclick="enviarPedidoEnvases()">Anadir pedido de envases</button>
+
+      <div id="envases-detallado-admin" style="display:none;margin-top:28px;border-top:1px solid #e5e5e7;padding-top:20px">
+        <div class="sitio-elegir">4. Pedido de envases detallado a Avitrans <span class="opt">(solo admin, de momento)</span></div>
+        <p class="card-desc" style="margin-bottom:12px">
+          Rellena las cantidades y se manda un correo automático a avitrans@aldelis.com con el desglose, y se suma
+          el total de huecos de camión a los pendientes de Avitrans (el Europool cuenta la mitad, redondeando hacia arriba).
+        </p>
+        <div class="field" style="max-width:220px;margin-bottom:14px">
+          <label>Fecha de recogida</label>
+          <input type="date" id="envases-det-fecha">
+        </div>
+        <div class="tabla-scroll">
+          <table class="tabla-inf" id="envases-det-tabla">
+            <thead><tr><th>Referencia</th><th>Descripción envase</th><th style="width:110px">Cantidad</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div id="envases-det-error" style="color:#D41F3A;font-size:13px;margin:10px 0;display:none"></div>
+        <button class="btn-primary" style="width:auto;padding:9px 20px;margin-top:12px" id="envases-det-btn" onclick="enviarPedidoEnvasesDetallado()">Mandar pedido a Avitrans</button>
+      </div>
     </div>
 
     <div id="vista-cargas" class="reservas-wrap" style="display:none">

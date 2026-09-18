@@ -1606,6 +1606,94 @@ exports.registrarPedidoEnvases = functions.https.onCall(async (request, context)
   return { ok: true, pt, palets: total };
 });
 
+// Version detallada del pedido de envases, de momento restringida al admin:
+// en vez de dos totales sueltos (normal/europool), se manda el desglose por
+// referencia exacto (mismo catalogo que se pide siempre a Avitrans por
+// correo), y ademas de guardar el pedido, se manda el correo de verdad a
+// avitrans@aldelis.com con la tabla y el numero de pedido - antes esto se
+// escribia a mano cada vez.
+const CATALOGO_ENVASES_AVITRANS = {
+  "999979": { desc: "IFCO 6420",       tipo: "normal" },
+  "999957": { desc: "IFCO 6413",       tipo: "normal" },
+  "999908": { desc: "IFCO 6418",       tipo: "normal" },
+  "999905": { desc: "IFCO 4314",       tipo: "normal" },
+  "999952": { desc: "EUROPOOL 156",    tipo: "europool" },
+  "999981": { desc: "EUROPOOL 154",    tipo: "europool" },
+  "999989": { desc: "EUROPOOL 106",    tipo: "europool" },
+  "999913": { desc: "EUROPOOL 216",    tipo: "europool" },
+  "999907": { desc: "EUROPOOL 104",    tipo: "europool" },
+  "999948": { desc: "LOGIFRUIT 612",   tipo: "normal" },
+  "999951": { desc: "LOGIFRUIT 618",   tipo: "normal" },
+  "999978": { desc: "PALET LOGIFRUIT", tipo: "normal" },
+  "999988": { desc: "PALET LPR ROJO",  tipo: "normal" },
+  "999932": { desc: "CHEP PLASTICO",   tipo: "normal" }
+};
+
+exports.registrarPedidoEnvasesAvitrans = functions.https.onCall(async (request, context) => {
+  const esV2 = !!(request && typeof request === "object" && request.data !== undefined);
+  const data = esV2 ? request.data : request;
+  const ctx  = esV2 ? request : (context || {});
+
+  if (!ctx.app) return { ok: false, error: "No autorizado" };
+  const email = (ctx.auth && ctx.auth.token && ctx.auth.token.email || "").toLowerCase();
+  if (!ADMINS_APP.includes(email)) return { ok: false, error: "Sin permiso" };
+
+  const fecha = data && String(data.fecha || "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return { ok: false, error: "Fecha no valida" };
+
+  const lineasEntrada = Array.isArray(data && data.lineas) ? data.lineas : [];
+  const filas = [];
+  let normal = 0, europool = 0;
+  for (const l of lineasEntrada) {
+    const ref = l && String(l.ref || "");
+    const cantidad = Number(l && l.cantidad) || 0;
+    const cat = CATALOGO_ENVASES_AVITRANS[ref];
+    if (!cat || cantidad <= 0) continue;
+    filas.push({ ref, desc: cat.desc, cantidad });
+    if (cat.tipo === "europool") europool += cantidad; else normal += cantidad;
+  }
+  if (!filas.length) return { ok: false, error: "Pon al menos una cantidad" };
+
+  const total = normal + Math.ceil(europool / 2);
+  const pt = "ENV-" + Date.now().toString(36).toUpperCase();
+  try {
+    await crearPedidoTransferencia(pt, "avitrans", { palets: total, lineas: [] }, "manual-envases", fecha);
+  } catch (e) {
+    console.error("registrarPedidoEnvasesAvitrans: guardar:", e.message);
+    return { ok: false, error: "No se pudo guardar el pedido" };
+  }
+
+  // El correo es informativo para Avitrans: si fallara, el pedido ya se ha
+  // guardado igualmente (lo importante es que cuente en los pendientes), asi
+  // que no se hace fallar la peticion completa por un problema de envio.
+  try {
+    const [dd, mm, yyyy] = [fecha.slice(8, 10), fecha.slice(5, 7), fecha.slice(0, 4)];
+    const fechaFmt = dd + "/" + mm + "/" + yyyy;
+    const filasHtml = filas.map(f =>
+      "<tr><td style='padding:5px 10px;border-bottom:1px solid #eee'>" + esc(f.ref) + "</td>" +
+      "<td style='padding:5px 10px;border-bottom:1px solid #eee'>" + esc(f.desc) + "</td>" +
+      "<td style='padding:5px 10px;border-bottom:1px solid #eee;text-align:center'>" + f.cantidad + "</td></tr>"
+    ).join("");
+    const html = "<html><body style='font-family:Arial,sans-serif;font-size:13px;color:#1A1A1A'>" +
+      "<p>Pedido nº " + esc(pt) + "</p>" +
+      "<table style='border-collapse:collapse;width:100%;max-width:480px'>" +
+      "<thead><tr style='background:#F5F5F5;text-align:left'>" +
+      "<th style='padding:5px 10px'>Referencia</th><th style='padding:5px 10px'>Descripcion envase</th>" +
+      "<th style='padding:5px 10px'>Cantidad</th></tr></thead>" +
+      "<tbody>" + filasHtml + "</tbody></table>" +
+      "</body></html>";
+    const cuerpo = "Pedido nº " + pt + "\n\n" +
+      filas.map(f => f.ref + " - " + f.desc + ": " + f.cantidad).join("\n");
+
+    const token = await obtenerTokenMS();
+    await enviarConGraph(token, "avitrans@aldelis.com", "Recogida " + fechaFmt, html, cuerpo, null);
+  } catch (e) {
+    console.error("registrarPedidoEnvasesAvitrans: envio de correo:", e.message);
+  }
+
+  return { ok: true, pt, palets: total };
+});
+
 // A veces el chofer se olvida de marcarlo al salir: se registra a mano desde
 // el panel, exactamente igual que si lo hubiera marcado el (misma coleccion
 // recogidas_palets), para que el pedido y el saldo del almacen queden

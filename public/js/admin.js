@@ -689,10 +689,15 @@ function aplicarRol() {
 
   // Asistente de IA: solo para el admin, no depende del sistema de permisos
   // por secciones (acceso de lectura total, restringido a un unico email).
+  const esAdminIA = auth.currentUser && ADMINS.includes((auth.currentUser.email || "").toLowerCase());
   const btnAsistente = document.getElementById("btn-vista-asistente");
-  if (btnAsistente) {
-    const esAdminIA = auth.currentUser && ADMINS.includes((auth.currentUser.email || "").toLowerCase());
-    btnAsistente.style.display = esAdminIA ? "" : "none";
+  if (btnAsistente) btnAsistente.style.display = esAdminIA ? "" : "none";
+
+  // Pedido de envases detallado a Avitrans: de momento, solo admin.
+  const envasesDet = document.getElementById("envases-detallado-admin");
+  if (envasesDet) {
+    envasesDet.style.display = esAdminIA ? "" : "none";
+    if (esAdminIA) renderEnvasesDetalladoAdmin();
   }
 
   // Abrir la primera vista disponible
@@ -1546,6 +1551,74 @@ function enviarPedidoEnvases() {
       }
     })
     .catch(e => { console.error("enviarPedidoEnvases:", e); estadoPedido("No se pudo guardar el pedido.", "err"); });
+}
+
+// Catalogo fijo de envases para el pedido detallado a Avitrans (mismas
+// referencias/descripciones que ya se manejan a mano por correo). "tipo"
+// solo importa para el europool: se piden remontados y ocupan la mitad de
+// hueco de camion, redondeando hacia arriba el total (misma logica que ya
+// usa registrarPedidoEnvases con sus dos campos normal/europool).
+const CATALOGO_ENVASES_AVITRANS = [
+  { ref: "999979", desc: "IFCO 6420",       tipo: "normal" },
+  { ref: "999957", desc: "IFCO 6413",       tipo: "normal" },
+  { ref: "999908", desc: "IFCO 6418",       tipo: "normal" },
+  { ref: "999905", desc: "IFCO 4314",       tipo: "normal" },
+  { ref: "999952", desc: "EUROPOOL 156",    tipo: "europool" },
+  { ref: "999981", desc: "EUROPOOL 154",    tipo: "europool" },
+  { ref: "999989", desc: "EUROPOOL 106",    tipo: "europool" },
+  { ref: "999913", desc: "EUROPOOL 216",    tipo: "europool" },
+  { ref: "999907", desc: "EUROPOOL 104",    tipo: "europool" },
+  { ref: "999948", desc: "LOGIFRUIT 612",   tipo: "normal" },
+  { ref: "999951", desc: "LOGIFRUIT 618",   tipo: "normal" },
+  { ref: "999978", desc: "PALET LOGIFRUIT", tipo: "normal" },
+  { ref: "999988", desc: "PALET LPR ROJO",  tipo: "normal" },
+  { ref: "999932", desc: "CHEP PLASTICO",   tipo: "normal" }
+];
+
+function renderEnvasesDetalladoAdmin() {
+  const tbody = document.querySelector("#envases-det-tabla tbody");
+  if (!tbody || tbody.children.length) return; // ya pintada, no repetir
+  tbody.innerHTML = CATALOGO_ENVASES_AVITRANS.map(l =>
+    "<tr>" +
+    "<td>" + esc(l.ref) + "</td>" +
+    "<td>" + esc(l.desc) + "</td>" +
+    "<td><input type='number' min='0' step='1' placeholder='0' data-ref='" + l.ref + "' " +
+    "style='width:90px;padding:6px;border:1px solid #D1D5DB;border-radius:6px'></td>" +
+    "</tr>"
+  ).join("");
+  const inFecha = document.getElementById("envases-det-fecha");
+  if (inFecha && !inFecha.value) inFecha.value = new Date().toLocaleDateString("sv-SE");
+}
+
+function enviarPedidoEnvasesDetallado() {
+  const errEl = document.getElementById("envases-det-error");
+  errEl.style.display = "none";
+  const fecha = document.getElementById("envases-det-fecha").value;
+  if (!fecha) { errEl.textContent = "Elige la fecha de recogida."; errEl.style.display = "block"; return; }
+
+  const lineas = [...document.querySelectorAll("#envases-det-tabla input[data-ref]")]
+    .map(inp => ({ ref: inp.dataset.ref, cantidad: parseInt(inp.value, 10) || 0 }))
+    .filter(l => l.cantidad > 0);
+  if (!lineas.length) { errEl.textContent = "Pon al menos una cantidad."; errEl.style.display = "block"; return; }
+
+  const btn = document.getElementById("envases-det-btn");
+  btn.disabled = true; btn.textContent = "Enviando...";
+  firebase.functions().httpsCallable("registrarPedidoEnvasesAvitrans")({ fecha, lineas })
+    .then(res => {
+      if (res.data && res.data.ok) {
+        alert("Pedido " + res.data.pt + " enviado a Avitrans (" + res.data.palets + " huecos de camion).");
+        document.querySelectorAll("#envases-det-tabla input[data-ref]").forEach(inp => inp.value = "");
+      } else {
+        errEl.textContent = (res.data && res.data.error) || "No se pudo enviar el pedido.";
+        errEl.style.display = "block";
+      }
+    })
+    .catch(e => {
+      console.error("enviarPedidoEnvasesDetallado:", e);
+      errEl.textContent = "No se pudo enviar el pedido.";
+      errEl.style.display = "block";
+    })
+    .finally(() => { btn.disabled = false; btn.textContent = "Mandar pedido a Avitrans"; });
 }
 
 function cargarLanzaderas() {
