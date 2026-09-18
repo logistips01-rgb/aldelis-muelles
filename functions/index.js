@@ -2973,6 +2973,42 @@ async function iaEnviarCorreo(input) {
   return { ok: status === 200 || status === 202, status };
 }
 
+// Genera un Excel de verdad (misma libreria "xlsx" que usa el resto de la
+// app para leer los pedidos por correo) a partir de filas que la propia IA
+// construye (normalmente con datos que ya ha sacado con listar_documentos/
+// buscar_documentos), y lo manda como adjunto real.
+async function iaEnviarCorreoConExcel(input) {
+  const destinatario = String((input && input.destinatario) || "").trim().toLowerCase();
+  if (!destinatarioValido(destinatario)) return { error: "Destinatario no valido" };
+
+  const filas = Array.isArray(input && input.filas) ? input.filas : [];
+  if (!filas.length) return { error: "Faltan filas de datos para el Excel" };
+  if (filas.length > 5000) return { error: "Demasiadas filas (maximo 5000)" };
+
+  const asunto = String((input && input.asunto) || "Informe").slice(0, 200);
+  const cuerpo = String((input && input.cuerpo) || "Informe adjunto en Excel.").slice(0, 5000);
+  const nombreHoja = (String((input && input.nombreHoja) || "").slice(0, 30)) || "Datos";
+
+  let base64;
+  try {
+    const XLSX = require("xlsx");
+    const ws = XLSX.utils.json_to_sheet(filas);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, nombreHoja);
+    base64 = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }).toString("base64");
+  } catch (e) { return { error: "No se pudo generar el Excel: " + e.message }; }
+  if (base64.length > 8000000) return { error: "El Excel generado es demasiado grande para mandarlo por correo" };
+
+  const token = await obtenerTokenMS();
+  const status = await enviarConGraph(token, destinatario, asunto, null, cuerpo, null, [{
+    name: "informe.xlsx",
+    contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    contentBytes: base64,
+    isInline: false
+  }]);
+  return { ok: status === 200 || status === 202, status, filas: filas.length };
+}
+
 // En vez de ejecutar enviar_correo/enviar_mensaje_chat al momento, los deja
 // en cola para dentro de un rato. ejecutarAccionesProgramadasRobin (funcion
 // aparte, revisa la cola cada 5 min) es quien de verdad los ejecuta - la
@@ -3144,6 +3180,25 @@ const HERRAMIENTAS_IA = [
       required: ["pt", "palets"]
     }
   },
+  {
+    name: "enviar_correo_con_excel",
+    description: "Envia un correo con una tabla de datos adjunta como archivo Excel (.xlsx). Usar cuando el usuario pida generar/mandar un informe o listado en Excel. Construye las filas con datos reales (por ejemplo, sacados antes con listar_documentos/buscar_documentos), nunca inventados. Solo usar si el usuario lo pide explicitamente.",
+    input_schema: {
+      type: "object",
+      properties: {
+        destinatario: { type: "string" },
+        asunto: { type: "string" },
+        cuerpo: { type: "string", description: "Texto del cuerpo del correo (la tabla va aparte, en el adjunto)" },
+        nombreHoja: { type: "string", description: "Nombre de la pestaña del Excel, opcional" },
+        filas: {
+          type: "array",
+          description: "Cada elemento es un objeto {NombreColumna: valor}, con las mismas claves en todas las filas.",
+          items: { type: "object" }
+        }
+      },
+      required: ["destinatario", "asunto", "filas"]
+    }
+  },
   // Herramienta de busqueda web nativa de Anthropic: la ejecuta el propio
   // servidor de Claude, no hace falta implementar nada aqui.
   { type: "web_search_20250305", name: "web_search", max_uses: 5 }
@@ -3159,6 +3214,7 @@ async function iaEjecutarHerramienta(nombre, input) {
     case "enviar_correo": return iaEnviarCorreo(input);
     case "programar_accion": return iaProgramarAccion(input);
     case "marcar_recogida": return iaMarcarRecogida(input);
+    case "enviar_correo_con_excel": return iaEnviarCorreoConExcel(input);
     default: return { error: "Herramienta desconocida: " + nombre };
   }
 }
@@ -3248,8 +3304,16 @@ exports.preguntarAsistente = functions.https.onCall(async (request, context) => 
   if (!mensaje) return { ok: false, error: "Falta el mensaje" };
   if (mensaje.length > 4000) return { ok: false, error: "Mensaje demasiado largo" };
 
+  // El usuario que habla con Robin aqui SIEMPRE es este email (es el unico
+  // que puede llegar a esta funcion), asi no tiene que preguntar "¿a que
+  // correo?" cuando le piden mandarle algo "a mi" sin mas.
+  const systemPromptConUsuario = IA_SYSTEM_PROMPT +
+    " El usuario con el que hablas ahora mismo, en esta conversacion, es " + email + ". Si te pide mandarle " +
+    "algo \"a mi\", \"a mi correo\" o simplemente no dice a quien, usa ese email como destinatario sin " +
+    "preguntar mas.";
+
   try {
-    const respuesta = await ejecutarConversacionIA(mensaje, HERRAMIENTAS_IA, IA_SYSTEM_PROMPT);
+    const respuesta = await ejecutarConversacionIA(mensaje, HERRAMIENTAS_IA, systemPromptConUsuario);
     console.log("preguntarAsistente:", email, "->", mensaje.slice(0, 100));
     return { ok: true, respuesta };
   } catch (e) {
@@ -3277,7 +3341,7 @@ const IA_CORREO_PERMITIDOS = [
 ];
 const HERRAMIENTAS_IA_SOLO_LECTURA = HERRAMIENTAS_IA.filter(h =>
   h.name !== "enviar_mensaje_chat" && h.name !== "enviar_correo" && h.name !== "programar_accion"
-  && h.name !== "marcar_recogida");
+  && h.name !== "marcar_recogida" && h.name !== "enviar_correo_con_excel");
 const IA_CORREO_SYSTEM_PROMPT = IA_SYSTEM_PROMPT +
   " En esta conversacion en concreto no tienes herramientas para enviar nada: tu respuesta de texto ES el " +
   "correo que se va a mandar, redactala ya como el cuerpo final de un email (sin encabezados tipo \"Asunto:\").";
