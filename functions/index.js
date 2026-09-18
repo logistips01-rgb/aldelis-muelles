@@ -3235,7 +3235,7 @@ async function iaEnviarMensajeChat(input) {
   const texto = String((input && input.texto) || "").trim().slice(0, 500);
   if (!texto) return { error: "Falta el texto del mensaje" };
   await db.collection("mensajes").add({
-    lanzadera: numero, de: "almacen", emisor: "IA Muelles", texto,
+    lanzadera: numero, de: "almacen", emisor: "Robin", texto,
     ts: admin.firestore.Timestamp.now()
   });
   return { ok: true };
