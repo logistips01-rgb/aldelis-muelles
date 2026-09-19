@@ -2366,7 +2366,10 @@ function _cargarHtml2Canvas() {
 
 async function enviarInformeDiarioCostes(esAuto) {
   const emails = _costesEmailsCache;
-  if (!emails.length) return;
+  if (!emails.length) {
+    if (!esAuto) alert("No hay ningun destinatario configurado para el informe de costes (mas abajo en esta misma pestaña).");
+    return;
+  }
 
   // Lectura fresca de logs del día justo antes de construir el informe
   try {
@@ -2387,7 +2390,10 @@ async function enviarInformeDiarioCostes(esAuto) {
   cargarHistorialDiario();
 
   const datos = construirCuerpoInformeCostes();
-  if (!datos) return;
+  if (!datos) {
+    if (!esAuto) alert("No hay movimientos de lanzadera registrados para el dia seleccionado (arriba, en el selector de fecha), asi que no hay nada que mandar.");
+    return;
+  }
 
   // El asunto lo compone la Cloud Function a partir de fechaFmt y costeTotal.
   let html = datos.html; // fallback tabla
@@ -2460,6 +2466,7 @@ async function enviarInformeDiarioCostes(esAuto) {
     }
   } catch(e) {
     console.error("Error enviando informe costes:", e);
+    if (!esAuto) alert("Error al enviar el informe: " + e.message);
   }
 }
 
