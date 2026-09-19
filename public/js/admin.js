@@ -1670,6 +1670,29 @@ function cambioTurnoEnvasesDet() {
   document.getElementById("envases-det-fecha").value = fechaRecogidaTurnoCliente(turno);
 }
 
+// Txt es un pedido puntual manual: no tiene turnos ni "sin pedido" ni
+// estimacion automatica (eso es solo el flujo de Avitrans). Al cambiar de
+// almacen se oculta/muestra lo que no aplica y se deja la fecha en blanco
+// para que se elija a mano.
+function cambioAlmacenEnvasesDet() {
+  const almacen = document.querySelector("input[name='envases-det-almacen']:checked").value;
+  const esAvitrans = almacen === "avitrans";
+  document.getElementById("envases-det-turno-wrap").style.display = esAvitrans ? "flex" : "none";
+  document.getElementById("envases-det-sin-pedido-wrap").style.display = esAvitrans ? "flex" : "none";
+  document.getElementById("envases-det-btn-probar").style.display = esAvitrans ? "" : "none";
+  document.getElementById("envases-det-desc").textContent = esAvitrans
+    ? "Rellena las cantidades y se manda un correo automático a avitrans@aldelis.com con el desglose, y se suma el total de huecos de camión a los pendientes de Avitrans (el Europool cuenta la mitad, redondeando hacia arriba). Si un turno no se manda a mano a su hora, la app manda un estimado (de momento solo de prueba, a tu correo)."
+    : "Pedido puntual a Txt: se manda un correo con el desglose a Mariola Arcos y al almacén de Plaza Logística, y se suma el total de huecos de camión a los pendientes de Txt (el Europool cuenta la mitad, redondeando hacia arriba).";
+  document.getElementById("envases-det-btn").textContent = esAvitrans ? "Mandar pedido a Avitrans" : "Mandar pedido a Txt";
+  if (esAvitrans) {
+    cambioTurnoEnvasesDet();
+  } else {
+    document.getElementById("envases-det-sin-pedido").checked = false;
+    toggleSinPedidoEnvasesDet();
+    document.getElementById("envases-det-fecha").value = new Date().toLocaleDateString("sv-SE");
+  }
+}
+
 function toggleSinPedidoEnvasesDet() {
   const sinPedido = document.getElementById("envases-det-sin-pedido").checked;
   document.querySelectorAll("#envases-det-tabla input[data-ref]").forEach(inp => { inp.disabled = sinPedido; });
@@ -1679,10 +1702,12 @@ function toggleSinPedidoEnvasesDet() {
 function enviarPedidoEnvasesDetallado() {
   const errEl = document.getElementById("envases-det-error");
   errEl.style.display = "none";
+  const almacen = document.querySelector("input[name='envases-det-almacen']:checked").value;
+  const esAvitrans = almacen === "avitrans";
   const fecha = document.getElementById("envases-det-fecha").value;
   if (!fecha) { errEl.textContent = "Elige la fecha de recogida."; errEl.style.display = "block"; return; }
-  const turno = document.querySelector("input[name='envases-det-turno']:checked").value;
-  const sinPedido = document.getElementById("envases-det-sin-pedido").checked;
+  const turno = esAvitrans ? document.querySelector("input[name='envases-det-turno']:checked").value : null;
+  const sinPedido = esAvitrans && document.getElementById("envases-det-sin-pedido").checked;
 
   let lineas = [];
   if (!sinPedido) {
@@ -1692,16 +1717,19 @@ function enviarPedidoEnvasesDetallado() {
     if (!lineas.length) { errEl.textContent = "Pon al menos una cantidad (o marca \"sin pedido\")."; errEl.style.display = "block"; return; }
   }
 
+  const btnLabel = esAvitrans ? "Mandar pedido a Avitrans" : "Mandar pedido a Txt";
   const btn = document.getElementById("envases-det-btn");
   btn.disabled = true; btn.textContent = "Enviando...";
-  firebase.functions().httpsCallable("registrarPedidoEnvasesAvitrans")({ fecha, turno, sinPedido, lineas })
+  firebase.functions().httpsCallable("registrarPedidoEnvasesAvitrans")({ almacen, fecha, turno, sinPedido, lineas })
     .then(res => {
       if (res.data && res.data.ok) {
         if (res.data.sinPedido) alert("Anotado: turno " + turno + " sin pedido hoy.");
-        else alert("Pedido " + res.data.pt + " enviado a Avitrans (" + res.data.palets + " huecos de camion).");
+        else alert("Pedido " + res.data.pt + " enviado a " + (esAvitrans ? "Avitrans" : "Txt") + " (" + res.data.palets + " huecos de camion).");
         document.querySelectorAll("#envases-det-tabla input[data-ref]").forEach(inp => inp.value = "");
-        document.getElementById("envases-det-sin-pedido").checked = false;
-        toggleSinPedidoEnvasesDet();
+        if (esAvitrans) {
+          document.getElementById("envases-det-sin-pedido").checked = false;
+          toggleSinPedidoEnvasesDet();
+        }
       } else {
         errEl.textContent = (res.data && res.data.error) || "No se pudo enviar el pedido.";
         errEl.style.display = "block";
@@ -1712,7 +1740,7 @@ function enviarPedidoEnvasesDetallado() {
       errEl.textContent = "No se pudo enviar el pedido.";
       errEl.style.display = "block";
     })
-    .finally(() => { btn.disabled = false; btn.textContent = "Mandar pedido a Avitrans"; });
+    .finally(() => { btn.disabled = false; btn.textContent = btnLabel; });
 }
 
 // Dispara ya la estimacion (sin esperar a las 10:45/11:15 ni a que falte el

@@ -1697,6 +1697,14 @@ function htmlPedidoEnvases(pt, filas, etiquetaExtra) {
     "</body></html>";
 }
 
+// Destinatarios del correo de recogida segun el almacen elegido en el
+// formulario. Avitrans tiene ademas el flujo de turnos/estimacion automatica
+// (ver mas abajo); Txt es solo un pedido puntual manual, sin ese seguimiento.
+const ENVASES_DESTINATARIOS = {
+  avitrans: ["avitrans@aldelis.com"],
+  txt: ["mariola.arcos@txt.es", "almacenplaza.logistica@txt.es"]
+};
+
 exports.registrarPedidoEnvasesAvitrans = functions.https.onCall(async (request, context) => {
   const esV2 = !!(request && typeof request === "object" && request.data !== undefined);
   const data = esV2 ? request.data : request;
@@ -1706,11 +1714,19 @@ exports.registrarPedidoEnvasesAvitrans = functions.https.onCall(async (request, 
   const email = (ctx.auth && ctx.auth.token && ctx.auth.token.email || "").toLowerCase();
   if (!ADMINS_APP.includes(email)) return { ok: false, error: "Sin permiso" };
 
+  const almacen = (data && data.almacen) === "txt" ? "txt" : "avitrans";
+
   const fecha = data && String(data.fecha || "");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return { ok: false, error: "Fecha no valida" };
-  const turno = data && data.turno;
-  if (!["noche", "dia"].includes(turno)) return { ok: false, error: "Falta el turno (noche o dia)" };
-  const sinPedido = !!(data && data.sinPedido);
+
+  // El turno (y el "sin pedido") solo existen para el flujo de dos envios al
+  // dia de Avitrans; un pedido a Txt es puntual y no lleva ese seguimiento.
+  let turno = null;
+  if (almacen === "avitrans") {
+    turno = data && data.turno;
+    if (!["noche", "dia"].includes(turno)) return { ok: false, error: "Falta el turno (noche o dia)" };
+  }
+  const sinPedido = almacen === "avitrans" && !!(data && data.sinPedido);
 
   // "Sin pedido": deja constancia de que hoy no hacia falta pedir nada para
   // este turno, sin crear ningun pedido ni mandar correo a Avitrans - pero
@@ -1745,27 +1761,33 @@ exports.registrarPedidoEnvasesAvitrans = functions.https.onCall(async (request, 
   const total = normal + Math.ceil(europool / 2);
   const pt = "ENV-" + Date.now().toString(36).toUpperCase();
   try {
-    await crearPedidoTransferencia(pt, "avitrans", { palets: total, lineas: [] }, "manual-envases", fecha);
+    await crearPedidoTransferencia(pt, almacen, { palets: total, lineas: [] }, "manual-envases", fecha);
   } catch (e) {
     console.error("registrarPedidoEnvasesAvitrans: guardar:", e.message);
     return { ok: false, error: "No se pudo guardar el pedido" };
   }
 
-  try {
-    await db.collection("envases_avitrans_turnos").add({
-      fecha, turno, sinPedido: false, lineas: filas, total, origen: "manual", pt,
-      fechaEnvio: fechaHoyMadrid(), creado: admin.firestore.Timestamp.now()
-    });
-  } catch (e) { console.error("registrarPedidoEnvasesAvitrans: guardar historico:", e.message); }
+  // El historico de aprendizaje/estimacion automatica es solo de Avitrans.
+  if (almacen === "avitrans") {
+    try {
+      await db.collection("envases_avitrans_turnos").add({
+        fecha, turno, sinPedido: false, lineas: filas, total, origen: "manual", pt,
+        fechaEnvio: fechaHoyMadrid(), creado: admin.firestore.Timestamp.now()
+      });
+    } catch (e) { console.error("registrarPedidoEnvasesAvitrans: guardar historico:", e.message); }
+  }
 
-  // El correo es informativo para Avitrans: si fallara, el pedido ya se ha
+  // El correo es informativo para el almacen: si fallara, el pedido ya se ha
   // guardado igualmente (lo importante es que cuente en los pendientes), asi
   // que no se hace fallar la peticion completa por un problema de envio.
   try {
     const html = htmlPedidoEnvases(pt, filas);
     const cuerpo = "Pedido nº " + pt + "\n\n" + filas.map(f => f.ref + " - " + f.desc + ": " + f.cantidad).join("\n");
     const token = await obtenerTokenMS();
-    await enviarConGraph(token, "avitrans@aldelis.com", "Recogida " + formatoFechaEs(fecha), html, cuerpo, null);
+    const asunto = "Recogida " + formatoFechaEs(fecha);
+    for (const destino of ENVASES_DESTINATARIOS[almacen]) {
+      await enviarConGraph(token, destino, asunto, html, cuerpo, null);
+    }
   } catch (e) {
     console.error("registrarPedidoEnvasesAvitrans: envio de correo:", e.message);
   }
