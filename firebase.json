@@ -26,6 +26,16 @@
         ]
       },
       {
+        "comment": "Mismo motivo que arriba: admin.html/movil.html cargan los <script> de librerias (Excel, graficos...), asi que si el propio .html se queda en cache, un cambio de libreria no llega aunque el .js si se revalide.",
+        "source": "**/*.html",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      },
+      {
         "comment": "El service worker no se cachea: si se cachea, los cambios tardan dias en llegar a los moviles ya registrados.",
         "source": "/firebase-messaging-sw.js",
         "headers": [
