@@ -1847,7 +1847,7 @@ exports.registrarPedidoEnvasesAvitrans = functions.https.onCall(async (request, 
   const total = normal + Math.ceil(europool / 2);
   const pt = "ENV-" + Date.now().toString(36).toUpperCase();
   try {
-    await crearPedidoTransferencia(pt, almacen, { palets: total, lineas: [] }, "manual-envases", fecha);
+    await crearPedidoTransferencia(pt, almacen, { palets: total, lineas: filas }, "manual-envases", fecha);
   } catch (e) {
     console.error("registrarPedidoEnvasesAvitrans: guardar:", e.message);
     return { ok: false, error: "No se pudo guardar el pedido" };
@@ -3526,6 +3526,45 @@ async function iaConsultarPedido(input) {
   };
 }
 
+// Busca el pedido mas reciente (ultimos 30 dias) que incluya una referencia
+// de envase concreta (ej: "999979", IFCO 6420) en su desglose de lineas, y
+// da el estado de ESE PEDIDO completo. No se puede saber con precision si
+// esa referencia en concreto ya se recogio cuando el pedido se ha recogido
+// solo a medias, porque el chofer solo registra un total de palets al
+// recoger, no un desglose por referencia - se avisa de esa limitacion en la
+// respuesta para que Robin se lo explique asi al usuario si hace falta.
+async function iaConsultarReferenciaEnvase(input) {
+  const ref = String((input && input.ref) || "").trim();
+  if (!ref) return { error: "Falta la referencia del envase" };
+
+  const desde = admin.firestore.Timestamp.fromMillis(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const snap = await db.collection("pedidos_transferencia")
+    .where("creado", ">=", desde)
+    .orderBy("creado", "desc")
+    .limit(50)
+    .get();
+
+  let encontrado = null;
+  snap.forEach(d => {
+    if (encontrado) return;
+    const data = d.data();
+    if (Array.isArray(data.lineas) && data.lineas.some(l => String(l.ref) === ref)) {
+      encontrado = { pt: d.id, ...data };
+    }
+  });
+  if (!encontrado) return { error: "No se encontro ningun pedido de los ultimos 30 dias que incluya la referencia " + ref };
+
+  const linea = encontrado.lineas.find(l => String(l.ref) === ref);
+  const pendiente = Math.max((encontrado.palets || 0) - (encontrado.recogido || 0), 0);
+  return {
+    pt: encontrado.pt, almacen: encontrado.almacen,
+    referencia: ref, descripcion: linea ? linea.desc : null, cantidadPedida: linea ? linea.cantidad : null,
+    palets: encontrado.palets || 0, recogido: encontrado.recogido || 0, pendiente,
+    estadoPedido: pendiente <= 0 ? "recogido" : (encontrado.recogido > 0 ? "recogido_parcial" : "pendiente"),
+    aviso: "Este es el estado del PEDIDO completo (no de la referencia en concreto): el sistema no distingue que referencias se han recogido si el pedido se recogio a medias."
+  };
+}
+
 async function iaMarcarRecogida(input) {
   const pt = String((input && input.pt) || "").trim();
   const palets = Number(input && input.palets);
@@ -3651,6 +3690,15 @@ const HERRAMIENTAS_IA = [
     }
   },
   {
+    name: "consultar_referencia_envase",
+    description: "Busca el pedido mas reciente (ultimos 30 dias) que incluya una referencia de envase concreta (ej: \"999979\" = IFCO 6420) y da el estado de ese pedido (recogido, pendiente o recogido a medias). Ojo: es el estado del PEDIDO completo, no de esa referencia por separado, porque el chofer no registra el desglose por referencia al recoger.",
+    input_schema: {
+      type: "object",
+      properties: { ref: { type: "string", description: "Codigo de referencia del envase, ej: 999979" } },
+      required: ["ref"]
+    }
+  },
+  {
     name: "marcar_recogida",
     description: "Marca palets como recogidos de un pedido (PT) concreto, si el chofer no lo ha registrado. Solo usar si el usuario lo pide explicitamente en esta conversacion, nunca por iniciativa propia.",
     input_schema: {
@@ -3696,6 +3744,7 @@ async function iaEjecutarHerramienta(nombre, input) {
     case "enviar_correo": return iaEnviarCorreo(input);
     case "programar_accion": return iaProgramarAccion(input);
     case "consultar_pedido": return iaConsultarPedido(input);
+    case "consultar_referencia_envase": return iaConsultarReferenciaEnvase(input);
     case "marcar_recogida": return iaMarcarRecogida(input);
     case "enviar_correo_con_excel": return iaEnviarCorreoConExcel(input);
     default: return { error: "Herramienta desconocida: " + nombre };
@@ -3709,7 +3758,10 @@ const IA_SYSTEM_PROMPT =
   "leer_cuerpo_correo), y a internet (web_search) para consultar cosas externas (por ejemplo, buscar empresas, " +
   "fabricantes o precios de un producto). Si te preguntan si un pedido concreto (PT) esta recogido o cuanto le " +
   "queda pendiente, usa consultar_pedido con su codigo (no busques el codigo con buscar_documentos, ese codigo " +
-  "es el id del documento y esa herramienta no puede filtrar por id). Solo puedes ESCRIBIR mediante " +
+  "es el id del documento y esa herramienta no puede filtrar por id). Si te preguntan por una referencia de " +
+  "envase concreta (ej: \"999979\", IFCO 6420) en vez de un PT, usa consultar_referencia_envase: te dira el " +
+  "estado del pedido que la contiene, pero aclara siempre al usuario que es el estado del pedido completo, no " +
+  "de esa referencia en particular (no se registra el desglose por referencia al recoger). Solo puedes ESCRIBIR mediante " +
   "enviar_mensaje_chat (a una lanzadera, " +
   "numero 1 a 4), enviar_correo, programar_accion (para dejar programado un envio de correo o chat para dentro " +
   "de un rato en vez de al momento), y marcar_recogida (para marcar palets recogidos de un pedido, si el " +
