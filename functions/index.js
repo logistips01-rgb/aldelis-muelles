@@ -1175,6 +1175,15 @@ function saludoSegunHora() {
   return "Buenas noches";
 }
 
+// Robin se presenta ("Soy Robin, el asistente de Aldelis") solo el dia en
+// que se estrena; a partir del dia siguiente, saludo normal sin repetir
+// quien es cada vez que un chofer se conecta.
+const FECHA_PRESENTACION_ROBIN = "2026-09-21";
+function esFechaPresentacionRobin() {
+  const hoy = new Date().toLocaleString("sv-SE", { timeZone: "Europe/Madrid" }).split(" ")[0];
+  return hoy === FECHA_PRESENTACION_ROBIN;
+}
+
 exports.robinSaludaChofer = onDocumentWritten("lanzaderas_chofer/{numero}", async (event) => {
   const antes = event.data && event.data.before && event.data.before.exists ? event.data.before.data() : null;
   const despues = event.data && event.data.after && event.data.after.exists ? event.data.after.data() : null;
@@ -1186,7 +1195,7 @@ exports.robinSaludaChofer = onDocumentWritten("lanzaderas_chofer/{numero}", asyn
     const nombre = (despues.nombre || "").trim().split(" ")[0];
     const saludo = saludoSegunHora();
     texto = (nombre ? "¡" + saludo + ", " + nombre + "! " : "¡" + saludo + "! ") +
-      "Soy Robin, el asistente de Aldelis. Que tengas un buen turno 🚚";
+      (esFechaPresentacionRobin() ? "Soy Robin, el asistente de Aldelis. Que tengas un buen turno 🚚" : "Que tengas un buen turno 🚚");
   } else if (antes && !despues) {
     const nombre = (antes.nombre || "").trim().split(" ")[0];
     texto = (nombre ? "¡Hasta la próxima, " + nombre + "! " : "¡Hasta la próxima! ") + saludoSegunHora() + " 👋";
@@ -1201,6 +1210,83 @@ exports.robinSaludaChofer = onDocumentWritten("lanzaderas_chofer/{numero}", asyn
     });
   } catch (e) { console.error("robinSaludaChofer:", e.message); }
 });
+
+// Robin pregunta por el chat cuando una lanzadera lleva mucho rato parada en
+// un muelle (45 min, luego cada 45 min mas si sigue sin moverse: 45, 90,
+// 135...). El segundo aviso en adelante es mas insistente. El motivo que da
+// depende de la nave: en Avitrans/Caserfri/Txt (si hay algo pendiente de
+// recoger), en Merca/Arento (esperando producto) o en Plaza (bajar cosas a
+// Merca); en el resto de naves pregunta sin dar un motivo concreto.
+const NAVES_CON_PENDIENTE_RECOGIDA = ["avitrans", "caserfri", "txt"];
+const NAVES_PRODUCTO_PEDIDOS = ["merca", "arento"];
+const NOMBRE_NAVE_TEXTO = {
+  plaza: "Plaza", caserfri: "Caserfri", merca: "Merca", arento: "Arento",
+  avitrans: "Avitrans", txt: "Txt", upasa: "Upasa", sabeco: "Sabeco"
+};
+
+async function mensajeLanzaderaParada(numero, nave, elapsedMin, autoritario) {
+  const nombreNave = NOMBRE_NAVE_TEXTO[nave] || nave;
+  const tiempo = formatDur(elapsedMin);
+  let motivo = "";
+
+  if (NAVES_CON_PENDIENTE_RECOGIDA.includes(nave)) {
+    try {
+      const doc = await db.collection("almacenes_pendientes").doc(nave).get();
+      const d = doc.exists ? doc.data() : {};
+      const pendiente = Math.max((d.pedido || 0) - (d.recogido || 0), 0);
+      if (pendiente > 0) {
+        motivo = autoritario
+          ? " Seguimos con " + pendiente + " palets pendientes de recoger en " + nombreNave + ", hace falta agilizar."
+          : " Todavía tenemos pendiente de recoger " + pendiente + " palets en " + nombreNave + ".";
+      }
+    } catch (e) { console.error("mensajeLanzaderaParada: pendientes:", e.message); }
+  } else if (NAVES_PRODUCTO_PEDIDOS.includes(nave)) {
+    motivo = autoritario
+      ? " Necesitamos que baje el producto cuanto antes, se están retrasando los pedidos."
+      : " Estamos esperando producto para los pedidos.";
+  } else if (nave === "plaza") {
+    motivo = autoritario
+      ? " Hace falta bajar el material a Merca cuanto antes."
+      : " Hay que bajar cosas a Merca.";
+  }
+
+  if (!autoritario) {
+    return "¿Cómo va este camión? Lleva " + tiempo + " en " + nombreNave + "." + motivo;
+  }
+  return "Lanzadera " + numero + ": lleva ya " + tiempo + " parada en " + nombreNave + "." + motivo + " Por favor, dadme una actualización.";
+}
+
+exports.revisarLanzaderasParadas = onSchedule(
+  { schedule: "every 5 minutes", timeZone: "Europe/Madrid" },
+  async () => {
+    for (let numero = 1; numero <= 4; numero++) {
+      try {
+        const doc = await db.collection("lanzaderas").doc(String(numero)).get();
+        if (!doc.exists) continue;
+        const d = doc.data();
+        if (!d.activa || d.estado !== "en_nave" || !d.nave || !d.desde) continue;
+
+        const elapsedMin = (Date.now() - d.desde.toMillis()) / 60000;
+        const nivel = Math.floor(elapsedMin / 45);
+        if (nivel < 1) continue;
+
+        const avisoRef = db.collection("lanzaderas_avisos_parada").doc(String(numero));
+        const avisoDoc = await avisoRef.get();
+        const aviso = avisoDoc.exists ? avisoDoc.data() : null;
+        const mismaParada = !!(aviso && aviso.desde && aviso.desde.isEqual(d.desde));
+        const nivelAvisado = mismaParada ? (aviso.nivel || 0) : 0;
+        if (nivel <= nivelAvisado) continue;
+
+        const texto = await mensajeLanzaderaParada(numero, d.nave, elapsedMin, nivel >= 2);
+        await db.collection("mensajes").add({
+          lanzadera: numero, de: "almacen", emisor: "Robin (IA Muelles)", texto,
+          ts: admin.firestore.Timestamp.now()
+        });
+        await avisoRef.set({ desde: d.desde, nivel, actualizado: admin.firestore.Timestamp.now() });
+      } catch (e) { console.error("revisarLanzaderasParadas: lanzadera", numero, e.message); }
+    }
+  }
+);
 
 // ── Notificación push al chat de lanzaderas ─────────────────────────────────
 
@@ -3421,6 +3507,25 @@ async function iaProgramarAccion(input) {
 // "Marcar recogido" del panel (cerrarPedidoManual): un documento en
 // recogidas_palets, que el trigger restarRecogidaPalets ya sabe procesar -
 // no se toca pedidos_transferencia directamente aqui.
+// Consulta de solo lectura: cuanto queda pendiente de un PT concreto. Hace
+// falta como herramienta aparte porque buscar_documentos no puede filtrar
+// por el id del documento (el PT es el id en pedidos_transferencia), asi
+// que sin esto Robin no podia responder "¿esta recogido el PT X?".
+async function iaConsultarPedido(input) {
+  const pt = String((input && input.pt) || "").trim();
+  if (!pt) return { error: "Falta el codigo del pedido (pt)" };
+  const doc = await db.collection("pedidos_transferencia").doc(pt).get();
+  if (!doc.exists) return { error: "No existe ningun pedido con el codigo " + pt };
+  const d = doc.data();
+  const pendiente = Math.max((d.palets || 0) - (d.recogido || 0), 0);
+  return {
+    pt, almacen: d.almacen,
+    palets: d.palets || 0, recogido: d.recogido || 0, pendiente,
+    estado: pendiente <= 0 ? "recogido" : "pendiente",
+    cerrado: !!d.cerrado
+  };
+}
+
 async function iaMarcarRecogida(input) {
   const pt = String((input && input.pt) || "").trim();
   const palets = Number(input && input.palets);
@@ -3537,6 +3642,15 @@ const HERRAMIENTAS_IA = [
     }
   },
   {
+    name: "consultar_pedido",
+    description: "Consulta el estado de un pedido de transferencia (PT) por su codigo: cuantos palets tiene en total, cuantos se han recogido ya y cuantos quedan pendientes de recoger.",
+    input_schema: {
+      type: "object",
+      properties: { pt: { type: "string", description: "Codigo del pedido, ej: PT028980" } },
+      required: ["pt"]
+    }
+  },
+  {
     name: "marcar_recogida",
     description: "Marca palets como recogidos de un pedido (PT) concreto, si el chofer no lo ha registrado. Solo usar si el usuario lo pide explicitamente en esta conversacion, nunca por iniciativa propia.",
     input_schema: {
@@ -3581,6 +3695,7 @@ async function iaEjecutarHerramienta(nombre, input) {
     case "enviar_mensaje_chat": return iaEnviarMensajeChat(input);
     case "enviar_correo": return iaEnviarCorreo(input);
     case "programar_accion": return iaProgramarAccion(input);
+    case "consultar_pedido": return iaConsultarPedido(input);
     case "marcar_recogida": return iaMarcarRecogida(input);
     case "enviar_correo_con_excel": return iaEnviarCorreoConExcel(input);
     default: return { error: "Herramienta desconocida: " + nombre };
@@ -3592,7 +3707,10 @@ const IA_SYSTEM_PROMPT =
   "logistica de aves/alimentacion. Tienes acceso de LECTURA a cualquier coleccion de la base de datos " +
   "(listar_documentos, buscar_documentos), al buzon de correo de pedidos (leer_correos_recientes, " +
   "leer_cuerpo_correo), y a internet (web_search) para consultar cosas externas (por ejemplo, buscar empresas, " +
-  "fabricantes o precios de un producto). Solo puedes ESCRIBIR mediante enviar_mensaje_chat (a una lanzadera, " +
+  "fabricantes o precios de un producto). Si te preguntan si un pedido concreto (PT) esta recogido o cuanto le " +
+  "queda pendiente, usa consultar_pedido con su codigo (no busques el codigo con buscar_documentos, ese codigo " +
+  "es el id del documento y esa herramienta no puede filtrar por id). Solo puedes ESCRIBIR mediante " +
+  "enviar_mensaje_chat (a una lanzadera, " +
   "numero 1 a 4), enviar_correo, programar_accion (para dejar programado un envio de correo o chat para dentro " +
   "de un rato en vez de al momento), y marcar_recogida (para marcar palets recogidos de un pedido, si el " +
   "usuario lo pide), si las tienes disponibles: no puedes modificar pedidos de ninguna otra forma (no puedes " +
