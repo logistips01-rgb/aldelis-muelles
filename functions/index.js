@@ -3969,13 +3969,13 @@ exports.revisarCorreoAsistenteIA = onSchedule(
 
 // Extraccion de albaranes (ruta Usieto): el ERP manda cada albaran por
 // correo a este mismo buzon con asunto "Albaran: <codigo>" (ej: "Albaran:
-// AV26/052595"). Cuando alguien de confianza (Aldelis o Grupo Usieto) pide
+// AV26/052595"). Cuando alguien de un dominio de confianza pide
 // "extraer <codigo>", se busca ese correo y se reenvia tal cual (con sus
 // adjuntos originales) a quien lo pidio.
 // Funcion COMPLETAMENTE APARTE de revisarCorreoPedidos y de
 // revisarCorreoAsistenteIA (aprendido a base de sustos: un bug aqui nunca
 // debe poder bloquear el procesado de pedidos ni las respuestas de Robin).
-const DOMINIOS_EXTRAER_ALBARAN = ["aldelis.com", "grupousieto.com"];
+const DOMINIOS_EXTRAER_ALBARAN = ["aldelis.com", "grupousieto.com", "padesa.es", "kovo.es", "innovalogic.es"];
 
 function remitenteAutorizadoExtraerAlbaran(email) {
   const e = String(email || "").toLowerCase();
