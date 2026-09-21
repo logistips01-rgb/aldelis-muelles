@@ -4478,11 +4478,11 @@ const COMPRAS_TIPOS_CORREO = [
   { regex: /^planificacion bandejas$/i, tipo: "planificacion", procesar: procesarComprasPlanificacion }
 ];
 
-// En punto cada hora (no "cada 60 min" sin anclar): el correo de consumos
-// llega todos los dias a las 10:00, asi que interesa que se revise justo
-// en esa hora en vez de depender de cuando se desplego la funcion.
+// Una vez al dia a las 11:00: el correo de consumos llega todos los dias a
+// las 10:00, asi que 11:00 deja margen de sobra. Revisa a la vez los 5
+// tipos de fichero (stock, consumos, transito, pedido base, planificacion).
 exports.revisarCorreoComprasBandejas = onSchedule(
-  { schedule: "0 * * * *", timeZone: "Europe/Madrid" },
+  { schedule: "0 11 * * *", timeZone: "Europe/Madrid" },
   async () => {
     let token;
     try { token = await obtenerTokenMS(); }
