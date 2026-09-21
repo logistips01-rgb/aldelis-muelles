@@ -4041,6 +4041,25 @@ function extraerCodigoAlbaran(asunto) {
     .trim();
 }
 
+// Saca el codigo de un asunto "Albaran: AV26/052595" (o "Albaran AV26/052595").
+function codigoDeAsuntoAlbaran(asunto) {
+  return String(asunto || "")
+    .replace(/^\s*albaran\s*:?\s*/i, "")
+    .trim();
+}
+
+// Compara codigos de albaran ignorando ceros a la izquierda en cada tramo
+// numerico (AV26/52646 y AV26/052646 son el mismo albaran, es habitual que
+// quien pide la extraccion se salte un cero). El resto (letras) se compara
+// sin distinguir mayusculas.
+function normalizarCodigoAlbaran(codigo) {
+  return String(codigo || "")
+    .trim()
+    .split("/")
+    .map(seg => /^\d+$/.test(seg) ? String(Number(seg)) : seg.toUpperCase())
+    .join("/");
+}
+
 async function graphReenviarCorreo(token, msgId, destinatario, comentario) {
   const res = await fetch(
     "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS + "/messages/" + msgId + "/forward",
@@ -4089,15 +4108,22 @@ exports.revisarCorreoExtraerAlbaran = onSchedule(
           continue;
         }
 
-        const subjectEsperado = "Albaran: " + codigo;
-        const filtro = "subject eq '" + subjectEsperado.replace(/'/g, "''") + "'";
+        // Se busca por prefijo (la parte no numerica del primer tramo, ej
+        // "AV" de "AV26/52646") y se compara el codigo completo ignorando
+        // ceros a la izquierda, en vez de una igualdad exacta de texto: es
+        // habitual pedir el codigo sin algun cero que si lleva el asunto
+        // real (AV26/52646 vs AV26/052646 es el mismo albaran).
+        const codigoNorm = normalizarCodigoAlbaran(codigo);
+        const prefijoAlfa = codigo.split("/")[0].replace(/[0-9]+$/, "");
+        const filtro = "startswith(subject,'" + ("Albaran: " + prefijoAlfa).replace(/'/g, "''") + "')";
         const busqueda = await graphGet(token,
           "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS +
           "/mailFolders/inbox/messages?$filter=" + encodeURIComponent(filtro) +
-          "&$top=5&$select=id,subject,receivedDateTime");
+          "&$top=25&$select=id,subject,receivedDateTime");
 
-        const encontrados = (busqueda.value || []).sort((a, b) =>
-          new Date(b.receivedDateTime) - new Date(a.receivedDateTime));
+        const encontrados = (busqueda.value || [])
+          .filter(m => normalizarCodigoAlbaran(codigoDeAsuntoAlbaran(m.subject)) === codigoNorm)
+          .sort((a, b) => new Date(b.receivedDateTime) - new Date(a.receivedDateTime));
         const encontrado = encontrados.length > 0;
 
         if (!encontrado) {
