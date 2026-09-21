@@ -1184,32 +1184,18 @@ function esFechaPresentacionRobin() {
   return hoy === FECHA_PRESENTACION_ROBIN;
 }
 
-// El saludo al conectar ya NO es automatico (ver robinRespondeSaludoChofer,
-// mas abajo: espera a que el chofer de los buenos dias en el chat). La
-// despedida al terminar la jornada si sigue siendo automatica.
-exports.robinSaludaChofer = onDocumentWritten("lanzaderas_chofer/{numero}", async (event) => {
-  const antes = event.data && event.data.before && event.data.before.exists ? event.data.before.data() : null;
-  const despues = event.data && event.data.after && event.data.after.exists ? event.data.after.data() : null;
-  const numero = Number(event.params.numero);
-  if (!(numero >= 1 && numero <= 4)) return;
-  if (!(antes && !despues)) return; // solo interesa la despedida (se borra el documento al salir)
-
-  const nombre = (antes.nombre || "").trim().split(" ")[0];
-  const texto = (nombre ? "¡Hasta la próxima, " + nombre + "! " : "¡Hasta la próxima! ") + saludoSegunHora() + " 👋";
-
-  try {
-    await db.collection("mensajes").add({
-      lanzadera: numero, de: "almacen", emisor: "Robin (IA Muelles)", texto,
-      ts: admin.firestore.Timestamp.now()
-    });
-  } catch (e) { console.error("robinSaludaChofer:", e.message); }
-});
-
-// Robin solo saluda al empezar la jornada si el propio chofer da los buenos
-// dias (o similar) en el chat - no lo hace ya por iniciativa propia al
-// conectarse. Maximo un saludo por lanzadera y dia (para no repetirlo cada
-// vez que el chofer vuelve a decir "hola" en la conversacion).
+// Robin solo saluda o se despide si el propio chofer lo hace primero en el
+// chat - no lo hace ya por iniciativa propia ni al conectarse ni al cerrar
+// la jornada (antes se despedia automaticamente al borrarse el documento de
+// lanzaderas_chofer, incluso si el chofer simplemente cerraba sin decir
+// nada). Maximo un saludo y una despedida por lanzadera y dia.
 const SALUDO_CHOFER_REGEX = /\b(buenos\s*d[ií]as|buenas\s*tardes|buenas\s*noches|buenas|hola)\b/i;
+const DESPEDIDA_CHOFER_REGEX = /\b(adi[oó]s|hasta\s*luego|hasta\s*ma[ñn]ana|nos\s*vemos|me\s*voy|chao|chau)\b/i;
+
+async function nombreChoferActual(numero) {
+  const choferDoc = await db.collection("lanzaderas_chofer").doc(String(numero)).get();
+  return choferDoc.exists ? (choferDoc.data().nombre || "").trim().split(" ")[0] : "";
+}
 
 exports.robinRespondeSaludoChofer = onDocumentCreated("mensajes/{msgId}", async (event) => {
   const msg = event.data ? event.data.data() : null;
@@ -1224,8 +1210,7 @@ exports.robinRespondeSaludoChofer = onDocumentCreated("mensajes/{msgId}", async 
     const doc = await ref.get();
     if (doc.exists && doc.data().fecha === hoy) return; // ya saludado hoy en esta lanzadera
 
-    const choferDoc = await db.collection("lanzaderas_chofer").doc(String(numero)).get();
-    const nombre = choferDoc.exists ? (choferDoc.data().nombre || "").trim().split(" ")[0] : "";
+    const nombre = await nombreChoferActual(numero);
     const saludo = saludoSegunHora();
     const texto = (nombre ? "¡" + saludo + ", " + nombre + "! " : "¡" + saludo + "! ") +
       (esFechaPresentacionRobin() ? "Soy Robin, el asistente de Aldelis. Que tengas un buen turno 🚚" : "Que tengas un buen turno 🚚");
@@ -1236,6 +1221,30 @@ exports.robinRespondeSaludoChofer = onDocumentCreated("mensajes/{msgId}", async 
     });
     await ref.set({ fecha: hoy, actualizado: admin.firestore.Timestamp.now() });
   } catch (e) { console.error("robinRespondeSaludoChofer:", e.message); }
+});
+
+exports.robinRespondeDespedidaChofer = onDocumentCreated("mensajes/{msgId}", async (event) => {
+  const msg = event.data ? event.data.data() : null;
+  if (!msg || msg.de !== "lanzadera" || !msg.texto) return;
+  const numero = Number(msg.lanzadera);
+  if (!(numero >= 1 && numero <= 4)) return;
+  if (!DESPEDIDA_CHOFER_REGEX.test(msg.texto)) return;
+
+  const hoy = new Date().toLocaleString("sv-SE", { timeZone: "Europe/Madrid" }).split(" ")[0];
+  const ref = db.collection("robin_despedidas_chofer").doc(String(numero));
+  try {
+    const doc = await ref.get();
+    if (doc.exists && doc.data().fecha === hoy) return; // ya despedido hoy en esta lanzadera
+
+    const nombre = await nombreChoferActual(numero);
+    const texto = (nombre ? "¡Hasta la próxima, " + nombre + "! " : "¡Hasta la próxima! ") + saludoSegunHora() + " 👋";
+
+    await db.collection("mensajes").add({
+      lanzadera: numero, de: "almacen", emisor: "Robin (IA Muelles)", texto,
+      ts: admin.firestore.Timestamp.now()
+    });
+    await ref.set({ fecha: hoy, actualizado: admin.firestore.Timestamp.now() });
+  } catch (e) { console.error("robinRespondeDespedidaChofer:", e.message); }
 });
 
 // Robin pregunta por el chat cuando una lanzadera lleva mucho rato parada en
