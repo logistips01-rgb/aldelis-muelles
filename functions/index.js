@@ -1189,8 +1189,20 @@ function esFechaPresentacionRobin() {
 // la jornada (antes se despedia automaticamente al borrarse el documento de
 // lanzaderas_chofer, incluso si el chofer simplemente cerraba sin decir
 // nada). Maximo un saludo y una despedida por lanzadera y dia.
-const SALUDO_CHOFER_REGEX = /\b(buenos\s*d[ií]as|buenas\s*tardes|buenas\s*noches|buenas|hola)\b/i;
-const DESPEDIDA_CHOFER_REGEX = /\b(adi[oó]s|hasta\s*luego|hasta\s*ma[ñn]ana|nos\s*vemos|me\s*voy|chao|chau)\b/i;
+// Solo cuenta como saludo/despedida si el mensaje ES basicamente eso (un
+// saludo general), no si va dirigido a otra persona ("hola Manolo") o lleva
+// mas texto detras - eso ya no es un saludo a Robin, es una conversacion
+// normal que empieza con esa palabra.
+function normalizarTextoChat(t) {
+  return String(t || "")
+    .toLowerCase()
+    .normalize("NFD").replace(/[̀-ͯ]/g, "") // quita acentos (día -> dia)
+    .replace(/[^a-z\s]/g, "") // quita signos de puntuacion, emoji, numeros...
+    .replace(/\s+/g, " ")
+    .trim();
+}
+const SALUDOS_GENERALES = ["buenos dias", "buenas tardes", "buenas noches", "buenas", "hola"];
+const DESPEDIDAS_GENERALES = ["adios", "hasta luego", "hasta manana", "nos vemos", "me voy", "chao", "chau"];
 
 async function nombreChoferActual(numero) {
   const choferDoc = await db.collection("lanzaderas_chofer").doc(String(numero)).get();
@@ -1202,7 +1214,7 @@ exports.robinRespondeSaludoChofer = onDocumentCreated("mensajes/{msgId}", async 
   if (!msg || msg.de !== "lanzadera" || !msg.texto) return;
   const numero = Number(msg.lanzadera);
   if (!(numero >= 1 && numero <= 4)) return;
-  if (!SALUDO_CHOFER_REGEX.test(msg.texto)) return;
+  if (!SALUDOS_GENERALES.includes(normalizarTextoChat(msg.texto))) return;
 
   const hoy = new Date().toLocaleString("sv-SE", { timeZone: "Europe/Madrid" }).split(" ")[0];
   const ref = db.collection("robin_saludos_chofer").doc(String(numero));
@@ -1228,7 +1240,7 @@ exports.robinRespondeDespedidaChofer = onDocumentCreated("mensajes/{msgId}", asy
   if (!msg || msg.de !== "lanzadera" || !msg.texto) return;
   const numero = Number(msg.lanzadera);
   if (!(numero >= 1 && numero <= 4)) return;
-  if (!DESPEDIDA_CHOFER_REGEX.test(msg.texto)) return;
+  if (!DESPEDIDAS_GENERALES.includes(normalizarTextoChat(msg.texto))) return;
 
   const hoy = new Date().toLocaleString("sv-SE", { timeZone: "Europe/Madrid" }).split(" ")[0];
   const ref = db.collection("robin_despedidas_chofer").doc(String(numero));
