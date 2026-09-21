@@ -76,6 +76,7 @@
         <button class="tab-view" id="btn-vista-costes" onclick="switchVista('costes')" style="display:none">Costes</button>
         <button class="tab-view" id="btn-vista-cambios" onclick="switchVista('cambios')" style="display:none">Cambios</button>
         <button class="tab-view" id="btn-vista-furgoneta" onclick="switchVista('furgoneta')" style="display:none">Furgoneta</button>
+        <button class="tab-view" id="btn-vista-compras" onclick="switchVista('compras')" style="display:none">Compras</button>
         <button class="tab-view" id="btn-vista-asistente" onclick="switchVista('asistente')" style="display:none">🤖 Asistente</button>
         <input type="date" id="fecha-dashboard" onchange="cambioFecha()">
         <button class="btn-ghost" style="width:auto;padding:6px 14px;" onclick="abrirModalPass()">Contrasena</button>
@@ -439,6 +440,64 @@
         <button class="btn-informe" onclick="abrirModalCambio()">+ Registrar cambio</button>
       </div>
       <div id="cambios-lista"></div>
+    </div>
+
+    <div id="vista-compras" class="reservas-wrap" style="display:none">
+      <div class="informe-header">
+        <div class="section-title" style="margin-bottom:0">Compras — Bandejas</div>
+      </div>
+      <div class="lanz-subtabs">
+        <button class="lanz-subtab active" id="btn-compras-dashboard" onclick="switchComprasVista('dashboard')">Dashboard</button>
+        <button class="lanz-subtab" id="btn-compras-maestro" onclick="switchComprasVista('maestro')">Maestro</button>
+      </div>
+
+      <div id="compras-dashboard" class="lanz-sub">
+        <div style="display:flex;gap:8px;align-items:center;margin:14px 0;flex-wrap:wrap">
+          <button class="btn-informe" onclick="cargarCompras()">🔄 Recalcular</button>
+          <button class="btn-excel" onclick="exportarComprasExcel()">Exportar Excel</button>
+          <label style="font-weight:400;display:flex;align-items:center;gap:6px;margin-left:8px">
+            <input type="checkbox" id="compras-mostrar-bajas" style="width:auto" onchange="renderComprasDashboard()"> Mostrar referencias de baja</label>
+          <span id="compras-dashboard-estado" style="font-size:12px;color:#9CA3AF"></span>
+        </div>
+        <div class="tabla-scroll"><table class="tabla-inf" id="compras-dashboard-tabla">
+          <thead><tr>
+            <th>Ref.</th><th>Descripción</th><th>Situación</th><th>CDM (pal/día)</th><th>Var. %</th>
+            <th>Stock (pal)</th><th>Tránsito (pal)</th><th>Días cobertura</th><th>Pedido</th>
+            <th>Base</th><th>Ajuste</th><th>Estado</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table></div>
+      </div>
+
+      <div id="compras-maestro" class="lanz-sub" style="display:none">
+        <p style="font-size:13px;color:#6B7280;margin:12px 0">
+          Referencias de bandejas: lead time (días), stock de seguridad, unidades por palet, incremento
+          (palets extra, ej. por una oferta puntual) y situación (ACTIVA / BAJA / MERCA).
+        </p>
+        <div class="informe-card" style="margin-bottom:16px">
+          <div class="informe-card-title">Añadir / editar referencia</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+            <input type="text" id="compras-m-ref" placeholder="Referencia" style="width:110px;padding:8px;border:1px solid #D1D5DB;border-radius:6px">
+            <input type="text" id="compras-m-desc" placeholder="Descripción" style="flex:1;min-width:180px;padding:8px;border:1px solid #D1D5DB;border-radius:6px">
+            <input type="number" id="compras-m-lead" placeholder="Lead time" min="0" style="width:100px;padding:8px;border:1px solid #D1D5DB;border-radius:6px">
+            <input type="number" id="compras-m-ss" placeholder="Stock seg." min="0" style="width:100px;padding:8px;border:1px solid #D1D5DB;border-radius:6px">
+            <input type="number" id="compras-m-up" placeholder="Ud/palet" min="1" style="width:100px;padding:8px;border:1px solid #D1D5DB;border-radius:6px">
+            <input type="number" id="compras-m-inc" placeholder="Incremento" min="0" value="0" style="width:100px;padding:8px;border:1px solid #D1D5DB;border-radius:6px">
+            <select id="compras-m-situacion" style="padding:8px;border:1px solid #D1D5DB;border-radius:6px">
+              <option value="ACTIVA">ACTIVA</option><option value="MERCA">MERCA</option><option value="BAJA">BAJA</option>
+            </select>
+            <button class="btn-primary" style="width:auto;padding:8px 18px" onclick="guardarComprasMaestro()">Guardar</button>
+          </div>
+          <div id="compras-m-error" style="color:#D41F3A;font-size:13px;margin-top:8px;display:none"></div>
+        </div>
+        <div class="tabla-scroll"><table class="tabla-inf" id="compras-maestro-tabla">
+          <thead><tr>
+            <th>Ref.</th><th>Descripción</th><th>Lead time</th><th>Stock seg.</th><th>Ud/palet</th>
+            <th>Incremento</th><th>Situación</th><th></th>
+          </tr></thead>
+          <tbody></tbody>
+        </table></div>
+      </div>
     </div>
 
     <div id="vista-config" class="reservas-wrap" style="display:none">

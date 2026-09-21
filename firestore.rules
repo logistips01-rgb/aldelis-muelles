@@ -403,6 +403,30 @@ service cloud.firestore {
       );
     }
 
+    // ── Compras (bandejas) ───────────────────────────────────────────────
+    // El maestro se gestiona a mano desde el panel (altas/bajas, stock de
+    // seguridad, incremento por ofertas...). El resto (stock, transito,
+    // consumos, pedido base, planificacion) solo lo escribe el servidor,
+    // al leer los correos del ERP - el cliente solo lee, para el dashboard.
+    match /compras_bandejas_maestro/{referencia} {
+      allow read: if permitidoEstricto('compras');
+      allow create, update, delete: if permitidoEstricto('compras') && validComprasBandejasMaestro();
+    }
+    function validComprasBandejasMaestro() {
+      let d = request.resource.data;
+      return d.descripcion is string && d.descripcion.size() <= 200
+        && d.leadTime is number && d.leadTime >= 0
+        && d.stockSeguridad is number && d.stockSeguridad >= 0
+        && d.unidadesPalet is number && d.unidadesPalet > 0
+        && d.incremento is number && d.incremento >= 0
+        && d.situacion in ['ACTIVA', 'BAJA', 'MERCA'];
+    }
+    match /compras_bandejas_stock/{referencia}        { allow read: if permitidoEstricto('compras'); allow write: if false; }
+    match /compras_bandejas_transito/{referencia}      { allow read: if permitidoEstricto('compras'); allow write: if false; }
+    match /compras_bandejas_consumos/{id}              { allow read: if permitidoEstricto('compras'); allow write: if false; }
+    match /compras_bandejas_pedido_base/{referencia}   { allow read: if permitidoEstricto('compras'); allow write: if false; }
+    match /compras_bandejas_planificacion/{referencia} { allow read: if permitidoEstricto('compras'); allow write: if false; }
+
     match /cambios_material/{id} {
       allow read: if permitidoEstricto('cambios');
       allow create, update: if permitidoEstricto('cambios') && validCambioMaterial();

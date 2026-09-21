@@ -593,7 +593,8 @@ const SECCIONES = [
   { id: "chat",       label: "Chat con lanzaderas" },
   { id: "config",     label: "Configuracion" },
   { id: "cambios",    label: "Cambios de material" },
-  { id: "furgoneta",  label: "Furgoneta" }
+  { id: "furgoneta",  label: "Furgoneta" },
+  { id: "compras",    label: "Compras (bandejas)" }
 ];
 
 // Listas antiguas: se usan como valor por defecto mientras el usuario no
@@ -654,7 +655,8 @@ function calcularPermisos(emailRaw, secciones) {
       costes:     s("costes"),
       config:     s("config"),
       cambios:    s("cambios"),
-      furgoneta:  s("furgoneta")
+      furgoneta:  s("furgoneta"),
+      compras:    s("compras")
     },
     // Colecciones a las que hay que suscribirse
     reservas:    s("rejilla") || s("lista") || s("informes"),
@@ -701,7 +703,7 @@ function aplicarRol() {
   }
 
   // Abrir la primera vista disponible
-  const orden = ["rejilla", "lista", "lanzaderas", "pedidos", "bizerba", "cargas", "merca", "arento", "informes", "costes", "cambios", "furgoneta", "config"];
+  const orden = ["rejilla", "lista", "lanzaderas", "pedidos", "bizerba", "cargas", "merca", "arento", "informes", "costes", "cambios", "furgoneta", "compras", "config"];
   const primera = orden.find(v => _perms.ver[v]);
   if (primera) switchVista(primera);
 }
@@ -709,7 +711,7 @@ function aplicarRol() {
 function switchVista(vista) {
   // No permitir entrar en una vista sin permiso
   if (_perms.ver && _perms.ver[vista] === false) return;
-  ["rejilla", "lista", "informes", "lanzaderas", "pedidos", "cargas", "merca", "arento", "bizerba", "config", "costes", "cambios", "furgoneta", "asistente"].forEach(v => {
+  ["rejilla", "lista", "informes", "lanzaderas", "pedidos", "cargas", "merca", "arento", "bizerba", "config", "costes", "cambios", "furgoneta", "compras", "asistente"].forEach(v => {
     document.getElementById("vista-" + v).style.display = vista === v ? "block" : "none";
     document.getElementById("btn-vista-" + v).classList.toggle("active", vista === v);
   });
@@ -739,6 +741,7 @@ function switchVista(vista) {
   if (vista === "config")     cargarConfig();
   if (vista === "costes")     cargarCostes();
   if (vista === "cambios")    cargarCambios();
+  if (vista === "compras")    cargarCompras();
 }
 
 const MUELLES_CARGA = ["M1", "M2", "M3", "M4", "M5"];
@@ -5004,4 +5007,193 @@ function toggleMicAsistente() {
     if (btn) { btn.textContent = "🎤"; btn.style.background = ""; btn.style.color = ""; }
   };
   _asistenteReconocimiento.start();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// COMPRAS — BANDEJAS
+// ═══════════════════════════════════════════════════════════════════════
+// El calculo (CDM, pedido, ajuste) lo hace siempre el servidor
+// (calcularPedidoBandejas), nunca el cliente: aqui solo se pinta lo que
+// devuelve y se gestiona el maestro (unica parte editable desde el panel).
+let _comprasResultados = [];
+let _comprasMaestroCache = [];
+let _comprasMaestroListenerActivo = false;
+let _comprasEditando = null;
+
+function switchComprasVista(v) {
+  document.getElementById("compras-dashboard").style.display = v === "dashboard" ? "" : "none";
+  document.getElementById("compras-maestro").style.display = v === "maestro" ? "" : "none";
+  document.getElementById("btn-compras-dashboard").classList.toggle("active", v === "dashboard");
+  document.getElementById("btn-compras-maestro").classList.toggle("active", v === "maestro");
+}
+
+function cargarCompras() {
+  if (!_comprasMaestroListenerActivo) {
+    _comprasMaestroListenerActivo = true;
+    db.collection("compras_bandejas_maestro").onSnapshot(snap => {
+      _comprasMaestroCache = snap.docs.map(d => ({ ref: d.id, ...d.data() })).sort((a, b) => {
+        const na = Number((a.ref.match(/\d+/) || [])[0]) || 999999;
+        const nb = Number((b.ref.match(/\d+/) || [])[0]) || 999999;
+        return na - nb;
+      });
+      renderComprasMaestro();
+    }, e => console.error("compras_bandejas_maestro:", e.message));
+  }
+
+  const estado = document.getElementById("compras-dashboard-estado");
+  if (estado) estado.textContent = "Calculando...";
+  firebase.functions().httpsCallable("calcularPedidoBandejas")({})
+    .then(res => {
+      if (res.data && res.data.ok) {
+        _comprasResultados = res.data.resultados || [];
+        renderComprasDashboard();
+        if (estado) estado.textContent = _comprasResultados.length + " referencia(s). Actualizado " + new Date().toLocaleTimeString("es-ES");
+      } else {
+        if (estado) estado.textContent = "";
+        alert((res.data && res.data.error) || "No se pudo calcular el pedido.");
+      }
+    })
+    .catch(e => {
+      console.error("calcularPedidoBandejas:", e);
+      if (estado) estado.textContent = "";
+      alert("Error al calcular: " + e.message);
+    });
+}
+
+const COMPRAS_SEMAFORO_COLOR = { rojo: "#D41F3A", amarillo: "#F59E0B", verde: "#1D9E75" };
+const COMPRAS_SEMAFORO_EMOJI = { rojo: "🔴", amarillo: "🟡", verde: "🟢" };
+
+function renderComprasDashboard() {
+  const tbody = document.querySelector("#compras-dashboard-tabla tbody");
+  if (!tbody) return;
+  const mostrarBajas = document.getElementById("compras-mostrar-bajas").checked;
+  const filas = _comprasResultados.filter(r => mostrarBajas || r.situacion !== "BAJA");
+  if (!filas.length) { tbody.innerHTML = "<tr><td colspan='12' style='padding:16px;text-align:center;color:#9CA3AF'>Sin datos — revisa que el maestro tenga referencias y que hayan llegado los ficheros de stock/consumos.</td></tr>"; return; }
+
+  tbody.innerHTML = filas.map(r => {
+    const estadoTxt = r.bloqueado
+      ? "<span style='color:#9CA3AF'>🚫 bloqueado</span>"
+      : COMPRAS_SEMAFORO_EMOJI[r.semaforo] + " " + r.semaforo;
+    const filaEstilo = r.situacion === "BAJA" ? "opacity:.55" : "";
+    const colorAjuste = r.ajuste > 0 ? "#D41F3A" : (r.ajuste < 0 ? "#1D9E75" : "#6B7280");
+    return "<tr style='" + filaEstilo + "'>" +
+      "<td>" + esc(r.ref) + "</td>" +
+      "<td>" + esc(r.descripcion) + "</td>" +
+      "<td>" + esc(r.situacion) + "</td>" +
+      "<td>" + r.cdm + "</td>" +
+      "<td>" + (r.varCdm > 0 ? "+" : "") + r.varCdm + "%</td>" +
+      "<td>" + r.stockOpPalets + "</td>" +
+      "<td>" + r.transitoPalets + "</td>" +
+      "<td>" + (r.diasCobertura >= 999 ? "—" : r.diasCobertura) + "</td>" +
+      "<td style='font-weight:600'>" + r.pedido + "</td>" +
+      "<td>" + r.boxBase + "</td>" +
+      "<td style='font-weight:700;color:" + colorAjuste + "'>" + (r.ajuste > 0 ? "+" : "") + r.ajuste + "</td>" +
+      "<td>" + estadoTxt + "</td>" +
+      "</tr>";
+  }).join("");
+}
+
+function exportarComprasExcel() {
+  if (!_comprasResultados.length) { alert("Primero calcula el pedido (botón Recalcular)."); return; }
+  const filas = _comprasResultados.map(r => ({
+    "Referencia": r.ref, "Descripcion": r.descripcion, "Situacion": r.situacion,
+    "CDM (pal/dia)": r.cdm, "Var %": r.varCdm, "Stock (pal)": r.stockOpPalets,
+    "Transito (pal)": r.transitoPalets, "Dias cobertura": r.diasCobertura >= 999 ? "" : r.diasCobertura,
+    "Pedido": r.pedido, "Pedido base": r.boxBase, "Ajuste": r.ajuste,
+    "Estado": r.bloqueado ? "Bloqueado" : r.semaforo
+  }));
+  const ws = XLSX.utils.json_to_sheet(filas);
+  estilizarHojaExcel(ws, filas);
+  // Colorea cada fila (roja/amarilla/verde) segun el semaforo, encima del
+  // estilo base de cabecera que ya pone estilizarHojaExcel.
+  filas.forEach((f, i) => {
+    const r = _comprasResultados[i];
+    const bg = r.bloqueado ? "F3F4F6" : (r.semaforo === "rojo" ? "FCE4E6" : r.semaforo === "amarillo" ? "FEF4CC" : "D6F0E0");
+    for (let c = 0; c < Object.keys(f).length; c++) {
+      const addr = XLSX.utils.encode_cell({ r: i + 1, c });
+      if (ws[addr]) ws[addr].s = Object.assign({}, ws[addr].s, { fill: { fgColor: { rgb: bg } } });
+    }
+  });
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Pedido bandejas");
+  XLSX.writeFile(wb, "Aldelis_Compras_Bandejas_" + new Date().toLocaleDateString("sv-SE") + ".xlsx");
+}
+
+function renderComprasMaestro() {
+  const tbody = document.querySelector("#compras-maestro-tabla tbody");
+  if (!tbody) return;
+  if (!_comprasMaestroCache.length) {
+    tbody.innerHTML = "<tr><td colspan='8' style='padding:16px;text-align:center;color:#9CA3AF'>Sin referencias todavia.</td></tr>";
+    return;
+  }
+  tbody.innerHTML = _comprasMaestroCache.map(m =>
+    "<tr>" +
+    "<td>" + esc(m.ref) + "</td>" +
+    "<td>" + esc(m.descripcion || "") + "</td>" +
+    "<td>" + (m.leadTime != null ? m.leadTime : "") + "</td>" +
+    "<td>" + (m.stockSeguridad != null ? m.stockSeguridad : "") + "</td>" +
+    "<td>" + (m.unidadesPalet != null ? m.unidadesPalet : "") + "</td>" +
+    "<td>" + (m.incremento != null ? m.incremento : 0) + "</td>" +
+    "<td>" + esc(m.situacion || "ACTIVA") + "</td>" +
+    "<td style='white-space:nowrap'>" +
+    "<button class='btn-quitar-mini' onclick='editarComprasMaestro(\"" + m.ref + "\")'>Editar</button> " +
+    "<button class='btn-quitar-mini' onclick='eliminarComprasMaestro(\"" + m.ref + "\")'>Borrar</button>" +
+    "</td></tr>"
+  ).join("");
+}
+
+function editarComprasMaestro(ref) {
+  const m = _comprasMaestroCache.find(x => x.ref === ref);
+  if (!m) return;
+  _comprasEditando = ref;
+  document.getElementById("compras-m-ref").value = m.ref;
+  document.getElementById("compras-m-ref").disabled = true;
+  document.getElementById("compras-m-desc").value = m.descripcion || "";
+  document.getElementById("compras-m-lead").value = m.leadTime != null ? m.leadTime : "";
+  document.getElementById("compras-m-ss").value = m.stockSeguridad != null ? m.stockSeguridad : "";
+  document.getElementById("compras-m-up").value = m.unidadesPalet != null ? m.unidadesPalet : "";
+  document.getElementById("compras-m-inc").value = m.incremento != null ? m.incremento : 0;
+  document.getElementById("compras-m-situacion").value = m.situacion || "ACTIVA";
+}
+
+function limpiarFormComprasMaestro() {
+  _comprasEditando = null;
+  document.getElementById("compras-m-ref").disabled = false;
+  ["compras-m-ref", "compras-m-desc", "compras-m-lead", "compras-m-ss", "compras-m-up"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("compras-m-inc").value = 0;
+  document.getElementById("compras-m-situacion").value = "ACTIVA";
+}
+
+async function guardarComprasMaestro() {
+  const errEl = document.getElementById("compras-m-error");
+  errEl.style.display = "none";
+  const ref = (_comprasEditando || document.getElementById("compras-m-ref").value || "").trim();
+  const descripcion = document.getElementById("compras-m-desc").value.trim();
+  const leadTime = Number(document.getElementById("compras-m-lead").value);
+  const stockSeguridad = Number(document.getElementById("compras-m-ss").value);
+  const unidadesPalet = Number(document.getElementById("compras-m-up").value);
+  const incremento = Number(document.getElementById("compras-m-inc").value) || 0;
+  const situacion = document.getElementById("compras-m-situacion").value;
+
+  if (!ref) { errEl.textContent = "Falta la referencia."; errEl.style.display = "block"; return; }
+  if (!(leadTime >= 0)) { errEl.textContent = "Lead time no valido."; errEl.style.display = "block"; return; }
+  if (!(stockSeguridad >= 0)) { errEl.textContent = "Stock de seguridad no valido."; errEl.style.display = "block"; return; }
+  if (!(unidadesPalet > 0)) { errEl.textContent = "Unidades por palet no valido (mayor que 0)."; errEl.style.display = "block"; return; }
+
+  try {
+    await db.collection("compras_bandejas_maestro").doc(ref).set({
+      descripcion, leadTime, stockSeguridad, unidadesPalet, incremento, situacion
+    });
+    limpiarFormComprasMaestro();
+  } catch (e) {
+    errEl.textContent = "Error al guardar: " + e.message;
+    errEl.style.display = "block";
+  }
+}
+
+async function eliminarComprasMaestro(ref) {
+  if (!confirm("¿Quitar la referencia " + ref + " del maestro de compras?")) return;
+  try {
+    await db.collection("compras_bandejas_maestro").doc(ref).delete();
+  } catch (e) { alert("Error al borrar: " + e.message); }
 }

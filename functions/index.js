@@ -4218,6 +4218,444 @@ exports.enviarInformeExtraccionesAlbaran = onSchedule(
   }
 );
 
+// ═══════════════════════════════════════════════════════════════════════
+// MODULO DE COMPRAS — BANDEJAS
+// ═══════════════════════════════════════════════════════════════════════
+// Modulo totalmente independiente (no comparte nada con revisarCorreoPedidos
+// ni con ningun otro flujo de correo): calcula, para cada referencia de
+// bandeja, cuantos palets pedir al proveedor a partir del consumo diario
+// medio (CDM) real, el stock disponible y el plazo de entrega, comparado
+// contra el pedido estandar de esa referencia. Portado de un app.py
+// (Streamlit) ya existente, con la misma logica de calculo.
+//
+// El maestro (referencias, lead time, stock de seguridad, unidades por
+// palet, incremento por ofertas, situacion) se gestiona a mano desde el
+// panel (ver firestore.rules: compras_bandejas_maestro, escritura directa
+// del cliente). El resto de ficheros llegan por correo a este mismo buzon
+// (reservas@aldelis.com) con un asunto fijo, y se procesan cada hora:
+//   "Stock bandejas"             -> compras_bandejas_stock
+//   "Consumos bandejas"          -> compras_bandejas_consumos (1 vez/dia)
+//   "Transito bandejas 1"        -> compras_bandejas_transito (campo porTipo.1)
+//   "Transito bandejas 2"        -> compras_bandejas_transito (campo porTipo.2)
+//   "Pedido base bandejas"       -> compras_bandejas_pedido_base
+//   "Planificacion bandejas"     -> compras_bandejas_planificacion (opcional)
+// El numero de transito no esta limitado a 1 y 2: cualquier asunto
+// "Transito bandejas N" se acepta y se guarda en porTipo.N, para poder
+// añadir un tercero el dia que haga falta sin tocar codigo.
+
+const COMPRAS_ALMACENES_INT      = ["AL6", "AL6SGA", "AL6 SGA"];
+const COMPRAS_ALMACENES_MERCA    = ["ARENTO", "ARENTO CAM1", "ARENTO CAM2", "CAMARA BANDEJAS F19"];
+const COMPRAS_ALMACENES_TXT      = ["TXT"];
+const COMPRAS_ALMACENES_AVITRANS = ["AVITRANS"];
+
+// Header en la primera fila que tenga algun texto (igual que el app.py
+// original: los ficheros del ERP a veces traen 1-3 filas de cabecera antes
+// de la tabla real).
+function leerExcelConHeaderAuto(buffer) {
+  const XLSX = require("xlsx-js-style");
+  const wb = XLSX.read(buffer, { type: "buffer" });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const filas = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+  const idxHeader = filas.findIndex(f => Array.isArray(f) && f.some(c => typeof c === "string" && c.trim()));
+  if (idxHeader === -1) return [];
+  const headers = filas[idxHeader].map(h => String(h == null ? "" : h).trim());
+  const datos = [];
+  for (let i = idxHeader + 1; i < filas.length; i++) {
+    const fila = filas[i];
+    if (!fila || fila.every(c => c == null || c === "")) continue;
+    const obj = {};
+    headers.forEach((h, j) => { if (h) obj[h] = fila[j]; });
+    datos.push(obj);
+  }
+  return datos;
+}
+
+// Normaliza una fila a claves canonicas segun un mapa de alias (clave del
+// alias en minusculas, sin acentos ni espacios de mas -> nombre canonico).
+// Tolera variantes de nombre de columna entre exportaciones del ERP.
+function normalizarFilaCompras(fila, alias) {
+  const out = {};
+  for (const k in fila) {
+    const norm = String(k).trim().toLowerCase()
+      .normalize("NFD").replace(/[̀-ͯ]/g, "");
+    const canon = alias[norm];
+    if (canon) out[canon] = fila[k];
+  }
+  return out;
+}
+
+const COMPRAS_ALIAS_STOCK = {
+  "referencia": "Referencia", "almacen": "Almacen", "ubicacion": "Almacen", "cantidad": "Cantidad"
+};
+const COMPRAS_ALIAS_CONSUMOS = {
+  "referencia": "Referencia", "fecha": "Fecha", "cantidad": "Cantidad"
+};
+const COMPRAS_ALIAS_TRANSITO = {
+  "cod": "Referencia", "codigo": "Referencia", "articulo": "Referencia", "art": "Referencia",
+  "ref": "Referencia", "referencia": "Referencia",
+  "cantidad": "Cantidad", "unidades": "Cantidad", "pedido": "Cantidad"
+};
+const COMPRAS_ALIAS_PEDIDO_BASE = {
+  "ref.": "Referencia", "ref": "Referencia", "referencia": "Referencia",
+  "box base": "Box_base", "box_base": "Box_base",
+  "ud/palet": "Ud_palet", "ud_palet": "Ud_palet",
+  "descripcion": "Descripcion"
+};
+
+function normalizarFilaPlanificacion(fila) {
+  const out = {};
+  for (const k in fila) {
+    const norm = String(k).trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+    if (norm.includes("cod")) out.Codigo = fila[k];
+    else if (norm.includes("apro") || norm.includes("unidad") || norm.includes("cant")) out.Apro = fila[k];
+  }
+  return out;
+}
+
+// Aplica una lista de operaciones {type:'set'|'delete', ref, data?} en
+// lotes de 400 (limite real de Firestore: 500 por batch).
+async function commitEnLotesCompras(ops) {
+  for (let i = 0; i < ops.length; i += 400) {
+    const batch = db.batch();
+    ops.slice(i, i + 400).forEach(op => {
+      if (op.type === "set") batch.set(op.ref, op.data);
+      else batch.delete(op.ref);
+    });
+    await batch.commit();
+  }
+}
+
+// Reemplaza por completo una coleccion (cada fichero que llega es una foto
+// actual, no un incremento): borra los documentos que ya no aparecen en el
+// fichero nuevo y escribe/actualiza el resto.
+async function reemplazarColeccionCompras(coleccion, filas, idFn, dataFn) {
+  const existentes = await db.collection(coleccion).get();
+  const idsNuevos = new Set(filas.map(idFn));
+  const ops = [];
+  existentes.forEach(doc => { if (!idsNuevos.has(doc.id)) ops.push({ type: "delete", ref: doc.ref }); });
+  filas.forEach(f => ops.push({ type: "set", ref: db.collection(coleccion).doc(idFn(f)), data: dataFn(f) }));
+  await commitEnLotesCompras(ops);
+  return filas.length;
+}
+
+async function procesarComprasStock(buffer) {
+  const filas = leerExcelConHeaderAuto(buffer).map(f => normalizarFilaCompras(f, COMPRAS_ALIAS_STOCK));
+  const porReferencia = {};
+  filas.forEach(f => {
+    const ref = String(f.Referencia || "").trim();
+    const almacen = String(f.Almacen || "").replace(/\s+/g, " ").trim().toUpperCase();
+    const cantidad = Number(f.Cantidad) || 0;
+    if (!ref || !almacen) return;
+    if (!porReferencia[ref]) porReferencia[ref] = { interno: 0, merca: 0, txt: 0, avitrans: 0 };
+    if (COMPRAS_ALMACENES_INT.includes(almacen)) porReferencia[ref].interno += cantidad;
+    else if (COMPRAS_ALMACENES_MERCA.includes(almacen)) porReferencia[ref].merca += cantidad;
+    else if (COMPRAS_ALMACENES_TXT.includes(almacen)) porReferencia[ref].txt += cantidad;
+    else if (COMPRAS_ALMACENES_AVITRANS.includes(almacen)) porReferencia[ref].avitrans += cantidad;
+    // almacenes fuera de estos 4 grupos se descartan, igual que el app.py original
+  });
+  const lista = Object.entries(porReferencia).map(([ref, v]) => ({ ref, ...v }));
+  return reemplazarColeccionCompras("compras_bandejas_stock", lista,
+    f => f.ref,
+    f => ({ stockInterno: f.interno, stockMerca: f.merca, stockTxt: f.txt, stockAvitrans: f.avitrans, actualizado: admin.firestore.Timestamp.now() }));
+}
+
+async function procesarComprasTransito(buffer, tipo) {
+  const filas = leerExcelConHeaderAuto(buffer).map(f => normalizarFilaCompras(f, COMPRAS_ALIAS_TRANSITO));
+  const porReferencia = {};
+  filas.forEach(f => {
+    const ref = String(f.Referencia || "").trim();
+    const cantidad = Number(f.Cantidad) || 0;
+    if (!ref) return;
+    porReferencia[ref] = (porReferencia[ref] || 0) + cantidad;
+  });
+
+  // Solo se toca el campo de ESTE tipo de transito (porTipo.<tipo>): a las
+  // referencias que ya no aparecen en el fichero nuevo se les pone a 0 (no
+  // se borra el documento entero, puede tener otros tipos de transito).
+  const existentes = await db.collection("compras_bandejas_transito").get();
+  const idsConDatos = new Set(Object.keys(porReferencia));
+  const ops = [];
+  existentes.forEach(doc => {
+    const d = doc.data();
+    if (!idsConDatos.has(doc.id) && d.porTipo && d.porTipo[tipo]) {
+      ops.push({ type: "set", ref: doc.ref, data: { ["porTipo." + tipo]: admin.firestore.FieldValue.delete(), actualizado: admin.firestore.Timestamp.now() } });
+    }
+  });
+  Object.entries(porReferencia).forEach(([ref, cantidad]) => {
+    ops.push({
+      type: "set",
+      ref: db.collection("compras_bandejas_transito").doc(ref),
+      data: { ["porTipo." + tipo]: cantidad, actualizado: admin.firestore.Timestamp.now() }
+    });
+  });
+  // FieldValue.delete()/dotted-path solo funciona con merge (update-like);
+  // aqui se usa set con la clave "porTipo.N" literal + merge para que
+  // Firestore lo interprete como un campo anidado, no una clave con puntos.
+  for (let i = 0; i < ops.length; i += 400) {
+    const batch = db.batch();
+    ops.slice(i, i + 400).forEach(op => batch.set(op.ref, op.data, { merge: true }));
+    await batch.commit();
+  }
+  return Object.keys(porReferencia).length;
+}
+
+async function procesarComprasPedidoBase(buffer) {
+  const filas = leerExcelConHeaderAuto(buffer).map(f => normalizarFilaCompras(f, COMPRAS_ALIAS_PEDIDO_BASE));
+  const lista = filas
+    .map(f => ({ ref: String(f.Referencia || "").trim(), boxBase: Number(f.Box_base) || 0, descripcion: f.Descripcion || "" }))
+    .filter(f => f.ref);
+  return reemplazarColeccionCompras("compras_bandejas_pedido_base", lista,
+    f => f.ref,
+    f => ({ boxBase: f.boxBase, descripcion: f.descripcion, actualizado: admin.firestore.Timestamp.now() }));
+}
+
+async function procesarComprasPlanificacion(buffer) {
+  const filas = leerExcelConHeaderAuto(buffer).map(normalizarFilaPlanificacion);
+  const porReferencia = {};
+  filas.forEach(f => {
+    const ref = String(f.Codigo || "").trim();
+    const apro = Number(f.Apro) || 0;
+    if (!ref) return;
+    porReferencia[ref] = (porReferencia[ref] || 0) + apro;
+  });
+  const lista = Object.entries(porReferencia).map(([ref, apro]) => ({ ref, apro }));
+  return reemplazarColeccionCompras("compras_bandejas_planificacion", lista,
+    f => f.ref,
+    f => ({ apro: f.apro, actualizado: admin.firestore.Timestamp.now() }));
+}
+
+async function procesarComprasConsumos(buffer) {
+  const filas = leerExcelConHeaderAuto(buffer).map(f => normalizarFilaCompras(f, COMPRAS_ALIAS_CONSUMOS));
+  const porClave = {};
+  filas.forEach(f => {
+    const ref = String(f.Referencia || "").trim();
+    if (!ref || !f.Fecha) return;
+    let fecha;
+    if (f.Fecha instanceof Date) fecha = f.Fecha.toISOString().slice(0, 10);
+    else if (typeof f.Fecha === "number") fecha = new Date(Date.UTC(1899, 11, 30) + f.Fecha * 86400000).toISOString().slice(0, 10);
+    else fecha = String(f.Fecha).slice(0, 10);
+    const cantidad = Number(f.Cantidad) || 0;
+    const clave = ref + "_" + fecha;
+    if (!porClave[clave]) porClave[clave] = { ref, fecha, cantidad: 0 };
+    porClave[clave].cantidad += cantidad;
+  });
+  const ops = Object.values(porClave).map(f => ({
+    type: "set",
+    ref: db.collection("compras_bandejas_consumos").doc(f.ref + "_" + f.fecha),
+    data: { referencia: f.ref, fecha: f.fecha, cantidad: f.cantidad, actualizado: admin.firestore.Timestamp.now() }
+  }));
+  await commitEnLotesCompras(ops);
+  return Object.keys(porClave).length;
+}
+
+const COMPRAS_TIPOS_CORREO = [
+  { regex: /^stock bandejas$/i, tipo: "stock", procesar: procesarComprasStock },
+  { regex: /^consumos bandejas$/i, tipo: "consumos", procesar: procesarComprasConsumos },
+  { regex: /^transito bandejas (\d+)$/i, tipo: "transito", procesar: null }, // usa el grupo capturado como numero
+  { regex: /^pedido base bandejas$/i, tipo: "pedido_base", procesar: procesarComprasPedidoBase },
+  { regex: /^planificacion bandejas$/i, tipo: "planificacion", procesar: procesarComprasPlanificacion }
+];
+
+exports.revisarCorreoComprasBandejas = onSchedule(
+  { schedule: "every 60 minutes", timeZone: "Europe/Madrid" },
+  async () => {
+    let token;
+    try { token = await obtenerTokenMS(); }
+    catch (e) { console.error("revisarCorreoComprasBandejas: token:", e.message); return; }
+
+    let data;
+    try {
+      data = await graphGet(token,
+        "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS +
+        "/mailFolders/inbox/messages?$filter=isRead eq false&$top=25" +
+        "&$select=id,subject,hasAttachments,from,receivedDateTime");
+    } catch (e) { console.error("revisarCorreoComprasBandejas: listar mensajes:", e.message); return; }
+
+    for (const msg of (data.value || [])) {
+      const asunto = (msg.subject || "").trim();
+      let match = null, tipoTransito = null;
+      const conf = COMPRAS_TIPOS_CORREO.find(c => {
+        const m = asunto.match(c.regex);
+        if (!m) return false;
+        match = m;
+        if (c.tipo === "transito") tipoTransito = m[1];
+        return true;
+      });
+      if (!conf) continue;
+      if (!msg.hasAttachments) { await graphMarcarLeido(token, msg.id); continue; }
+
+      // Idempotencia por mensaje: el "leido" de Graph no es del todo fiable
+      // (visto en produccion con la extraccion de albaran), asi que se usa
+      // el mismo mecanismo de guarda con create().
+      const procesadoRef = db.collection("compras_bandejas_correos_procesados").doc(msg.id);
+      try {
+        await procesadoRef.create({ ts: admin.firestore.Timestamp.now() });
+      } catch (e) {
+        if (e.code === 6) continue; // ya atendido
+        console.error("revisarCorreoComprasBandejas: guarda de idempotencia:", e.message);
+        continue;
+      }
+
+      try {
+        const adjuntos = await graphGet(token,
+          "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS + "/messages/" + msg.id + "/attachments");
+        const excel = (adjuntos.value || []).find(a => a.contentBytes && /\.xlsx?$/i.test(a.name || ""));
+        if (!excel) {
+          console.log("revisarCorreoComprasBandejas: sin excel adjunto en", asunto);
+          await graphMarcarLeido(token, msg.id);
+          continue;
+        }
+        const buffer = Buffer.from(excel.contentBytes, "base64");
+        const n = conf.tipo === "transito"
+          ? await procesarComprasTransito(buffer, tipoTransito)
+          : await conf.procesar(buffer);
+        console.log("revisarCorreoComprasBandejas:", asunto, "->", n, "referencia(s) actualizada(s).");
+        await graphMarcarLeido(token, msg.id);
+      } catch (e) {
+        console.error("revisarCorreoComprasBandejas: mensaje", msg.id, asunto, e.message);
+      }
+    }
+  }
+);
+
+// Calculo del pedido (callable, se ejecuta al abrir el dashboard del panel,
+// no en cada sincronizacion): misma formula que el app.py original.
+//   - CDM: media de palets/dia sobre los ultimos 30 dias laborables CON
+//     movimiento (los dias sin consumo no cuentan como 0, no entran en la
+//     media). No excluye periodos de oferta (el maestro de esta primera
+//     version no tiene esos campos) - se puede añadir mas adelante.
+//   - Var_CDM: variacion % del ultimo dia con consumo frente al CDM.
+//   - Pedido = max(formula con CDM ajustado por Var_CDM, formula con CDM
+//     normal, 0); multiplicador 1.5 si CDM<5 pal/dia; bloqueado (Pedido=0)
+//     si CDM<=0 o Situacion=='BAJA'.
+//   - Ajuste = Pedido - Box_base (pedido estandar de esa referencia).
+//   - Variante "por prevision" si hay planificacion cargada para la ref.
+async function calcularTodoPedidoBandejas() {
+  const hoy = new Date();
+  const hace30dias = new Date(hoy.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const fechaCorte = hace30dias.toISOString().slice(0, 10);
+
+  const [maestroSnap, stockSnap, transitoSnap, pedidoBaseSnap, planifSnap, consumosSnap] = await Promise.all([
+    db.collection("compras_bandejas_maestro").get(),
+    db.collection("compras_bandejas_stock").get(),
+    db.collection("compras_bandejas_transito").get(),
+    db.collection("compras_bandejas_pedido_base").get(),
+    db.collection("compras_bandejas_planificacion").get(),
+    db.collection("compras_bandejas_consumos").where("fecha", ">=", fechaCorte).get()
+  ]);
+
+  const stockPorRef = {}; stockSnap.forEach(d => stockPorRef[d.id] = d.data());
+  const transitoPorRef = {}; transitoSnap.forEach(d => transitoPorRef[d.id] = d.data());
+  const pedidoBasePorRef = {}; pedidoBaseSnap.forEach(d => pedidoBasePorRef[d.id] = d.data());
+  const planifPorRef = {}; planifSnap.forEach(d => planifPorRef[d.id] = d.data());
+
+  // Consumos: agrupados por referencia, solo dias laborables (lun-vie) con
+  // cantidad > 0 dentro de la ventana de 30 dias.
+  const consumosPorRef = {};
+  consumosSnap.forEach(d => {
+    const c = d.data();
+    if (!(c.cantidad > 0)) return;
+    const diaSemana = new Date(c.fecha + "T12:00:00Z").getUTCDay(); // 0=domingo, 6=sabado
+    if (diaSemana === 0 || diaSemana === 6) return;
+    if (!consumosPorRef[c.referencia]) consumosPorRef[c.referencia] = [];
+    consumosPorRef[c.referencia].push(c);
+  });
+
+  const resultados = [];
+  maestroSnap.forEach(doc => {
+    const ref = doc.id;
+    const m = doc.data();
+    const unidadesPalet = Math.max(Number(m.unidadesPalet) || 1, 1);
+    const leadTime = Number(m.leadTime) || 0;
+    const stockSeguridad = Number(m.stockSeguridad) || 0;
+    const incremento = Number(m.incremento) || 0;
+    const situacion = m.situacion || "ACTIVA";
+
+    const consumos = (consumosPorRef[ref] || []).sort((a, b) => a.fecha.localeCompare(b.fecha));
+    const palDia = consumos.map(c => c.cantidad / unidadesPalet);
+    const cdm = palDia.length ? palDia.reduce((s, v) => s + v, 0) / palDia.length : 0;
+    const consUlt = palDia.length ? palDia[palDia.length - 1] : 0;
+    const cdmClip = Math.max(cdm, 0.01);
+    const varCdm = Math.round(((consUlt - cdmClip) / cdmClip) * 100);
+
+    const cdmEfectivo = Math.abs(varCdm) >= 15 ? Math.max(cdm * (1 + varCdm / 100), 0.01) : cdm;
+    const mult = cdm < 5 ? 1.5 : 1.0;
+
+    const stockDoc = stockPorRef[ref] || {};
+    const stockOpUnidades = situacion === "MERCA" ? (stockDoc.stockMerca || 0) : (stockDoc.stockInterno || 0);
+    const stockOpPalets = stockOpUnidades / unidadesPalet;
+
+    const transitoDoc = transitoPorRef[ref] || {};
+    const transitoUnidades = Object.values(transitoDoc.porTipo || {}).reduce((s, v) => s + (Number(v) || 0), 0);
+    const transitoPalets = transitoUnidades / unidadesPalet;
+
+    const disponible = stockOpPalets + transitoPalets;
+    const pedidoEf = Math.ceil(stockSeguridad + mult * cdmEfectivo * leadTime - disponible + incremento);
+    const pedidoMin = Math.ceil(stockSeguridad + mult * cdm * leadTime - disponible + incremento);
+    let pedido = Math.max(pedidoEf, pedidoMin, 0);
+
+    const bloqueado = cdm <= 0 || situacion === "BAJA";
+    if (bloqueado) pedido = 0;
+
+    const boxBase = (pedidoBasePorRef[ref] || {}).boxBase || 0;
+    const ajuste = pedido - boxBase;
+
+    const diasCobertura = cdm > 0 ? Math.round(stockOpPalets / cdm) : 999;
+    let semaforo = "verde";
+    if (pedido > 0) semaforo = (stockOpPalets < stockSeguridad || diasCobertura < leadTime) ? "rojo" : "amarillo";
+
+    const resultado = {
+      ref, descripcion: m.descripcion || "", situacion, leadTime, stockSeguridad, unidadesPalet, incremento,
+      cdm: Math.round(cdm * 100) / 100, varCdm, stockOpPalets: Math.round(stockOpPalets * 100) / 100,
+      transitoPalets: Math.round(transitoPalets * 100) / 100, diasCobertura,
+      pedido, boxBase, ajuste, bloqueado, semaforo
+    };
+
+    // Variante por prevision: solo si hay planificacion cargada para esta
+    // referencia. stkUd/nec en unidades (no palets); palTeo puede salir
+    // negativo (falta stock para cubrir la necesidad planificada), y en
+    // ese caso se usa tal cual (ya en "palets negativos", coherente con la
+    // logica original) en vez del stock operativo normal.
+    const planif = planifPorRef[ref];
+    if (planif && planif.apro > 0) {
+      const nec = Number(planif.apro) || 0;
+      const palTeo = Math.floor((stockOpUnidades - nec) / unidadesPalet);
+      const dispPrev = (palTeo < 0 ? palTeo : stockOpPalets) + transitoPalets;
+      const pedidoPrevEf = Math.ceil(stockSeguridad + mult * cdmEfectivo * leadTime - dispPrev + incremento);
+      const pedidoPrevMin = Math.ceil(stockSeguridad + mult * cdm * leadTime - dispPrev + incremento);
+      let pedidoPrev = Math.max(pedidoPrevEf, pedidoPrevMin, 0);
+      if (bloqueado) pedidoPrev = 0;
+      resultado.pedidoPrev = pedidoPrev;
+      resultado.ajustePrev = pedidoPrev - boxBase;
+    }
+
+    resultados.push(resultado);
+  });
+
+  resultados.sort((a, b) => {
+    const na = Number((a.ref.match(/\d+/) || [])[0]) || 999999;
+    const nb = Number((b.ref.match(/\d+/) || [])[0]) || 999999;
+    return na - nb;
+  });
+  return resultados;
+}
+
+exports.calcularPedidoBandejas = functions.https.onCall(async (request, context) => {
+  const esV2 = !!(request && typeof request === "object" && request.data !== undefined);
+  const ctx = esV2 ? request : (context || {});
+  if (!ctx.app) return { ok: false, error: "No autorizado" };
+  const email = (ctx.auth && ctx.auth.token && ctx.auth.token.email || "").toLowerCase();
+  if (!email || !(await puedeSeccionEstricto(email, "compras"))) return { ok: false, error: "Sin permiso" };
+
+  try {
+    const resultados = await calcularTodoPedidoBandejas();
+    return { ok: true, resultados };
+  } catch (e) {
+    console.error("calcularPedidoBandejas:", e.message);
+    return { ok: false, error: "No se pudo calcular: " + e.message };
+  }
+});
+
 // Revisa cada 5 minutos las acciones que Robin haya dejado programadas
 // (herramienta programar_accion) y ejecuta las que ya les toque. La
 // precision es de estos 5 minutos, no exacta al segundo. Reutiliza las
