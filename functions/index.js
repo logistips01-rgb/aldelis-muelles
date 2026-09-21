@@ -4478,69 +4478,77 @@ const COMPRAS_TIPOS_CORREO = [
   { regex: /^planificacion bandejas$/i, tipo: "planificacion", procesar: procesarComprasPlanificacion }
 ];
 
-// Una vez al dia a las 11:00: el correo de consumos llega todos los dias a
-// las 10:00, asi que 11:00 deja margen de sobra. Revisa a la vez los 5
-// tipos de fichero (stock, consumos, transito, pedido base, planificacion).
-exports.revisarCorreoComprasBandejas = onSchedule(
-  { schedule: "0 11 * * *", timeZone: "Europe/Madrid" },
-  async () => {
-    let token;
-    try { token = await obtenerTokenMS(); }
-    catch (e) { console.error("revisarCorreoComprasBandejas: token:", e.message); return; }
+// Logica compartida por las dos revisiones (consumos aparte del resto, ver
+// mas abajo): cada una solo mira los tipos de fichero de "tiposPermitidos".
+async function revisarCorreoComprasBandejasTipos(nombreFuncion, tiposPermitidos) {
+  let token;
+  try { token = await obtenerTokenMS(); }
+  catch (e) { console.error(nombreFuncion + ": token:", e.message); return; }
 
-    let data;
+  let data;
+  try {
+    data = await graphGet(token,
+      "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS +
+      "/mailFolders/inbox/messages?$filter=isRead eq false&$top=25" +
+      "&$select=id,subject,hasAttachments,from,receivedDateTime");
+  } catch (e) { console.error(nombreFuncion + ": listar mensajes:", e.message); return; }
+
+  for (const msg of (data.value || [])) {
+    const asunto = (msg.subject || "").trim();
+    let tipoTransito = null;
+    const conf = COMPRAS_TIPOS_CORREO.filter(c => tiposPermitidos.includes(c.tipo)).find(c => {
+      const m = asunto.match(c.regex);
+      if (!m) return false;
+      if (c.tipo === "transito") tipoTransito = m[1];
+      return true;
+    });
+    if (!conf) continue;
+    if (!msg.hasAttachments) { await graphMarcarLeido(token, msg.id); continue; }
+
+    // Idempotencia por mensaje: el "leido" de Graph no es del todo fiable
+    // (visto en produccion con la extraccion de albaran), asi que se usa
+    // el mismo mecanismo de guarda con create().
+    const procesadoRef = db.collection("compras_bandejas_correos_procesados").doc(msg.id);
     try {
-      data = await graphGet(token,
-        "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS +
-        "/mailFolders/inbox/messages?$filter=isRead eq false&$top=25" +
-        "&$select=id,subject,hasAttachments,from,receivedDateTime");
-    } catch (e) { console.error("revisarCorreoComprasBandejas: listar mensajes:", e.message); return; }
+      await procesadoRef.create({ ts: admin.firestore.Timestamp.now() });
+    } catch (e) {
+      if (e.code === 6) continue; // ya atendido
+      console.error(nombreFuncion + ": guarda de idempotencia:", e.message);
+      continue;
+    }
 
-    for (const msg of (data.value || [])) {
-      const asunto = (msg.subject || "").trim();
-      let match = null, tipoTransito = null;
-      const conf = COMPRAS_TIPOS_CORREO.find(c => {
-        const m = asunto.match(c.regex);
-        if (!m) return false;
-        match = m;
-        if (c.tipo === "transito") tipoTransito = m[1];
-        return true;
-      });
-      if (!conf) continue;
-      if (!msg.hasAttachments) { await graphMarcarLeido(token, msg.id); continue; }
-
-      // Idempotencia por mensaje: el "leido" de Graph no es del todo fiable
-      // (visto en produccion con la extraccion de albaran), asi que se usa
-      // el mismo mecanismo de guarda con create().
-      const procesadoRef = db.collection("compras_bandejas_correos_procesados").doc(msg.id);
-      try {
-        await procesadoRef.create({ ts: admin.firestore.Timestamp.now() });
-      } catch (e) {
-        if (e.code === 6) continue; // ya atendido
-        console.error("revisarCorreoComprasBandejas: guarda de idempotencia:", e.message);
+    try {
+      const adjuntos = await graphGet(token,
+        "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS + "/messages/" + msg.id + "/attachments");
+      const excel = (adjuntos.value || []).find(a => a.contentBytes && /\.xlsx?$/i.test(a.name || ""));
+      if (!excel) {
+        console.log(nombreFuncion + ": sin excel adjunto en", asunto);
+        await graphMarcarLeido(token, msg.id);
         continue;
       }
-
-      try {
-        const adjuntos = await graphGet(token,
-          "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS + "/messages/" + msg.id + "/attachments");
-        const excel = (adjuntos.value || []).find(a => a.contentBytes && /\.xlsx?$/i.test(a.name || ""));
-        if (!excel) {
-          console.log("revisarCorreoComprasBandejas: sin excel adjunto en", asunto);
-          await graphMarcarLeido(token, msg.id);
-          continue;
-        }
-        const buffer = Buffer.from(excel.contentBytes, "base64");
-        const n = conf.tipo === "transito"
-          ? await procesarComprasTransito(buffer, tipoTransito)
-          : await conf.procesar(buffer);
-        console.log("revisarCorreoComprasBandejas:", asunto, "->", n, "referencia(s) actualizada(s).");
-        await graphMarcarLeido(token, msg.id);
-      } catch (e) {
-        console.error("revisarCorreoComprasBandejas: mensaje", msg.id, asunto, e.message);
-      }
+      const buffer = Buffer.from(excel.contentBytes, "base64");
+      const n = conf.tipo === "transito"
+        ? await procesarComprasTransito(buffer, tipoTransito)
+        : await conf.procesar(buffer);
+      console.log(nombreFuncion + ":", asunto, "->", n, "referencia(s) actualizada(s).");
+      await graphMarcarLeido(token, msg.id);
+    } catch (e) {
+      console.error(nombreFuncion + ": mensaje", msg.id, asunto, e.message);
     }
   }
+}
+
+// Consumos llega 1 vez al dia a las 10:00 -> se revisa 1 vez al dia a las
+// 11:00 (margen de sobra), aparte del resto de ficheros.
+exports.revisarCorreoComprasBandejasConsumos = onSchedule(
+  { schedule: "0 11 * * *", timeZone: "Europe/Madrid" },
+  () => revisarCorreoComprasBandejasTipos("revisarCorreoComprasBandejasConsumos", ["consumos"])
+);
+
+// Stock, transito, pedido base y planificacion: cada hora en punto.
+exports.revisarCorreoComprasBandejas = onSchedule(
+  { schedule: "0 * * * *", timeZone: "Europe/Madrid" },
+  () => revisarCorreoComprasBandejasTipos("revisarCorreoComprasBandejas", ["stock", "transito", "pedido_base", "planificacion"])
 );
 
 // Calculo del pedido (callable, se ejecuta al abrir el dashboard del panel,
