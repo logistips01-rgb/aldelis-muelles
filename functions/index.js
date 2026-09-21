@@ -3198,15 +3198,30 @@ exports.revisarCorreoAlbaranesAcopal = onSchedule(
   }
 );
 
+// Fila del albaran (totales) seguida de una fila por referencia (el
+// desglose que ya trae el correo del ERP, guardado en "lineas"), mas
+// pequeña y en gris para distinguirla de la fila de totales.
 function filaAlbaranAcopalHtml(d) {
   const color = d.diferencia === 0 ? "#1D9E75" : "#D41F3A";
-  return "<tr>" +
-    "<td style='padding:6px 10px;border-bottom:1px solid #eee'>" + d.albaran + "</td>" +
-    "<td style='padding:6px 10px;border-bottom:1px solid #eee'>" + d.recibidoTotal + "</td>" +
-    "<td style='padding:6px 10px;border-bottom:1px solid #eee'>" + d.facturadoTotal + "</td>" +
-    "<td style='padding:6px 10px;border-bottom:1px solid #eee;color:" + color + ";font-weight:600'>" +
+  let html = "<tr>" +
+    "<td style='padding:6px 10px;border-bottom:1px solid #eee'>" + esc(d.albaran) + "</td>" +
+    "<td style='padding:6px 10px;border-bottom:1px solid #eee;text-align:right'>" + d.recibidoTotal + "</td>" +
+    "<td style='padding:6px 10px;border-bottom:1px solid #eee;text-align:right'>" + d.facturadoTotal + "</td>" +
+    "<td style='padding:6px 10px;border-bottom:1px solid #eee;text-align:right;color:" + color + ";font-weight:600'>" +
     (d.diferencia > 0 ? "+" : "") + d.diferencia + "</td>" +
     "</tr>";
+  (d.lineas || []).forEach(l => {
+    const dif = l.facturado - l.recibido;
+    const colorL = dif === 0 ? "#1D9E75" : "#D41F3A";
+    html += "<tr>" +
+      "<td style='padding:3px 10px 3px 22px;border-bottom:1px solid #f5f5f5;color:#6B7280;font-size:12px'>" + esc(l.referencia) + "</td>" +
+      "<td style='padding:3px 10px;border-bottom:1px solid #f5f5f5;color:#6B7280;font-size:12px;text-align:right'>" + l.recibido + "</td>" +
+      "<td style='padding:3px 10px;border-bottom:1px solid #f5f5f5;color:#6B7280;font-size:12px;text-align:right'>" + l.facturado + "</td>" +
+      "<td style='padding:3px 10px;border-bottom:1px solid #f5f5f5;font-size:12px;text-align:right;color:" + colorL + "'>" +
+      (dif > 0 ? "+" : "") + dif + "</td>" +
+      "</tr>";
+  });
+  return html;
 }
 
 function tablaAlbaranesAcopalHtml(docs, mensajeVacio) {
@@ -3218,13 +3233,15 @@ function tablaAlbaranesAcopalHtml(docs, mensajeVacio) {
   const colorTotal = diferenciaTotal === 0 ? "#1D9E75" : "#D41F3A";
   const filaTotal = "<tr style='font-weight:700;background:#F5F5F5'>" +
     "<td style='padding:6px 10px'>Total</td>" +
-    "<td style='padding:6px 10px'>" + recibidoTotal + "</td>" +
-    "<td style='padding:6px 10px'>" + facturadoTotal + "</td>" +
-    "<td style='padding:6px 10px;color:" + colorTotal + "'>" + (diferenciaTotal > 0 ? "+" : "") + diferenciaTotal + "</td>" +
+    "<td style='padding:6px 10px;text-align:right'>" + recibidoTotal + "</td>" +
+    "<td style='padding:6px 10px;text-align:right'>" + facturadoTotal + "</td>" +
+    "<td style='padding:6px 10px;text-align:right;color:" + colorTotal + "'>" + (diferenciaTotal > 0 ? "+" : "") + diferenciaTotal + "</td>" +
     "</tr>";
   return filas + filaTotal;
 }
 
+// Tabla con ancho fijo (no al 100% del correo) y columnas con ancho propio,
+// para que no se estire con huecos enormes en clientes de correo anchos.
 async function enviarBalanceAcopalATodos(asunto, titulo, subtitulo, tablaHtml) {
   try {
     const token = await obtenerTokenMS();
@@ -3233,10 +3250,12 @@ async function enviarBalanceAcopalATodos(asunto, titulo, subtitulo, tablaHtml) {
         "<p>Hola " + esc(dest.nombre) + ",</p>" +
         "<h2 style='margin-bottom:4px'>" + titulo + "</h2>" +
         "<p style='color:#6B7280;margin-top:0'>" + subtitulo + "</p>" +
-        "<table style='border-collapse:collapse;width:100%'>" +
+        "<table style='border-collapse:collapse;width:560px;max-width:100%'>" +
         "<thead><tr style='text-align:left;background:#F5F5F5'>" +
-        "<th style='padding:6px 10px'>Albaran</th><th style='padding:6px 10px'>Recibido</th>" +
-        "<th style='padding:6px 10px'>Facturado</th><th style='padding:6px 10px'>Diferencia</th>" +
+        "<th style='padding:6px 10px;width:200px'>Albaran</th>" +
+        "<th style='padding:6px 10px;width:120px;text-align:right'>Recibido</th>" +
+        "<th style='padding:6px 10px;width:120px;text-align:right'>Facturado</th>" +
+        "<th style='padding:6px 10px;width:120px;text-align:right'>Diferencia</th>" +
         "</tr></thead><tbody>" + tablaHtml + "</tbody></table>" +
         "<p style='color:#6B7280;font-size:12px;margin-top:14px'>Diferencia = facturado - recibido. " +
         "Positivo: se ha facturado mas de lo recibido (posible palet pendiente de recibir). " +
