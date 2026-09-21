@@ -4353,7 +4353,7 @@ async function procesarComprasStock(buffer) {
   const filas = leerExcelConHeaderAuto(buffer).map(f => normalizarFilaCompras(f, COMPRAS_ALIAS_STOCK));
   const porReferencia = {};
   filas.forEach(f => {
-    const ref = String(f.Referencia || "").trim();
+    const ref = String(f.Referencia || "").trim().toUpperCase();
     const almacen = String(f.Almacen || "").replace(/\s+/g, " ").trim().toUpperCase();
     const cantidad = Number(f.Cantidad) || 0;
     if (!ref || !almacen) return;
@@ -4374,7 +4374,7 @@ async function procesarComprasTransito(buffer, tipo) {
   const filas = leerExcelConHeaderAuto(buffer).map(f => normalizarFilaCompras(f, COMPRAS_ALIAS_TRANSITO));
   const porReferencia = {};
   filas.forEach(f => {
-    const ref = String(f.Referencia || "").trim();
+    const ref = String(f.Referencia || "").trim().toUpperCase();
     const cantidad = Number(f.Cantidad) || 0;
     if (!ref) return;
     porReferencia[ref] = (porReferencia[ref] || 0) + cantidad;
@@ -4413,7 +4413,7 @@ async function procesarComprasTransito(buffer, tipo) {
 async function procesarComprasPedidoBase(buffer) {
   const filas = leerExcelConHeaderAuto(buffer).map(f => normalizarFilaCompras(f, COMPRAS_ALIAS_PEDIDO_BASE));
   const lista = filas
-    .map(f => ({ ref: String(f.Referencia || "").trim(), boxBase: Number(f.Box_base) || 0, descripcion: f.Descripcion || "" }))
+    .map(f => ({ ref: String(f.Referencia || "").trim().toUpperCase(), boxBase: Number(f.Box_base) || 0, descripcion: f.Descripcion || "" }))
     .filter(f => f.ref);
   return reemplazarColeccionCompras("compras_bandejas_pedido_base", lista,
     f => f.ref,
@@ -4424,7 +4424,7 @@ async function procesarComprasPlanificacion(buffer) {
   const filas = leerExcelConHeaderAuto(buffer).map(normalizarFilaPlanificacion);
   const porReferencia = {};
   filas.forEach(f => {
-    const ref = String(f.Codigo || "").trim();
+    const ref = String(f.Codigo || "").trim().toUpperCase();
     const apro = Number(f.Apro) || 0;
     if (!ref) return;
     porReferencia[ref] = (porReferencia[ref] || 0) + apro;
@@ -4439,7 +4439,7 @@ async function procesarComprasConsumos(buffer) {
   const filas = leerExcelConHeaderAuto(buffer).map(f => normalizarFilaCompras(f, COMPRAS_ALIAS_CONSUMOS));
   const porClave = {};
   filas.forEach(f => {
-    const ref = String(f.Referencia || "").trim();
+    const ref = String(f.Referencia || "").trim().toUpperCase();
     if (!ref || !f.Fecha) return;
 
     // Solo cuenta como consumo real si el destino NO es otro almacen (Plaza/
