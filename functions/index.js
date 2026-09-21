@@ -4046,18 +4046,76 @@ exports.revisarCorreoExtraerAlbaran = onSchedule(
 
         const encontrados = (busqueda.value || []).sort((a, b) =>
           new Date(b.receivedDateTime) - new Date(a.receivedDateTime));
+        const encontrado = encontrados.length > 0;
 
-        if (!encontrados.length) {
+        if (!encontrado) {
           await graphResponderCorreo(token, msg.id, "No encuentro ningun albaran con el codigo \"" + codigo + "\" en este buzon.");
         } else {
           await graphReenviarCorreo(token, encontrados[0].id, remitente,
             "Reenviado a peticion de " + remitente + ".");
         }
         await graphMarcarLeido(token, msg.id);
-        console.log("revisarCorreoExtraerAlbaran: peticion de", remitente, "codigo", codigo, encontrados.length ? "reenviado" : "no encontrado");
+
+        try {
+          await db.collection("extracciones_albaran").add({
+            fecha: fechaHoyMadrid(), codigo, solicitante: remitente, encontrado,
+            ts: admin.firestore.Timestamp.now()
+          });
+        } catch (e) { console.error("revisarCorreoExtraerAlbaran: guardar registro:", e.message); }
+
+        console.log("revisarCorreoExtraerAlbaran: peticion de", remitente, "codigo", codigo, encontrado ? "reenviado" : "no encontrado");
       } catch (e) {
         console.error("revisarCorreoExtraerAlbaran: mensaje", msg.id, e.message);
       }
+    }
+  }
+);
+
+// Informe diario de extracciones de albaran, solo si ha habido alguna en el
+// dia (si no, no se manda correo vacio). Va a mlorente y a Daniel, los dos
+// como destinatarios.
+const EXTRACCIONES_INFORME_DESTINATARIOS = ["mlorente@aldelis.com", "dgamarra@aldelis.com"];
+
+function htmlInformeExtraccionesAlbaran(fecha, extracciones) {
+  const filas = extracciones.map(e => {
+    const hora = e.ts && e.ts.toDate ? e.ts.toDate().toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Madrid" }) : "";
+    return "<tr>" +
+      "<td style='padding:6px 10px;border-bottom:1px solid #eee'>" + hora + "</td>" +
+      "<td style='padding:6px 10px;border-bottom:1px solid #eee'>" + esc(e.solicitante) + "</td>" +
+      "<td style='padding:6px 10px;border-bottom:1px solid #eee'>" + esc(e.codigo) + "</td>" +
+      "<td style='padding:6px 10px;border-bottom:1px solid #eee'>" + (e.encontrado ? "Reenviado" : "No encontrado") + "</td>" +
+      "</tr>";
+  }).join("");
+  return "<html><body style='font-family:Arial,sans-serif;font-size:13px;color:#1A1A1A'>" +
+    "<p>Extracciones de albaran del " + formatoFechaEs(fecha) + " (" + extracciones.length + " en total)</p>" +
+    "<table style='border-collapse:collapse;width:100%;max-width:600px'>" +
+    "<thead><tr style='background:#F5F5F5;text-align:left'>" +
+    "<th style='padding:6px 10px'>Hora</th><th style='padding:6px 10px'>Solicitante</th>" +
+    "<th style='padding:6px 10px'>Codigo</th><th style='padding:6px 10px'>Resultado</th></tr></thead>" +
+    "<tbody>" + filas + "</tbody></table>" +
+    "</body></html>";
+}
+
+exports.enviarInformeExtraccionesAlbaran = onSchedule(
+  { schedule: "0 23 * * *", timeZone: "Europe/Madrid" },
+  async () => {
+    const hoy = fechaHoyMadrid();
+    let snap;
+    try {
+      snap = await db.collection("extracciones_albaran").where("fecha", "==", hoy).get();
+    } catch (e) { console.error("enviarInformeExtraccionesAlbaran: consulta:", e.message); return; }
+    if (snap.empty) return; // sin extracciones hoy, no se manda nada
+
+    const extracciones = [];
+    snap.forEach(d => extracciones.push(d.data()));
+    extracciones.sort((a, b) => (a.ts ? a.ts.toMillis() : 0) - (b.ts ? b.ts.toMillis() : 0));
+
+    const html = htmlInformeExtraccionesAlbaran(hoy, extracciones);
+    const token = await obtenerTokenMS();
+    for (const destino of EXTRACCIONES_INFORME_DESTINATARIOS) {
+      try {
+        await enviarConGraph(token, destino, "Extracciones de albaran " + formatoFechaEs(hoy), html, null, null);
+      } catch (e) { console.error("enviarInformeExtraccionesAlbaran: envio a", destino, e.message); }
     }
   }
 );
