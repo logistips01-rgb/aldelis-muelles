@@ -1,7 +1,7 @@
 {
   "name": "Aldelis — Panel de almacen",
   "short_name": "Aldelis Panel",
-  "description": "Gestion de muelles, lanzaderas e incidencias",
+  "description": "Gestion de almacenes, lanzaderas e incidencias",
   "start_url": "/admin.html",
   "scope": "/",
   "display": "standalone",

@@ -226,7 +226,7 @@ async function puedeSeccionEstricto(email, seccion) {
 }
 
 const SECCION_LABEL = { seco: "Almacen Seco", frio: "Almacen Frio", lavadero: "Lavadero" };
-const FIRMA = "\n\nAldelis — Gestion de muelles";
+const FIRMA = "\n\nAldelis — Gestion de almacenes";
 const CARD_RESET = "border-radius:8px;border:1px solid #e8e8e8;background:#ffffff;background-color:#ffffff;color:#1A1A1A";
 
 // Envia a una lista y devuelve cuantos han salido bien.
@@ -449,7 +449,7 @@ exports.enviarEmail = functions.https.onCall(async (request, context) => {
         "tu contraseña no cambia mientras no uses el enlace." +
         "</div></div>" +
         "<div style='height:14px'></div>" +
-        "<div style='text-align:center;font-size:11px;color:#aaa'>Aldelis &middot; Gestion de muelles</div>" +
+        "<div style='text-align:center;font-size:11px;color:#aaa'>Aldelis &middot; Gestion de almacenes</div>" +
         "</div></body></html>"
       );
 
