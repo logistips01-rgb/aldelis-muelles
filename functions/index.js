@@ -3967,6 +3967,101 @@ exports.revisarCorreoAsistenteIA = onSchedule(
   }
 );
 
+// Extraccion de albaranes (ruta Usieto): el ERP manda cada albaran por
+// correo a este mismo buzon con asunto "Albaran: <codigo>" (ej: "Albaran:
+// AV26/052595"). Cuando alguien de confianza (Aldelis o Grupo Usieto) pide
+// "extraer <codigo>", se busca ese correo y se reenvia tal cual (con sus
+// adjuntos originales) a quien lo pidio.
+// Funcion COMPLETAMENTE APARTE de revisarCorreoPedidos y de
+// revisarCorreoAsistenteIA (aprendido a base de sustos: un bug aqui nunca
+// debe poder bloquear el procesado de pedidos ni las respuestas de Robin).
+const DOMINIOS_EXTRAER_ALBARAN = ["aldelis.com", "grupousieto.com"];
+
+function remitenteAutorizadoExtraerAlbaran(email) {
+  const e = String(email || "").toLowerCase();
+  return DOMINIOS_EXTRAER_ALBARAN.some(dom => e.endsWith("@" + dom));
+}
+
+// Saca el codigo de un asunto tipo "extraer AV26/052595" o "Extraer: AV26/052595".
+function extraerCodigoAlbaran(asunto) {
+  return String(asunto || "")
+    .replace(/^\s*extraer\s*:?\s*/i, "")
+    .trim();
+}
+
+async function graphReenviarCorreo(token, msgId, destinatario, comentario) {
+  const res = await fetch(
+    "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS + "/messages/" + msgId + "/forward",
+    {
+      method: "POST",
+      headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        comment: comentario || "",
+        toRecipients: [{ emailAddress: { address: destinatario } }]
+      })
+    }
+  );
+  return res.status;
+}
+
+exports.revisarCorreoExtraerAlbaran = onSchedule(
+  { schedule: "every 10 minutes", timeZone: "Europe/Madrid" },
+  async () => {
+    let token;
+    try { token = await obtenerTokenMS(); }
+    catch (e) { console.error("revisarCorreoExtraerAlbaran: token:", e.message); return; }
+
+    let data;
+    try {
+      data = await graphGet(token,
+        "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS +
+        "/mailFolders/inbox/messages?$filter=isRead eq false&$top=25" +
+        "&$select=id,subject,from,receivedDateTime");
+    } catch (e) { console.error("revisarCorreoExtraerAlbaran: listar mensajes:", e.message); return; }
+
+    const candidatos = (data.value || []).filter(msg => {
+      const asunto = (msg.subject || "").trim().toLowerCase();
+      const remitente = (msg.from && msg.from.emailAddress && msg.from.emailAddress.address || "");
+      return asunto.startsWith("extraer") && remitenteAutorizadoExtraerAlbaran(remitente);
+    });
+    if (!candidatos.length) return;
+    console.log("revisarCorreoExtraerAlbaran: " + candidatos.length + " peticion(es) de extraccion.");
+
+    for (const msg of candidatos) {
+      const remitente = msg.from.emailAddress.address;
+      try {
+        const codigo = extraerCodigoAlbaran(msg.subject);
+        if (!codigo) {
+          await graphResponderCorreo(token, msg.id, "No he encontrado ningun codigo de albaran en el asunto. Usa el formato \"extraer <codigo>\", ej: extraer AV26/052595.");
+          await graphMarcarLeido(token, msg.id);
+          continue;
+        }
+
+        const subjectEsperado = "Albaran: " + codigo;
+        const filtro = "subject eq '" + subjectEsperado.replace(/'/g, "''") + "'";
+        const busqueda = await graphGet(token,
+          "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS +
+          "/mailFolders/inbox/messages?$filter=" + encodeURIComponent(filtro) +
+          "&$top=5&$select=id,subject,receivedDateTime");
+
+        const encontrados = (busqueda.value || []).sort((a, b) =>
+          new Date(b.receivedDateTime) - new Date(a.receivedDateTime));
+
+        if (!encontrados.length) {
+          await graphResponderCorreo(token, msg.id, "No encuentro ningun albaran con el codigo \"" + codigo + "\" en este buzon.");
+        } else {
+          await graphReenviarCorreo(token, encontrados[0].id, remitente,
+            "Reenviado a peticion de " + remitente + ".");
+        }
+        await graphMarcarLeido(token, msg.id);
+        console.log("revisarCorreoExtraerAlbaran: peticion de", remitente, "codigo", codigo, encontrados.length ? "reenviado" : "no encontrado");
+      } catch (e) {
+        console.error("revisarCorreoExtraerAlbaran: mensaje", msg.id, e.message);
+      }
+    }
+  }
+);
+
 // Revisa cada 5 minutos las acciones que Robin haya dejado programadas
 // (herramienta programar_accion) y ejecuta las que ya les toque. La
 // precision es de estos 5 minutos, no exacta al segundo. Reutiliza las
