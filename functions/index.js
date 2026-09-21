@@ -750,9 +750,19 @@ async function generarYEnviarInforme(label) {
             const ptDoc = ptDocs[item.pt];
             const lineas = ptDoc && Array.isArray(ptDoc.lineas) ? ptDoc.lineas : [];
             const cerradoDelTodo = ptDoc && ptDoc.cerrado;
-            const detalleLineas = (cerradoDelTodo && lineas.length)
-              ? lineas.map(l => esc(l.descripcion || "") + (l.sscc ? " <span style='color:#999'>(" + esc(l.sscc) + ")</span>" : "")).join("<br>")
-              : (lineas.length ? "<span style='color:#999'>recogida parcial, sin SSCC concretos</span>" : "<span style='color:#999'>envases, sin SSCC</span>");
+            // Los envases (referencia+descripcion del catalogo, sin SSCC por
+            // naturaleza) se distinguen porque sus lineas llevan "ref": ese
+            // contenido siempre se muestra, aunque la recogida sea parcial,
+            // porque no hay un SSCC individual que perder al no cerrarse del
+            // todo (es la misma cantidad pedida, no unidades sueltas).
+            const esEnvase = lineas.length && lineas[0].ref !== undefined;
+            const detalleLineas = !lineas.length
+              ? "<span style='color:#999'>sin detalle</span>"
+              : esEnvase
+              ? lineas.map(l => esc(l.desc || l.ref || "") + " x" + l.cantidad).join("<br>")
+              : (cerradoDelTodo
+                ? lineas.map(l => esc(l.descripcion || "") + (l.sscc ? " <span style='color:#999'>(" + esc(l.sscc) + ")</span>" : "")).join("<br>")
+                : "<span style='color:#999'>recogida parcial, sin SSCC concretos</span>");
             return "<tr>" +
               "<td style='" + TD + "'>" + (NOMBRE_ALMACEN[r.almacen] || r.almacen) + "</td>" +
               "<td style='" + TD + "'>" + esc(item.pt) + "</td>" +
@@ -1834,9 +1844,11 @@ function htmlPedidoEnvases(pt, filas, etiquetaExtra) {
 // Destinatarios del correo de recogida segun el almacen elegido en el
 // formulario. Avitrans tiene ademas el flujo de turnos/estimacion automatica
 // (ver mas abajo); Txt es solo un pedido puntual manual, sin ese seguimiento.
+// mlorente va siempre en copia (como destinatario aparte) en los dos casos,
+// para poder verificar que el pedido se ha mandado de verdad.
 const ENVASES_DESTINATARIOS = {
-  avitrans: ["avitrans@aldelis.com"],
-  txt: ["mariola.arcos@txt.es", "almacenplaza.logistica@txt.es"]
+  avitrans: ["avitrans@aldelis.com", "mlorente@aldelis.com"],
+  txt: ["mariola.arcos@txt.es", "almacenplaza.logistica@txt.es", "mlorente@aldelis.com"]
 };
 
 exports.registrarPedidoEnvasesAvitrans = functions.https.onCall(async (request, context) => {
