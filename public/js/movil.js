@@ -470,10 +470,14 @@
         var pend = Math.max((p.palets || 0) - (p.recogido || 0), 0);
         var abierto = _ptExpandido === p.id;
         var lineas = Array.isArray(p.lineas) ? p.lineas : [];
+        var esEnvase = lineas.length && lineas[0].ref !== undefined;
         var detalle = abierto
           ? "<div class='rec-detalle'>" + (lineas.length
-              ? lineas.map(function (l) { return "<div>" + esc(l.descripcion || "") +
-                  (l.sscc ? " <span style='color:#B0B4BB'>(" + esc(l.sscc) + ")</span>" : "") + "</div>"; }).join("")
+              ? (esEnvase
+                  ? lineas.map(function (l) { return "<div>" + esc(l.desc || l.ref || "") +
+                      " <span style='color:#B0B4BB'>(" + esc(l.ref || "") + " · " + (l.cantidad || 0) + " ud.)</span></div>"; }).join("")
+                  : lineas.map(function (l) { return "<div>" + esc(l.descripcion || "") +
+                      (l.sscc ? " <span style='color:#B0B4BB'>(" + esc(l.sscc) + ")</span>" : "") + "</div>"; }).join(""))
               : "<div>Pedido de envases sin lineas SSCC (huecos de camion).</div>") + "</div>"
           : "";
         return "<div class='rec-pt' onclick=\"toggleRecogidaDetalle('" + p.id + "')\">" +

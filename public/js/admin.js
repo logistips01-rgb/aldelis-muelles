@@ -1436,7 +1436,15 @@ function abrirPtDetalle(id) {
 
   const lineas = p.lineas || [];
   const lineasEl = document.getElementById("ptd-lineas");
-  if (lineas.length) {
+  const esEnvase = lineas.length && lineas[0].ref !== undefined;
+  if (esEnvase) {
+    lineasEl.innerHTML = "<div class='pt-admin-tit'>Contenido (" + lineas.length + " referencia" + (lineas.length === 1 ? "" : "s") + ")</div>" +
+      "<div style='max-height:220px;overflow-y:auto'>" +
+      lineas.map(l => "<div class='pt-admin-row' style='cursor:default;flex-direction:column;align-items:flex-start;gap:2px'>" +
+        "<span>" + esc(l.desc || l.ref || "") + "</span>" +
+        "<span class='tnum' style='color:#9CA3AF;font-size:12px'>" + esc(l.ref || "") + " · " + (l.cantidad || 0) + " ud.</span></div>").join("") +
+      "</div>";
+  } else if (lineas.length) {
     lineasEl.innerHTML = "<div class='pt-admin-tit'>Contenido (" + lineas.length + " SSCC)</div>" +
       "<div style='max-height:220px;overflow-y:auto'>" +
       lineas.map(l => "<div class='pt-admin-row' style='cursor:default;flex-direction:column;align-items:flex-start;gap:2px'>" +
