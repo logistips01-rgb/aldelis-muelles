@@ -4288,8 +4288,19 @@ const COMPRAS_ALIAS_STOCK = {
   "referencia": "Referencia", "almacen": "Almacen", "ubicacion": "Almacen", "cantidad": "Cantidad"
 };
 const COMPRAS_ALIAS_CONSUMOS = {
-  "referencia": "Referencia", "fecha": "Fecha", "cantidad": "Cantidad"
+  "referencia": "Referencia", "fecha": "Fecha", "cantidad": "Cantidad",
+  "origen": "Origen", "destino": "Destino"
 };
+
+// Todas las ubicaciones que son "almacen" de verdad (Plaza/Merca/Txt/
+// Avitrans, cualquier camara): un movimiento hacia una de estas no es
+// consumo, es solo un traslado entre almacenes (ej. AL6 -> ARENTO CAM1).
+// Solo cuenta como consumo real si el Destino NO esta en este conjunto
+// (una sala de produccion, un cliente, etc).
+const COMPRAS_TODAS_UBICACIONES_ALMACEN = new Set([
+  ...COMPRAS_ALMACENES_INT, ...COMPRAS_ALMACENES_MERCA,
+  ...COMPRAS_ALMACENES_TXT, ...COMPRAS_ALMACENES_AVITRANS
+]);
 const COMPRAS_ALIAS_TRANSITO = {
   "cod": "Referencia", "codigo": "Referencia", "articulo": "Referencia", "art": "Referencia",
   "ref": "Referencia", "referencia": "Referencia",
@@ -4430,11 +4441,20 @@ async function procesarComprasConsumos(buffer) {
   filas.forEach(f => {
     const ref = String(f.Referencia || "").trim();
     if (!ref || !f.Fecha) return;
+
+    // Solo cuenta como consumo real si el destino NO es otro almacen (Plaza/
+    // Merca/Txt/Avitrans): un movimiento entre almacenes (ej. AL6 -> ARENTO
+    // CAM1) es un traslado, no consumo, aunque tambien tenga Cantidad.
+    if (f.Destino) {
+      const destino = String(f.Destino).replace(/\s+/g, " ").trim().toUpperCase();
+      if (COMPRAS_TODAS_UBICACIONES_ALMACEN.has(destino)) return;
+    }
+
     let fecha;
     if (f.Fecha instanceof Date) fecha = f.Fecha.toISOString().slice(0, 10);
     else if (typeof f.Fecha === "number") fecha = new Date(Date.UTC(1899, 11, 30) + f.Fecha * 86400000).toISOString().slice(0, 10);
     else fecha = String(f.Fecha).slice(0, 10);
-    const cantidad = Number(f.Cantidad) || 0;
+    const cantidad = Math.abs(Number(f.Cantidad) || 0);
     const clave = ref + "_" + fecha;
     if (!porClave[clave]) porClave[clave] = { ref, fecha, cantidad: 0 };
     porClave[clave].cantidad += cantidad;
@@ -4450,7 +4470,9 @@ async function procesarComprasConsumos(buffer) {
 
 const COMPRAS_TIPOS_CORREO = [
   { regex: /^stock bandejas$/i, tipo: "stock", procesar: procesarComprasStock },
-  { regex: /^consumos bandejas$/i, tipo: "consumos", procesar: procesarComprasConsumos },
+  // El ERP lo manda como "Informe Movimientos Bandejas <fecha>" (la fecha
+  // cambia cada dia), no con un asunto fijo como el resto.
+  { regex: /^informe movimientos bandejas\b/i, tipo: "consumos", procesar: procesarComprasConsumos },
   { regex: /^transito bandejas (\d+)$/i, tipo: "transito", procesar: null }, // usa el grupo capturado como numero
   { regex: /^pedido base bandejas$/i, tipo: "pedido_base", procesar: procesarComprasPedidoBase },
   { regex: /^planificacion bandejas$/i, tipo: "planificacion", procesar: procesarComprasPlanificacion }
