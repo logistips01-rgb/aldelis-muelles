@@ -5068,7 +5068,7 @@ function renderComprasDashboard() {
   if (!tbody) return;
   const mostrarBajas = document.getElementById("compras-mostrar-bajas").checked;
   const filas = _comprasResultados.filter(r => mostrarBajas || r.situacion !== "BAJA");
-  if (!filas.length) { tbody.innerHTML = "<tr><td colspan='12' style='padding:16px;text-align:center;color:#9CA3AF'>Sin datos — revisa que el maestro tenga referencias y que hayan llegado los ficheros de stock/consumos.</td></tr>"; return; }
+  if (!filas.length) { tbody.innerHTML = "<tr><td colspan='16' style='padding:16px;text-align:center;color:#9CA3AF'>Sin datos — revisa que el maestro tenga referencias y que hayan llegado los ficheros de stock/consumos.</td></tr>"; return; }
 
   tbody.innerHTML = filas.map(r => {
     const estadoTxt = r.bloqueado
@@ -5076,13 +5076,20 @@ function renderComprasDashboard() {
       : COMPRAS_SEMAFORO_EMOJI[r.semaforo] + " " + r.semaforo;
     const filaEstilo = r.situacion === "BAJA" ? "opacity:.55" : "";
     const colorAjuste = r.ajuste > 0 ? "#D41F3A" : (r.ajuste < 0 ? "#1D9E75" : "#6B7280");
+    // El almacen operativo (el que de verdad usa la formula, segun la
+    // situacion de la referencia) se resalta en negrita entre los 4.
+    const negrita = (col) => (r.situacion === "MERCA" ? col === "merca" : col === "plaza") ? "font-weight:700" : "";
     return "<tr style='" + filaEstilo + "'>" +
       "<td>" + esc(r.ref) + "</td>" +
       "<td>" + esc(r.descripcion) + "</td>" +
       "<td>" + esc(r.situacion) + "</td>" +
       "<td>" + r.cdm + "</td>" +
       "<td>" + (r.varCdm > 0 ? "+" : "") + r.varCdm + "%</td>" +
-      "<td>" + r.stockOpPalets + "</td>" +
+      "<td style='" + negrita("plaza") + "'>" + r.stockPlazaPalets + "</td>" +
+      "<td style='" + negrita("merca") + "'>" + r.stockMercaPalets + "</td>" +
+      "<td>" + r.stockTxtPalets + "</td>" +
+      "<td>" + r.stockAvitransPalets + "</td>" +
+      "<td style='font-weight:600'>" + r.stockOpPalets + "</td>" +
       "<td>" + r.transitoPalets + "</td>" +
       "<td>" + (r.diasCobertura >= 999 ? "—" : r.diasCobertura) + "</td>" +
       "<td style='font-weight:600'>" + r.pedido + "</td>" +
@@ -5097,7 +5104,10 @@ function exportarComprasExcel() {
   if (!_comprasResultados.length) { alert("Primero calcula el pedido (botón Recalcular)."); return; }
   const filas = _comprasResultados.map(r => ({
     "Referencia": r.ref, "Descripcion": r.descripcion, "Situacion": r.situacion,
-    "CDM (pal/dia)": r.cdm, "Var %": r.varCdm, "Stock (pal)": r.stockOpPalets,
+    "CDM (pal/dia)": r.cdm, "Var %": r.varCdm,
+    "Stock Plaza": r.stockPlazaPalets, "Stock Merca": r.stockMercaPalets,
+    "Stock Txt": r.stockTxtPalets, "Stock Avitrans": r.stockAvitransPalets,
+    "Stock operativo": r.stockOpPalets,
     "Transito (pal)": r.transitoPalets, "Dias cobertura": r.diasCobertura >= 999 ? "" : r.diasCobertura,
     "Pedido": r.pedido, "Pedido base": r.boxBase, "Ajuste": r.ajuste,
     "Estado": r.bloqueado ? "Bloqueado" : r.semaforo

@@ -4584,6 +4584,12 @@ async function calcularTodoPedidoBandejas() {
     const stockDoc = stockPorRef[ref] || {};
     const stockOpUnidades = situacion === "MERCA" ? (stockDoc.stockMerca || 0) : (stockDoc.stockInterno || 0);
     const stockOpPalets = stockOpUnidades / unidadesPalet;
+    // Desglose por almacen (aparte del "operativo" que ya usa la formula),
+    // para que se vea en el dashboard de donde sale cada palet.
+    const stockPlazaPalets    = (stockDoc.stockInterno  || 0) / unidadesPalet;
+    const stockMercaPalets    = (stockDoc.stockMerca    || 0) / unidadesPalet;
+    const stockTxtPalets      = (stockDoc.stockTxt      || 0) / unidadesPalet;
+    const stockAvitransPalets = (stockDoc.stockAvitrans || 0) / unidadesPalet;
 
     const transitoDoc = transitoPorRef[ref] || {};
     const transitoUnidades = Object.values(transitoDoc.porTipo || {}).reduce((s, v) => s + (Number(v) || 0), 0);
@@ -4607,6 +4613,10 @@ async function calcularTodoPedidoBandejas() {
     const resultado = {
       ref, descripcion: m.descripcion || "", situacion, leadTime, stockSeguridad, unidadesPalet, incremento,
       cdm: Math.round(cdm * 100) / 100, varCdm, stockOpPalets: Math.round(stockOpPalets * 100) / 100,
+      stockPlazaPalets: Math.round(stockPlazaPalets * 100) / 100,
+      stockMercaPalets: Math.round(stockMercaPalets * 100) / 100,
+      stockTxtPalets: Math.round(stockTxtPalets * 100) / 100,
+      stockAvitransPalets: Math.round(stockAvitransPalets * 100) / 100,
       transitoPalets: Math.round(transitoPalets * 100) / 100, diasCobertura,
       pedido, boxBase, ajuste, bloqueado, semaforo
     };
