@@ -708,6 +708,22 @@ function aplicarRol() {
   if (primera) switchVista(primera);
 }
 
+// Vistas agrupadas bajo el desplegable "Más" de la barra superior (las
+// menos usadas a diario); el resto se quedan siempre visibles.
+const TOPBAR_VISTAS_EN_MAS = ["rejilla", "merca", "arento", "lista", "informes", "cargas", "bizerba", "costes", "cambios", "furgoneta"];
+
+function toggleTopbarMas(ev) {
+  if (ev) ev.stopPropagation();
+  document.getElementById("topbar-mas-menu").classList.toggle("abierto");
+}
+document.addEventListener("click", (ev) => {
+  const menu = document.getElementById("topbar-mas-menu");
+  const wrap = document.getElementById("topbar-mas-wrap");
+  if (menu && menu.classList.contains("abierto") && wrap && !wrap.contains(ev.target)) {
+    menu.classList.remove("abierto");
+  }
+});
+
 function switchVista(vista) {
   // No permitir entrar en una vista sin permiso
   if (_perms.ver && _perms.ver[vista] === false) return;
@@ -715,6 +731,10 @@ function switchVista(vista) {
     document.getElementById("vista-" + v).style.display = vista === v ? "block" : "none";
     document.getElementById("btn-vista-" + v).classList.toggle("active", vista === v);
   });
+  const btnMas = document.getElementById("btn-topbar-mas");
+  if (btnMas) btnMas.classList.toggle("active", TOPBAR_VISTAS_EN_MAS.includes(vista));
+  const menuMas = document.getElementById("topbar-mas-menu");
+  if (menuMas) menuMas.classList.remove("abierto");
   // Las tarjetas de "Total reservas/Pendientes/..." son solo de Rejilla:
   // antes se veian en todas las pestañas (Lanzaderas incluida) porque solo
   // se controlaban por permiso, no por la vista activa.

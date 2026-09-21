@@ -382,6 +382,28 @@ body.dark .cfg-grupo-header:hover { background: #26262A; }
 /* btn-ghost es un boton para fondo claro; dentro de la barra hay que aclararlo.
    No se toca la regla general porque se usa tambien sobre fondos claros. */
 .admin-topbar .btn-ghost { color: #D6DAE0; border-color: #555; font-weight: 500; }
+
+/* Desplegable "Mas" de la barra superior: agrupa las pestañas menos usadas
+   para que la barra no crezca sin parar cada vez que se añade una vista
+   nueva (nos paso lo mismo antes en Config, resuelto con un acordeon). */
+.topbar-dropdown { position: relative; display: inline-block; }
+.topbar-dropdown-menu {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  background: #1E1E20;
+  border: 1px solid #555;
+  border-radius: 8px;
+  padding: 6px;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 140px;
+  z-index: 50;
+  box-shadow: 0 8px 24px rgba(0,0,0,.4);
+}
+.topbar-dropdown-menu.abierto { display: flex; }
+.topbar-dropdown-menu .tab-view { text-align: left; width: 100%; }
 .admin-topbar .btn-ghost:hover { color: #fff; border-color: #9CA3AF; background: #2A2A2A; }
 
 /* Botones de accion rapida en lista */
