@@ -5197,3 +5197,104 @@ async function eliminarComprasMaestro(ref) {
     await db.collection("compras_bandejas_maestro").doc(ref).delete();
   } catch (e) { alert("Error al borrar: " + e.message); }
 }
+
+// Mismo criterio de deteccion de cabecera que usa el servidor al leer los
+// ficheros que llegan por correo (primera fila con algun texto), para que
+// el maestro se importe igual aunque venga con alguna fila en blanco antes.
+const COMPRAS_ALIAS_MAESTRO_IMPORT = {
+  "referencia": "Referencia", "descripcion": "Descripcion",
+  "lead_time": "Lead_time", "leadtime": "Lead_time",
+  "stock_seguridad": "Stock_seguridad", "stockseguridad": "Stock_seguridad",
+  "unidades_palet": "Unidades_palet", "unidadespalet": "Unidades_palet",
+  "incremento": "Incremento", "situacion": "Situacion"
+};
+
+function leerExcelConHeaderAutoCliente(datosBinarios) {
+  const wb = XLSX.read(datosBinarios, { type: "binary" });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const filas = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+  const idxHeader = filas.findIndex(f => Array.isArray(f) && f.some(c => typeof c === "string" && c.trim()));
+  if (idxHeader === -1) return [];
+  const headers = filas[idxHeader].map(h => String(h == null ? "" : h).trim());
+  const datos = [];
+  for (let i = idxHeader + 1; i < filas.length; i++) {
+    const fila = filas[i];
+    if (!fila || fila.every(c => c == null || c === "")) continue;
+    const obj = {};
+    headers.forEach((h, j) => { if (h) obj[h] = fila[j]; });
+    datos.push(obj);
+  }
+  return datos;
+}
+
+function importarComprasMaestroExcel(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const estado = document.getElementById("compras-m-import-estado");
+  estado.style.color = "";
+  estado.textContent = "Leyendo archivo...";
+
+  const reader = new FileReader();
+  reader.onload = async (ev) => {
+    try {
+      const filas = leerExcelConHeaderAutoCliente(ev.target.result).map(f => {
+        const out = {};
+        for (const k in f) {
+          const norm = String(k).trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+          const canon = COMPRAS_ALIAS_MAESTRO_IMPORT[norm];
+          if (canon) out[canon] = f[k];
+        }
+        return out;
+      });
+
+      const validas = [];
+      const descartadas = [];
+      filas.forEach(f => {
+        const ref = String(f.Referencia || "").trim().toUpperCase();
+        const leadTime = Number(f.Lead_time);
+        const stockSeguridad = Number(f.Stock_seguridad);
+        const unidadesPalet = Number(f.Unidades_palet);
+        const incremento = Number(f.Incremento) || 0;
+        let situacion = String(f.Situacion || "ACTIVA").trim().toUpperCase();
+        if (!["ACTIVA", "BAJA", "MERCA"].includes(situacion)) situacion = "ACTIVA";
+        if (!ref || !(leadTime >= 0) || !(stockSeguridad >= 0) || !(unidadesPalet > 0)) {
+          descartadas.push(ref || "(sin referencia)");
+          return;
+        }
+        validas.push({
+          ref, descripcion: String(f.Descripcion || "").trim(),
+          leadTime, stockSeguridad, unidadesPalet, incremento, situacion
+        });
+      });
+
+      if (!validas.length) {
+        estado.style.color = "#D41F3A";
+        estado.textContent = "No se ha podido leer ninguna fila valida. Revisa las columnas del archivo.";
+        return;
+      }
+
+      estado.textContent = "Importando " + validas.length + " referencia(s)...";
+      for (let i = 0; i < validas.length; i += 400) {
+        const batch = db.batch();
+        validas.slice(i, i + 400).forEach(v => {
+          batch.set(db.collection("compras_bandejas_maestro").doc(v.ref), {
+            descripcion: v.descripcion, leadTime: v.leadTime, stockSeguridad: v.stockSeguridad,
+            unidadesPalet: v.unidadesPalet, incremento: v.incremento, situacion: v.situacion
+          });
+        });
+        await batch.commit();
+      }
+
+      estado.style.color = "#1D9E75";
+      estado.textContent = "Importadas " + validas.length + " referencia(s)." +
+        (descartadas.length ? " " + descartadas.length + " fila(s) descartada(s) por datos incompletos." : "");
+    } catch (e) {
+      console.error("importarComprasMaestroExcel:", e);
+      estado.style.color = "#D41F3A";
+      estado.textContent = "Error al importar: " + e.message;
+    } finally {
+      input.value = "";
+    }
+  };
+  reader.readAsBinaryString(file);
+}

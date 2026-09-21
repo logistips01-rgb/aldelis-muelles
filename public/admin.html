@@ -475,6 +475,16 @@
           (palets extra, ej. por una oferta puntual) y situación (ACTIVA / BAJA / MERCA).
         </p>
         <div class="informe-card" style="margin-bottom:16px">
+          <div class="informe-card-title">Importar maestro desde Excel</div>
+          <p style="font-size:12.5px;color:#6B7280;margin-bottom:10px">
+            Columnas esperadas: Referencia, Descripcion, Lead_time, Stock_Seguridad, Unidades_Palet,
+            Incremento (opcional), Situacion (opcional, ACTIVA por defecto). Reemplaza por completo los
+            datos de cada referencia que aparezca en el archivo; las que no estén en el archivo no se tocan.
+          </p>
+          <input type="file" id="compras-m-import-file" accept=".xlsx,.xls" onchange="importarComprasMaestroExcel(this)">
+          <div id="compras-m-import-estado" style="font-size:13px;margin-top:8px"></div>
+        </div>
+        <div class="informe-card" style="margin-bottom:16px">
           <div class="informe-card-title">Añadir / editar referencia</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
             <input type="text" id="compras-m-ref" placeholder="Referencia" style="width:110px;padding:8px;border:1px solid #D1D5DB;border-radius:6px">
