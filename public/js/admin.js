@@ -1681,7 +1681,7 @@ function cambioAlmacenEnvasesDet() {
   document.getElementById("envases-det-sin-pedido-wrap").style.display = esAvitrans ? "flex" : "none";
   document.getElementById("envases-det-btn-probar").style.display = esAvitrans ? "" : "none";
   document.getElementById("envases-det-desc").textContent = esAvitrans
-    ? "Rellena las cantidades y se manda un correo automático a avitrans@aldelis.com con el desglose, y se suma el total de huecos de camión a los pendientes de Avitrans (el Europool cuenta la mitad, redondeando hacia arriba). Si un turno no se manda a mano a su hora, la app manda un estimado (de momento solo de prueba, a tu correo)."
+    ? "Rellena las cantidades y se manda un correo automático a almacen@avitrans.com con el desglose, y se suma el total de huecos de camión a los pendientes de Avitrans (el Europool cuenta la mitad, redondeando hacia arriba). Si un turno no se manda a mano a su hora, la app manda un estimado (de momento solo de prueba, a tu correo)."
     : "Pedido puntual a Txt: se manda un correo con el desglose a Mariola Arcos y al almacén de Plaza Logística, y se suma el total de huecos de camión a los pendientes de Txt (el Europool cuenta la mitad, redondeando hacia arriba).";
   document.getElementById("envases-det-btn").textContent = esAvitrans ? "Mandar pedido a Avitrans" : "Mandar pedido a Txt";
   if (esAvitrans) {

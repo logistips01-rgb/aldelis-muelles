@@ -1796,7 +1796,7 @@ exports.registrarPedidoEnvases = functions.https.onCall(async (request, context)
 // en vez de dos totales sueltos (normal/europool), se manda el desglose por
 // referencia exacto (mismo catalogo que se pide siempre a Avitrans por
 // correo), y ademas de guardar el pedido, se manda el correo de verdad a
-// avitrans@aldelis.com con la tabla y el numero de pedido - antes esto se
+// almacen@avitrans.com con la tabla y el numero de pedido - antes esto se
 // escribia a mano cada vez.
 const CATALOGO_ENVASES_AVITRANS = {
   "999979": { desc: "IFCO 6420",       tipo: "normal" },
@@ -1847,7 +1847,7 @@ function htmlPedidoEnvases(pt, filas, etiquetaExtra) {
 // mlorente va siempre en copia (como destinatario aparte) en los dos casos,
 // para poder verificar que el pedido se ha mandado de verdad.
 const ENVASES_DESTINATARIOS = {
-  avitrans: ["avitrans@aldelis.com", "mlorente@aldelis.com"],
+  avitrans: ["almacen@avitrans.com", "mlorente@aldelis.com"],
   txt: ["mariola.arcos@txt.es", "almacenplaza.logistica@txt.es", "mlorente@aldelis.com"]
 };
 
@@ -2001,7 +2001,7 @@ async function estimarPedidoEnvasesTurno(turno, hoy) {
 // Avitrans todavia), y no crea ningun pedido_transferencia real - es puramente
 // informativo, para poder afinar el formato y la logica antes de activarlo
 // de verdad. Cuando el admin lo confirme, cambiar DESTINATARIO_PRUEBA por
-// "avitrans@aldelis.com" y descomentar la creacion del pedido real.
+// "almacen@avitrans.com" y descomentar la creacion del pedido real.
 const ENVASES_DESTINATARIO_PRUEBA = "mlorente@aldelis.com";
 
 // forzar=true (boton "probar ahora" del panel) se salta la comprobacion de
