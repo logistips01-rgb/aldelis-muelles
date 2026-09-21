@@ -1547,11 +1547,12 @@ async function graphGet(token, url) {
 }
 
 async function graphMarcarLeido(token, msgId) {
-  await fetch("https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS + "/messages/" + msgId, {
+  const res = await fetch("https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS + "/messages/" + msgId, {
     method: "PATCH",
     headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
     body: JSON.stringify({ isRead: true })
   });
+  if (!res.ok) console.error("graphMarcarLeido: fallo al marcar", msgId, res.status);
 }
 
 function detectarAlmacenPorDestinatarios(msg) {
@@ -4100,6 +4101,25 @@ exports.revisarCorreoExtraerAlbaran = onSchedule(
 
     for (const msg of candidatos) {
       const remitente = msg.from.emailAddress.address;
+
+      // Guarda de idempotencia: marcar como "leido" en Graph no siempre es
+      // fiable del todo (puede no llegar a persistir, o el correo puede
+      // volver a marcarse como no leido por el propio cliente de correo),
+      // asi que sin esto la misma peticion se procesaba de nuevo cada 10
+      // minutos mientras siguiera apareciendo como no leida. El "create"
+      // falla si ya existe, asi que cada mensaje se atiende una sola vez.
+      const procesadoRef = db.collection("extracciones_albaran_procesadas").doc(msg.id);
+      try {
+        await procesadoRef.create({ ts: admin.firestore.Timestamp.now() });
+      } catch (e) {
+        if (e.code === 6 /* ALREADY_EXISTS */) {
+          console.log("revisarCorreoExtraerAlbaran: mensaje", msg.id, "ya atendido antes, se ignora.");
+          continue;
+        }
+        console.error("revisarCorreoExtraerAlbaran: guarda de idempotencia:", e.message);
+        continue;
+      }
+
       try {
         const codigo = extraerCodigoAlbaran(msg.subject);
         if (!codigo) {
