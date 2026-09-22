@@ -4179,7 +4179,7 @@ async function cargarRobinLimite() {
   if (!elLimite) return;
   try {
     const doc = await db.collection("config").doc("robin").get();
-    const limite = (doc.exists && Number(doc.data().limiteChatDiario)) || 30;
+    const limite = (doc.exists && Number(doc.data().limiteChatDiario)) || 5;
     elLimite.value = limite;
     const hoy = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Madrid" });
     const usoDoc = await db.collection("robin_chat_uso").doc(hoy).get();

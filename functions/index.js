@@ -3998,7 +3998,7 @@ const IA_CHAT_MENCION_REGEX = /\brobin\b/i;
 // dos no tienen limite). Configurable desde el panel (config/robin,
 // limiteChatDiario). Al superarlo, Robin se queda callado en el chat (no
 // gasta ni una peticion mas) y avisa por correo una sola vez al dia.
-const ROBIN_CHAT_LIMITE_DEFECTO = 30;
+const ROBIN_CHAT_LIMITE_DEFECTO = 5;
 
 exports.robinRespondeChat = onDocumentCreated("mensajes/{msgId}", async (event) => {
   const msg = event.data ? event.data.data() : null;
