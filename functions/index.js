@@ -373,31 +373,6 @@ exports.enviarEmail = functions.https.onCall(async (request, context) => {
       return { ok: true };
     }
 
-    // ── Alerta de lanzadera parada ──────────────────────────────────────────
-    if (tipo === "alerta_lanzadera") {
-      if (!conLogin) return { ok: false, error: "Requiere login" };
-
-      const numero  = Number(data.numero);
-      const minutos = Number(data.minutos);
-      const lugar   = typeof data.lugar === "string" ? data.lugar.substring(0, 60) : "";
-      if (!(numero >= 1 && numero <= 4)) return { ok: false, error: "Lanzadera no valida" };
-      if (!lugar) return { ok: false, error: "Falta el lugar" };
-
-      const destinatarios = await emailsDeConfig("alertas", []);
-      if (!destinatarios.length) return { ok: false, error: "Sin destinatarios" };
-
-      const enviados = await enviarALista(destinatarios,
-        "ALERTA Aldelis — Lanzadera " + numero + " lleva mas de hora y media en " + lugar,
-        "ALERTA de Aldelis Muelles\n\n" +
-        "La Lanzadera " + numero + " lleva " +
-        (minutos > 0 ? Math.round(minutos) + " minutos" : "mas de hora y media") +
-        " parada en " + lugar + ".\n\n" +
-        "Revisa el panel:\nhttps://aldelis-muelles.web.app/admin.html" + FIRMA,
-        null, null);
-
-      return { ok: enviados > 0 };
-    }
-
     // ── Restablecer contraseña ──────────────────────────────────────────────
     // Publico por necesidad: quien ha olvidado la contraseña no puede estar
     // identificado. El enlace lo genera el SDK de administrador y lo enviamos
@@ -1347,6 +1322,7 @@ exports.revisarLanzaderasParadas = onSchedule(
           ts: admin.firestore.Timestamp.now()
         });
         await avisoRef.set({ desde: d.desde, nivel, actualizado: admin.firestore.Timestamp.now() });
+        console.log("revisarLanzaderasParadas: lanzadera", numero, "nivel", nivel, "(" + Math.round(elapsedMin) + " min en " + d.nave + ") - mensaje enviado.");
       } catch (e) { console.error("revisarLanzaderasParadas: lanzadera", numero, e.message); }
     }
   }

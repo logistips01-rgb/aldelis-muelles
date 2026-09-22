@@ -2733,13 +2733,14 @@ let _tiempoMaxLanz = 90; // minutos para alerta email; banner a los +30 min
 const RESERVAS_EMAILS_DEFECTO = ["mlorente@aldelis.com", "garita@aldelis.com"];
 let RESERVAS_EMAILS = [...RESERVAS_EMAILS_DEFECTO];
 
-// IDs de alertas ya notificadas en esta sesion (evita spam cada 30s)
-const _alertasEmailEnviadas = new Set();
-
-// Alerta nuclear: banner a las 2h, correo a la hora y media
+// Alerta nuclear: banner en el panel a las 2h de una lanzadera parada. El
+// aviso por correo se quito (era del navegador, cada pestaña abierta
+// llevaba su propio contador sin compartir nada con el servidor - una
+// pestaña abierta desde hace tiempo podia mandar avisos con datos viejos,
+// como paso con las de 170/173 minutos). Ahora ese aviso lo da Robin por
+// el chat (ver revisarLanzaderasParadas en functions/index.js).
 function revisarAlertas(segs, trans, finMarks) {
   const alertas = [];      // para el banner rojo (>= 2h)
-  const emailCand = [];     // para el correo (cruce de 1h30)
   if (esHoy) {
     for (let n = 1; n <= 4; n++) {
       let best = null;
@@ -2752,7 +2753,6 @@ function revisarAlertas(segs, trans, finMarks) {
         if (best.nave === "plaza" && best.muelle) lbl += " " + (best.accion === "cargando" ? "⬆" : "⬇") + best.muelle;
         else if (best.nave === "merca" && best.muelle) lbl += " " + best.muelle;
         if (el >= _tiempoMaxLanz + 30) alertas.push({ n: n, lbl: lbl, el: el });
-        if (el >= _tiempoMaxLanz)      emailCand.push({ n: n, lbl: lbl, el: el });
       }
     }
   }
@@ -2767,26 +2767,6 @@ function revisarAlertas(segs, trans, finMarks) {
   }
   const tab = document.getElementById("btn-vista-lanzaderas");
   if (tab) tab.classList.toggle("tab-alerta", alertas.length > 0 && !tab.classList.contains("active"));
-
-  // Enviar email solo la primera vez que se detecta cada alerta.
-  // Solo si la lanzadera acaba de cruzar el umbral de 1h30 estando el panel
-  // vigilando (ventana 90-150 min). Asi evitamos avisos de registros viejos
-  // u olvidos de salida que aparecen ya con 8h+ al abrir el panel.
-  const alertaIds = new Set(emailCand.map(a => "lanz" + a.n));
-  emailCand.forEach(a => {
-    const id = "lanz" + a.n;
-    if (!_alertasEmailEnviadas.has(id) && a.el >= _tiempoMaxLanz && a.el <= _tiempoMaxLanz + 60) {
-      _alertasEmailEnviadas.add(id);
-      // Los destinatarios salen de config/alertas en el servidor.
-      llamarEnviarEmail({ tipo: "alerta_lanzadera", numero: a.n, lugar: a.lbl, minutos: a.el });
-    } else if (!_alertasEmailEnviadas.has(id) && a.el > 150) {
-      // Registro viejo / salida sin registrar: marcar como notificado para no
-      // mandar correo, pero seguir mostrando el banner en pantalla.
-      _alertasEmailEnviadas.add(id);
-    }
-  });
-  // Si la alerta se resuelve, permitir reenvio si vuelve a ocurrir
-  _alertasEmailEnviadas.forEach(id => { if (!alertaIds.has(id)) _alertasEmailEnviadas.delete(id); });
 }
 
 // Cuenta cuantas lanzaderas estan ahora mismo en cada situacion, para la
