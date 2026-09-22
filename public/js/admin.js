@@ -5048,6 +5048,13 @@ let _comprasMaestroCache = [];
 let _comprasMaestroListenerActivo = false;
 let _comprasEditando = null;
 
+function switchComprasFamilia(f) {
+  document.getElementById("compras-familia-bandejas").style.display = f === "bandejas" ? "" : "none";
+  document.getElementById("compras-familia-carton").style.display = f === "carton" ? "" : "none";
+  document.getElementById("btn-compras-familia-bandejas").classList.toggle("active", f === "bandejas");
+  document.getElementById("btn-compras-familia-carton").classList.toggle("active", f === "carton");
+}
+
 function switchComprasVista(v) {
   document.getElementById("compras-dashboard").style.display = v === "dashboard" ? "" : "none";
   document.getElementById("compras-maestro").style.display = v === "maestro" ? "" : "none";
