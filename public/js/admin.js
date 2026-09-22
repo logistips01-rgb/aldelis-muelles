@@ -5194,14 +5194,14 @@ function probarComprasCorreo() {
       }
       const noLeidos = res.data.asuntosNoLeidos || [];
       const procesados = res.data.procesados || [];
-      let html = "<strong>" + noLeidos.length + " correo(s) no leído(s) en el buzón:</strong> " +
+      let html = "<strong>" + noLeidos.length + " correo(s) encontrado(s) buscando por asunto:</strong> " +
         (noLeidos.length ? noLeidos.map(a => esc(a)).join(", ") : "(ninguno)") + "<br>";
       if (procesados.length) {
         html += "<strong>Procesados ahora:</strong><ul style='margin:6px 0 0 18px'>" +
           procesados.map(p => "<li>" + esc(p.asunto) + " → " + esc(p.resultado) + "</li>").join("") +
           "</ul>";
       } else {
-        html += "Ninguno de los correos no leídos coincidía con los asuntos esperados (Stock bandejas, Informe Movimientos Bandejas, Transito bandejas N, Pedido base bandejas, Planificacion bandejas).";
+        html += "No hay ningún correo sin leer con esos asuntos (Stock bandejas, Informe Movimientos Bandejas, Transito bandejas N, Pedido base bandejas, Planificacion bandejas).";
       }
       cont.innerHTML = html;
     })

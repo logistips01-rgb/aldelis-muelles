@@ -4492,34 +4492,54 @@ const COMPRAS_TIPOS_CORREO = [
 
 // Logica compartida por las dos revisiones (consumos aparte del resto, ver
 // mas abajo): cada una solo mira los tipos de fichero de "tiposPermitidos".
+// Filtro OData de asunto para cada tipo de fichero (subject exacto para los
+// fijos, startswith para los que llevan fecha/numero variable detras).
+function comprasFiltroAsunto(tipo) {
+  if (tipo === "transito") return "startswith(subject,'Transito bandejas')";
+  if (tipo === "consumos") return "startswith(subject,'Informe Movimientos Bandejas')";
+  const asuntoExacto = { stock: "Stock bandejas", pedido_base: "Pedido base bandejas", planificacion: "Planificacion bandejas" }[tipo];
+  return "subject eq '" + asuntoExacto + "'";
+}
+
 async function revisarCorreoComprasBandejasTipos(nombreFuncion, tiposPermitidos) {
   let token;
   try { token = await obtenerTokenMS(); }
   catch (e) { console.error(nombreFuncion + ": token:", e.message); return { error: "token: " + e.message }; }
 
-  let data;
-  try {
-    data = await graphGet(token,
-      "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS +
-      "/mailFolders/inbox/messages?$filter=isRead eq false&$top=25" +
-      "&$select=id,subject,hasAttachments,from,receivedDateTime");
-  } catch (e) { console.error(nombreFuncion + ": listar mensajes:", e.message); return { error: "listar mensajes: " + e.message }; }
+  // Busqueda por asunto especifico (server-side), no "los 25 no leidos mas
+  // recientes en general": este buzon comparte mucho trafico con pedidos,
+  // incidencias y ACOPAL, asi que con solo isRead=false el correo que
+  // buscamos podia quedar fuera del limite de 25 sin que hubiera fallado
+  // nada - simplemente habia mas de 25 OTROS correos sin leer por delante.
+  const candidatos = []; // { msg, conf, tipoTransito }
+  const tiposUnicos = [...new Set(tiposPermitidos)];
+  for (const tipo of tiposUnicos) {
+    const conf = COMPRAS_TIPOS_CORREO.find(c => c.tipo === tipo);
+    if (!conf) continue;
+    const filtro = "isRead eq false and " + comprasFiltroAsunto(tipo);
+    let data;
+    try {
+      data = await graphGet(token,
+        "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS +
+        "/mailFolders/inbox/messages?$filter=" + encodeURIComponent(filtro) +
+        "&$top=25&$select=id,subject,hasAttachments,from,receivedDateTime");
+    } catch (e) {
+      console.error(nombreFuncion + ": listar (" + tipo + "):", e.message);
+      continue;
+    }
+    (data.value || []).forEach(msg => {
+      const asunto = (msg.subject || "").trim();
+      const m = asunto.match(conf.regex);
+      if (!m) return; // el startswith de Graph es mas laxo que el regex exacto
+      candidatos.push({ msg, conf, tipoTransito: tipo === "transito" ? m[1] : null });
+    });
+  }
 
-  const asuntosNoLeidos = (data.value || []).map(m => m.subject || "");
-  console.log(nombreFuncion + ": " + asuntosNoLeidos.length + " correo(s) no leido(s) en el buzon. Asuntos: " +
-    asuntosNoLeidos.map(a => "\"" + a + "\"").join(", "));
+  console.log(nombreFuncion + ": " + candidatos.length + " correo(s) candidato(s) de los tipos " + tiposUnicos.join(", ") + ".");
 
   const procesados = [];
-  for (const msg of (data.value || [])) {
+  for (const { msg, conf, tipoTransito } of candidatos) {
     const asunto = (msg.subject || "").trim();
-    let tipoTransito = null;
-    const conf = COMPRAS_TIPOS_CORREO.filter(c => tiposPermitidos.includes(c.tipo)).find(c => {
-      const m = asunto.match(c.regex);
-      if (!m) return false;
-      if (c.tipo === "transito") tipoTransito = m[1];
-      return true;
-    });
-    if (!conf) continue;
     if (!msg.hasAttachments) {
       await graphMarcarLeido(token, msg.id);
       procesados.push({ asunto, resultado: "sin adjunto, descartado" });
@@ -4561,7 +4581,7 @@ async function revisarCorreoComprasBandejasTipos(nombreFuncion, tiposPermitidos)
       procesados.push({ asunto, resultado: "error: " + e.message });
     }
   }
-  return { asuntosNoLeidos, procesados };
+  return { asuntosNoLeidos: candidatos.map(c => (c.msg.subject || "").trim()), procesados };
 }
 
 // TEMPORAL: cada 5 minutos mientras depuramos por que no se esta procesando
