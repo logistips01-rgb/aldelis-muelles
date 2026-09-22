@@ -5044,15 +5044,33 @@ function toggleMicAsistente() {
 // (calcularPedidoBandejas), nunca el cliente: aqui solo se pinta lo que
 // devuelve y se gestiona el maestro (unica parte editable desde el panel).
 let _comprasResultados = [];
-let _comprasMaestroCache = [];
-let _comprasMaestroListenerActivo = false;
-let _comprasEditando = null;
+// El stock/consumo/transito/pedido base se recoge igual para todas las
+// familias (mismos almacenes, mismo formato de fichero) - solo el maestro
+// es propio de cada una (lead time, stock de seguridad... distintos para
+// bandejas y carton), asi que es lo unico separado por familia aqui.
+const _comprasMaestroCache = { bandejas: [], carton: [] };
+const _comprasMaestroListenerActivo = { bandejas: false, carton: false };
+const _comprasEditando = { bandejas: null, carton: null };
 
 function switchComprasFamilia(f) {
   document.getElementById("compras-familia-bandejas").style.display = f === "bandejas" ? "" : "none";
   document.getElementById("compras-familia-carton").style.display = f === "carton" ? "" : "none";
   document.getElementById("btn-compras-familia-bandejas").classList.toggle("active", f === "bandejas");
   document.getElementById("btn-compras-familia-carton").classList.toggle("active", f === "carton");
+  if (f === "carton") cargarComprasMaestroListener("carton");
+}
+
+function cargarComprasMaestroListener(familia) {
+  if (_comprasMaestroListenerActivo[familia]) return;
+  _comprasMaestroListenerActivo[familia] = true;
+  db.collection("compras_" + familia + "_maestro").onSnapshot(snap => {
+    _comprasMaestroCache[familia] = snap.docs.map(d => ({ ref: d.id, ...d.data() })).sort((a, b) => {
+      const na = Number((a.ref.match(/\d+/) || [])[0]) || 999999;
+      const nb = Number((b.ref.match(/\d+/) || [])[0]) || 999999;
+      return na - nb;
+    });
+    renderComprasMaestro(familia);
+  }, e => console.error("compras_" + familia + "_maestro:", e.message));
 }
 
 function switchComprasVista(v) {
@@ -5063,17 +5081,7 @@ function switchComprasVista(v) {
 }
 
 function cargarCompras() {
-  if (!_comprasMaestroListenerActivo) {
-    _comprasMaestroListenerActivo = true;
-    db.collection("compras_bandejas_maestro").onSnapshot(snap => {
-      _comprasMaestroCache = snap.docs.map(d => ({ ref: d.id, ...d.data() })).sort((a, b) => {
-        const na = Number((a.ref.match(/\d+/) || [])[0]) || 999999;
-        const nb = Number((b.ref.match(/\d+/) || [])[0]) || 999999;
-        return na - nb;
-      });
-      renderComprasMaestro();
-    }, e => console.error("compras_bandejas_maestro:", e.message));
-  }
+  cargarComprasMaestroListener("bandejas");
 
   const estado = document.getElementById("compras-dashboard-estado");
   if (estado) estado.textContent = "Calculando...";
@@ -5164,14 +5172,15 @@ function exportarComprasExcel() {
   XLSX.writeFile(wb, "Aldelis_Compras_Bandejas_" + new Date().toLocaleDateString("sv-SE") + ".xlsx");
 }
 
-function renderComprasMaestro() {
-  const tbody = document.querySelector("#compras-maestro-tabla tbody");
+function renderComprasMaestro(familia) {
+  const tbody = document.querySelector("#compras-maestro-tabla-" + familia + " tbody");
   if (!tbody) return;
-  if (!_comprasMaestroCache.length) {
+  const cache = _comprasMaestroCache[familia];
+  if (!cache.length) {
     tbody.innerHTML = "<tr><td colspan='8' style='padding:16px;text-align:center;color:#9CA3AF'>Sin referencias todavia.</td></tr>";
     return;
   }
-  tbody.innerHTML = _comprasMaestroCache.map(m =>
+  tbody.innerHTML = cache.map(m =>
     "<tr>" +
     "<td>" + esc(m.ref) + "</td>" +
     "<td>" + esc(m.descripcion || "") + "</td>" +
@@ -5181,44 +5190,44 @@ function renderComprasMaestro() {
     "<td>" + (m.incremento != null ? m.incremento : 0) + "</td>" +
     "<td>" + esc(m.situacion || "ACTIVA") + "</td>" +
     "<td style='white-space:nowrap'>" +
-    "<button class='btn-quitar-mini' onclick='editarComprasMaestro(\"" + m.ref + "\")'>Editar</button> " +
-    "<button class='btn-quitar-mini' onclick='eliminarComprasMaestro(\"" + m.ref + "\")'>Borrar</button>" +
+    "<button class='btn-quitar-mini' onclick='editarComprasMaestro(\"" + familia + "\", \"" + m.ref + "\")'>Editar</button> " +
+    "<button class='btn-quitar-mini' onclick='eliminarComprasMaestro(\"" + familia + "\", \"" + m.ref + "\")'>Borrar</button>" +
     "</td></tr>"
   ).join("");
 }
 
-function editarComprasMaestro(ref) {
-  const m = _comprasMaestroCache.find(x => x.ref === ref);
+function editarComprasMaestro(familia, ref) {
+  const m = _comprasMaestroCache[familia].find(x => x.ref === ref);
   if (!m) return;
-  _comprasEditando = ref;
-  document.getElementById("compras-m-ref").value = m.ref;
-  document.getElementById("compras-m-ref").disabled = true;
-  document.getElementById("compras-m-desc").value = m.descripcion || "";
-  document.getElementById("compras-m-lead").value = m.leadTime != null ? m.leadTime : "";
-  document.getElementById("compras-m-ss").value = m.stockSeguridad != null ? m.stockSeguridad : "";
-  document.getElementById("compras-m-up").value = m.unidadesPalet != null ? m.unidadesPalet : "";
-  document.getElementById("compras-m-inc").value = m.incremento != null ? m.incremento : 0;
-  document.getElementById("compras-m-situacion").value = m.situacion || "ACTIVA";
+  _comprasEditando[familia] = ref;
+  document.getElementById("compras-m-ref-" + familia).value = m.ref;
+  document.getElementById("compras-m-ref-" + familia).disabled = true;
+  document.getElementById("compras-m-desc-" + familia).value = m.descripcion || "";
+  document.getElementById("compras-m-lead-" + familia).value = m.leadTime != null ? m.leadTime : "";
+  document.getElementById("compras-m-ss-" + familia).value = m.stockSeguridad != null ? m.stockSeguridad : "";
+  document.getElementById("compras-m-up-" + familia).value = m.unidadesPalet != null ? m.unidadesPalet : "";
+  document.getElementById("compras-m-inc-" + familia).value = m.incremento != null ? m.incremento : 0;
+  document.getElementById("compras-m-situacion-" + familia).value = m.situacion || "ACTIVA";
 }
 
-function limpiarFormComprasMaestro() {
-  _comprasEditando = null;
-  document.getElementById("compras-m-ref").disabled = false;
-  ["compras-m-ref", "compras-m-desc", "compras-m-lead", "compras-m-ss", "compras-m-up"].forEach(id => document.getElementById(id).value = "");
-  document.getElementById("compras-m-inc").value = 0;
-  document.getElementById("compras-m-situacion").value = "ACTIVA";
+function limpiarFormComprasMaestro(familia) {
+  _comprasEditando[familia] = null;
+  document.getElementById("compras-m-ref-" + familia).disabled = false;
+  ["compras-m-ref-", "compras-m-desc-", "compras-m-lead-", "compras-m-ss-", "compras-m-up-"].forEach(id => document.getElementById(id + familia).value = "");
+  document.getElementById("compras-m-inc-" + familia).value = 0;
+  document.getElementById("compras-m-situacion-" + familia).value = "ACTIVA";
 }
 
-async function guardarComprasMaestro() {
-  const errEl = document.getElementById("compras-m-error");
+async function guardarComprasMaestro(familia) {
+  const errEl = document.getElementById("compras-m-error-" + familia);
   errEl.style.display = "none";
-  const ref = (_comprasEditando || document.getElementById("compras-m-ref").value || "").trim();
-  const descripcion = document.getElementById("compras-m-desc").value.trim();
-  const leadTime = Number(document.getElementById("compras-m-lead").value);
-  const stockSeguridad = Number(document.getElementById("compras-m-ss").value);
-  const unidadesPalet = Number(document.getElementById("compras-m-up").value);
-  const incremento = Number(document.getElementById("compras-m-inc").value) || 0;
-  const situacion = document.getElementById("compras-m-situacion").value;
+  const ref = (_comprasEditando[familia] || document.getElementById("compras-m-ref-" + familia).value || "").trim();
+  const descripcion = document.getElementById("compras-m-desc-" + familia).value.trim();
+  const leadTime = Number(document.getElementById("compras-m-lead-" + familia).value);
+  const stockSeguridad = Number(document.getElementById("compras-m-ss-" + familia).value);
+  const unidadesPalet = Number(document.getElementById("compras-m-up-" + familia).value);
+  const incremento = Number(document.getElementById("compras-m-inc-" + familia).value) || 0;
+  const situacion = document.getElementById("compras-m-situacion-" + familia).value;
 
   if (!ref) { errEl.textContent = "Falta la referencia."; errEl.style.display = "block"; return; }
   if (!(leadTime >= 0)) { errEl.textContent = "Lead time no valido."; errEl.style.display = "block"; return; }
@@ -5226,20 +5235,20 @@ async function guardarComprasMaestro() {
   if (!(unidadesPalet > 0)) { errEl.textContent = "Unidades por palet no valido (mayor que 0)."; errEl.style.display = "block"; return; }
 
   try {
-    await db.collection("compras_bandejas_maestro").doc(ref).set({
+    await db.collection("compras_" + familia + "_maestro").doc(ref).set({
       descripcion, leadTime, stockSeguridad, unidadesPalet, incremento, situacion
     });
-    limpiarFormComprasMaestro();
+    limpiarFormComprasMaestro(familia);
   } catch (e) {
     errEl.textContent = "Error al guardar: " + e.message;
     errEl.style.display = "block";
   }
 }
 
-async function eliminarComprasMaestro(ref) {
-  if (!confirm("¿Quitar la referencia " + ref + " del maestro de compras?")) return;
+async function eliminarComprasMaestro(familia, ref) {
+  if (!confirm("¿Quitar la referencia " + ref + " del maestro de " + familia + "?")) return;
   try {
-    await db.collection("compras_bandejas_maestro").doc(ref).delete();
+    await db.collection("compras_" + familia + "_maestro").doc(ref).delete();
   } catch (e) { alert("Error al borrar: " + e.message); }
 }
 
@@ -5272,10 +5281,10 @@ function leerExcelConHeaderAutoCliente(datosBinarios) {
   return datos;
 }
 
-function importarComprasMaestroExcel(input) {
+function importarComprasMaestroExcel(familia, input) {
   const file = input.files && input.files[0];
   if (!file) return;
-  const estado = document.getElementById("compras-m-import-estado");
+  const estado = document.getElementById("compras-m-import-estado-" + familia);
   estado.style.color = "";
   estado.textContent = "Leyendo archivo...";
 
@@ -5322,7 +5331,7 @@ function importarComprasMaestroExcel(input) {
       for (let i = 0; i < validas.length; i += 400) {
         const batch = db.batch();
         validas.slice(i, i + 400).forEach(v => {
-          batch.set(db.collection("compras_bandejas_maestro").doc(v.ref), {
+          batch.set(db.collection("compras_" + familia + "_maestro").doc(v.ref), {
             descripcion: v.descripcion, leadTime: v.leadTime, stockSeguridad: v.stockSeguridad,
             unidadesPalet: v.unidadesPalet, incremento: v.incremento, situacion: v.situacion
           });

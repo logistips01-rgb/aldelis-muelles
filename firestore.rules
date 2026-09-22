@@ -427,6 +427,14 @@ service cloud.firestore {
     match /compras_bandejas_pedido_base/{referencia}   { allow read: if permitidoEstricto('compras'); allow write: if false; }
     match /compras_bandejas_planificacion/{referencia} { allow read: if permitidoEstricto('compras'); allow write: if false; }
 
+    // Carton: mismo maestro editable a mano; stock/consumo/transito/pedido
+    // base son los MISMOS documentos que bandejas (misma recogida de datos,
+    // los mismos almacenes), asi que no hace falta duplicar esas reglas.
+    match /compras_carton_maestro/{referencia} {
+      allow read: if permitidoEstricto('compras');
+      allow create, update, delete: if permitidoEstricto('compras') && validComprasBandejasMaestro();
+    }
+
     match /cambios_material/{id} {
       allow read: if permitidoEstricto('cambios');
       allow create, update: if permitidoEstricto('cambios') && validCambioMaterial();
