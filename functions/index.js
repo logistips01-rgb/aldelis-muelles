@@ -3629,31 +3629,35 @@ async function iaConsultarReferenciaEnvase(input) {
   const ref = String((input && input.ref) || "").trim();
   if (!ref) return { error: "Falta la referencia del envase" };
 
-  const desde = admin.firestore.Timestamp.fromMillis(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  // Solo los pedidos de HOY (por su fecha de recogida, no de cuando se
+  // creo): asi no aparecen pedidos de otros dias que solo confunden.
+  const hoy = fechaHoyMadrid();
   const snap = await db.collection("pedidos_transferencia")
-    .where("creado", ">=", desde)
-    .orderBy("creado", "desc")
-    .limit(50)
+    .where("fecha", "==", hoy)
     .get();
 
-  let encontrado = null;
+  // Todos los pedidos de hoy que incluyen la referencia, no solo uno: puede
+  // haber mas de un pedido el mismo dia (distintos almacenes, turnos...).
+  const pedidos = [];
   snap.forEach(d => {
-    if (encontrado) return;
     const data = d.data();
-    if (Array.isArray(data.lineas) && data.lineas.some(l => String(l.ref) === ref)) {
-      encontrado = { pt: d.id, ...data };
-    }
+    if (!Array.isArray(data.lineas)) return;
+    const linea = data.lineas.find(l => String(l.ref) === ref);
+    if (!linea) return;
+    const pendiente = Math.max((data.palets || 0) - (data.recogido || 0), 0);
+    pedidos.push({
+      pt: d.id, almacen: data.almacen, fecha: data.fecha || null,
+      descripcion: linea.desc, cantidadPedida: linea.cantidad,
+      palets: data.palets || 0, recogido: data.recogido || 0, pendiente,
+      estadoPedido: pendiente <= 0 ? "recogido" : (data.recogido > 0 ? "recogido_parcial" : "pendiente")
+    });
   });
-  if (!encontrado) return { error: "No se encontro ningun pedido de los ultimos 30 dias que incluya la referencia " + ref };
+  if (!pedidos.length) return { error: "No hay ningun pedido de hoy que incluya la referencia " + ref };
 
-  const linea = encontrado.lineas.find(l => String(l.ref) === ref);
-  const pendiente = Math.max((encontrado.palets || 0) - (encontrado.recogido || 0), 0);
   return {
-    pt: encontrado.pt, almacen: encontrado.almacen,
-    referencia: ref, descripcion: linea ? linea.desc : null, cantidadPedida: linea ? linea.cantidad : null,
-    palets: encontrado.palets || 0, recogido: encontrado.recogido || 0, pendiente,
-    estadoPedido: pendiente <= 0 ? "recogido" : (encontrado.recogido > 0 ? "recogido_parcial" : "pendiente"),
-    aviso: "Este es el estado del PEDIDO completo (no de la referencia en concreto): el sistema no distingue que referencias se han recogido si el pedido se recogio a medias."
+    referencia: ref, pedidos,
+    aviso: "Cada estado es del PEDIDO completo (no de la referencia en concreto): el sistema no distingue que " +
+      "referencias se han recogido si el pedido se recogio a medias."
   };
 }
 
@@ -3783,7 +3787,7 @@ const HERRAMIENTAS_IA = [
   },
   {
     name: "consultar_referencia_envase",
-    description: "Busca el pedido mas reciente (ultimos 30 dias) que incluya una referencia de envase concreta (ej: \"999979\" = IFCO 6420) y da el estado de ese pedido (recogido, pendiente o recogido a medias). Ojo: es el estado del PEDIDO completo, no de esa referencia por separado, porque el chofer no registra el desglose por referencia al recoger.",
+    description: "Busca TODOS los pedidos de HOY que incluyan una referencia de envase concreta (ej: \"999979\" = IFCO 6420) y da el estado de cada uno (recogido, pendiente o recogido a medias). Ojo: cada estado es del PEDIDO completo, no de esa referencia por separado, porque el chofer no registra el desglose por referencia al recoger.",
     input_schema: {
       type: "object",
       properties: { ref: { type: "string", description: "Codigo de referencia del envase, ej: 999979" } },
