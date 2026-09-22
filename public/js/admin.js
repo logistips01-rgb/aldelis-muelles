@@ -4170,6 +4170,33 @@ function cargarConfig() {
     if (el) el.value = CIERRES_ALMACENES[id] || CIERRES_DEFECTO[id];
   });
   cargarPermisosUsuarios();
+  cargarRobinLimite();
+}
+
+async function cargarRobinLimite() {
+  const elLimite = document.getElementById("cfg-robin-limite");
+  const elUso = document.getElementById("cfg-robin-uso-hoy");
+  if (!elLimite) return;
+  try {
+    const doc = await db.collection("config").doc("robin").get();
+    const limite = (doc.exists && Number(doc.data().limiteChatDiario)) || 30;
+    elLimite.value = limite;
+    const hoy = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Madrid" });
+    const usoDoc = await db.collection("robin_chat_uso").doc(hoy).get();
+    const usadas = usoDoc.exists ? (usoDoc.data().contador || 0) : 0;
+    if (elUso) elUso.textContent = "Hoy se han usado " + usadas + " de " + limite + " preguntas en el chat.";
+  } catch (e) { console.error("cargarRobinLimite:", e.message); }
+}
+
+async function guardarRobinLimite() {
+  const val = parseInt(document.getElementById("cfg-robin-limite").value, 10);
+  if (isNaN(val) || val < 1 || val > 500) { alert("Introduce un valor entre 1 y 500."); return; }
+  try {
+    await db.collection("config").doc("robin").set({ limiteChatDiario: val }, { merge: true });
+    const ok = document.getElementById("cfg-robin-limite-ok");
+    if (ok) { ok.style.display = ""; setTimeout(() => { ok.style.display = "none"; }, 2500); }
+    cargarRobinLimite();
+  } catch (e) { alert("Error al guardar: " + e.message); }
 }
 
 async function guardarCierresAlmacenes() {

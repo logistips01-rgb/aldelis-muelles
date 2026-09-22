@@ -3992,6 +3992,14 @@ const IA_CHAT_SYSTEM_PROMPT = IA_SYSTEM_PROMPT +
 
 const IA_CHAT_MENCION_REGEX = /\brobin\b/i;
 
+// Limite diario de preguntas a Robin en el chat de lanzaderas (unico canal
+// abierto a cualquier chofer/almacen sin restriccion de quien puede usarlo;
+// el panel es solo el admin y el correo solo 5 personas de confianza, esos
+// dos no tienen limite). Configurable desde el panel (config/robin,
+// limiteChatDiario). Al superarlo, Robin se queda callado en el chat (no
+// gasta ni una peticion mas) y avisa por correo una sola vez al dia.
+const ROBIN_CHAT_LIMITE_DEFECTO = 30;
+
 exports.robinRespondeChat = onDocumentCreated("mensajes/{msgId}", async (event) => {
   const msg = event.data ? event.data.data() : null;
   if (!msg || !msg.texto) return;
@@ -4001,6 +4009,33 @@ exports.robinRespondeChat = onDocumentCreated("mensajes/{msgId}", async (event) 
   if (!IA_CHAT_MENCION_REGEX.test(msg.texto)) return;
 
   try {
+    const hoy = fechaHoyMadrid();
+    const usoRef = db.collection("robin_chat_uso").doc(hoy);
+    const [configDoc, usoDoc] = await Promise.all([
+      db.collection("config").doc("robin").get(),
+      usoRef.get()
+    ]);
+    const limite = (configDoc.exists && Number(configDoc.data().limiteChatDiario)) || ROBIN_CHAT_LIMITE_DEFECTO;
+    const contadorActual = usoDoc.exists ? (usoDoc.data().contador || 0) : 0;
+
+    if (contadorActual >= limite) {
+      if (!(usoDoc.exists && usoDoc.data().avisoEnviado)) {
+        await usoRef.set({ contador: contadorActual, avisoEnviado: true, fecha: hoy }, { merge: true });
+        try {
+          const token = await obtenerTokenMS();
+          await enviarConGraph(token, "mlorente@aldelis.com",
+            "Robin: limite diario del chat alcanzado",
+            null,
+            "Robin ha llegado al limite de " + limite + " preguntas de hoy en el chat de lanzaderas y ha " +
+            "dejado de responder ahi hasta mañana. Puedes subir el limite en Config si hace falta.",
+            null);
+        } catch (e) { console.error("robinRespondeChat: aviso limite:", e.message); }
+      }
+      return; // se queda callado, sin gastar ninguna peticion mas hoy
+    }
+
+    await usoRef.set({ contador: admin.firestore.FieldValue.increment(1), fecha: hoy }, { merge: true });
+
     const respuesta = await ejecutarConversacionIA(msg.texto, HERRAMIENTAS_IA_SOLO_LECTURA, IA_CHAT_SYSTEM_PROMPT);
     await db.collection("mensajes").add({
       lanzadera: numero, de: "almacen", emisor: "Robin (IA Muelles)", texto: respuesta.slice(0, 500),

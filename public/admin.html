@@ -743,6 +743,23 @@
             </div>
           </div>
 
+          <div class="informe-card" style="margin-top:16px">
+            <div class="informe-card-title">Límite diario de Robin en el chat</div>
+            <p style="font-size:13px;color:#6B7280;margin-bottom:12px">
+              Cada pregunta a Robin en el chat de lanzaderas (el único canal abierto a cualquier chofer/almacén,
+              sin restricción de quién puede usarlo) cuesta una petición real a la IA. Al llegar a este número de
+              preguntas en el día, Robin se queda callado en el chat (sin gastar más) y te avisa por correo una
+              sola vez. El panel y el correo "info" no tienen límite (son de acceso restringido).
+            </p>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <input type="number" id="cfg-robin-limite" min="1" max="500" step="1" value="30" style="width:90px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
+              <span style="font-size:14px;color:#6B7280">preguntas/día</span>
+              <button class="btn-informe" onclick="guardarRobinLimite()">Guardar</button>
+              <span id="cfg-robin-limite-ok" style="font-size:13px;color:#1D9E75;display:none">Guardado correctamente</span>
+            </div>
+            <p id="cfg-robin-uso-hoy" style="font-size:12px;color:#9CA3AF;margin-top:10px"></p>
+          </div>
+
         </div>
       </div>
 

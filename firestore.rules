@@ -427,6 +427,14 @@ service cloud.firestore {
     match /compras_bandejas_pedido_base/{referencia}   { allow read: if permitidoEstricto('compras'); allow write: if false; }
     match /compras_bandejas_planificacion/{referencia} { allow read: if permitidoEstricto('compras'); allow write: if false; }
 
+    // Contador diario de preguntas a Robin en el chat de lanzaderas (limite
+    // configurable en config/robin). Solo lo escribe el servidor; el panel
+    // solo lo lee, para poder mostrar cuanto se ha usado hoy.
+    match /robin_chat_uso/{fecha} {
+      allow read: if esAdmin();
+      allow write: if false;
+    }
+
     // Carton: mismo maestro editable a mano; stock/consumo/transito/pedido
     // base son los MISMOS documentos que bandejas (misma recogida de datos,
     // los mismos almacenes), asi que no hace falta duplicar esas reglas.
