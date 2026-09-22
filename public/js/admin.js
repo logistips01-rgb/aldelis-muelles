@@ -5103,11 +5103,12 @@ function renderComprasDashboard() {
       ? "<span style='color:#9CA3AF'>🚫 bloqueado</span>"
       : COMPRAS_SEMAFORO_EMOJI[r.semaforo] + " " + r.semaforo;
     const filaEstilo = r.situacion === "BAJA" ? "opacity:.55" : "";
+    const filaClase = r.bloqueado ? "compras-fila-bloqueado" : "compras-fila-" + r.semaforo;
     const colorAjuste = r.ajuste > 0 ? "#D41F3A" : (r.ajuste < 0 ? "#1D9E75" : "#6B7280");
     // El almacen operativo (el que de verdad usa la formula, segun la
     // situacion de la referencia) se resalta en negrita entre los 4.
     const negrita = (col) => (r.situacion === "MERCA" ? col === "merca" : col === "plaza") ? "font-weight:700" : "";
-    return "<tr style='" + filaEstilo + "'>" +
+    return "<tr class='" + filaClase + "' style='" + filaEstilo + "'>" +
       "<td>" + esc(r.ref) + "</td>" +
       "<td>" + esc(r.descripcion) + "</td>" +
       "<td>" + esc(r.situacion) + "</td>" +

@@ -618,6 +618,21 @@ body.dark .cfg-grupo-header:hover { background: #26262A; }
 .tabla-inf td { padding: 7px 10px; border-bottom: 1px solid #F0F0F0; color: #374151; white-space: nowrap; }
 .tabla-inf tr:hover td { background: #F9F9F9; }
 
+/* Fondo tenue (no plano) segun el semaforo del dashboard de Compras, para
+   que se vea de un vistazo sin que chille el color. */
+.compras-fila-rojo td     { background: rgba(212, 31, 58, .08); }
+.compras-fila-amarillo td { background: rgba(245, 158, 11, .10); }
+.compras-fila-verde td    { background: rgba(29, 158, 117, .08); }
+.compras-fila-bloqueado td { background: rgba(107, 114, 128, .08); }
+.compras-fila-rojo:hover td     { background: rgba(212, 31, 58, .14); }
+.compras-fila-amarillo:hover td { background: rgba(245, 158, 11, .16); }
+.compras-fila-verde:hover td    { background: rgba(29, 158, 117, .14); }
+.compras-fila-bloqueado:hover td { background: rgba(107, 114, 128, .14); }
+body.dark .compras-fila-rojo td     { background: rgba(212, 31, 58, .18); }
+body.dark .compras-fila-amarillo td { background: rgba(245, 158, 11, .18); }
+body.dark .compras-fila-verde td    { background: rgba(29, 158, 117, .18); }
+body.dark .compras-fila-bloqueado td { background: rgba(148, 154, 163, .12); }
+
 .badge-lavadero { background: #F3E8FF; color: #6B21A8; }
 
 /* PANEL DE LANZADERAS */
