@@ -4299,7 +4299,8 @@ const COMPRAS_ALIAS_CONSUMOS = {
 // (una sala de produccion, un cliente, etc).
 const COMPRAS_TODAS_UBICACIONES_ALMACEN = new Set([
   ...COMPRAS_ALMACENES_INT, ...COMPRAS_ALMACENES_MERCA,
-  ...COMPRAS_ALMACENES_TXT, ...COMPRAS_ALMACENES_AVITRANS
+  ...COMPRAS_ALMACENES_TXT, ...COMPRAS_ALMACENES_AVITRANS,
+  "TRANSITO" // movimiento a transito antes de recepcionar, tampoco es consumo
 ]);
 const COMPRAS_ALIAS_TRANSITO = {
   "cod": "Referencia", "codigo": "Referencia", "articulo": "Referencia", "art": "Referencia",
