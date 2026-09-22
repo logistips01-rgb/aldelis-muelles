@@ -4584,11 +4584,10 @@ async function revisarCorreoComprasBandejasTipos(nombreFuncion, tiposPermitidos)
   return { asuntosNoLeidos: candidatos.map(c => (c.msg.subject || "").trim()), procesados };
 }
 
-// TEMPORAL: cada 5 minutos mientras depuramos por que no se esta procesando
-// el correo de consumos. Volver a "0 11 * * *" (1 vez al dia, a las 11:00,
-// una hora despues del correo diario de las 10:00) en cuanto funcione bien.
+// Consumos llega 1 vez al dia a las 10:00 -> se revisa 1 vez al dia a las
+// 11:00 (margen de sobra), aparte del resto de ficheros.
 exports.revisarCorreoComprasBandejasConsumos = onSchedule(
-  { schedule: "*/5 * * * *", timeZone: "Europe/Madrid" },
+  { schedule: "0 11 * * *", timeZone: "Europe/Madrid" },
   () => revisarCorreoComprasBandejasTipos("revisarCorreoComprasBandejasConsumos", ["consumos"])
 );
 
