@@ -55,6 +55,12 @@ async function enviarConGraph(token, to, subject, html, body, imageBase64, adjun
     });
   });
 
+  // "to" puede ser un string (un solo destinatario, como siempre) o un
+  // array (varios destinatarios reales en el mismo correo, para que cada
+  // uno vea en el "Para" a quien mas se le ha mandado - antes se mandaba
+  // una copia aparte a cada uno, y nadie veia al resto).
+  const destinatarios = Array.isArray(to) ? to : [to];
+
   const res = await fetch(
     "https://graph.microsoft.com/v1.0/users/" + MS_SENDER + "/sendMail",
     {
@@ -67,14 +73,14 @@ async function enviarConGraph(token, to, subject, html, body, imageBase64, adjun
         message: {
           subject,
           body: html ? { contentType: "HTML", content: html } : { contentType: "Text", content: body },
-          toRecipients: [{ emailAddress: { address: to } }],
+          toRecipients: destinatarios.map(d => ({ emailAddress: { address: d } })),
           attachments
         },
         saveToSentItems: false
       })
     }
   );
-  console.log("Graph API status:", res.status, "a", to);
+  console.log("Graph API status:", res.status, "a", destinatarios.join(", "));
   return res.status;
 }
 
@@ -1932,9 +1938,9 @@ exports.registrarPedidoEnvasesAvitrans = functions.https.onCall(async (request, 
     const cuerpo = "Pedido nº " + pt + "\n\n" + filas.map(f => f.ref + " - " + f.desc + ": " + f.cantidad).join("\n");
     const token = await obtenerTokenMS();
     const asunto = "Recogida " + formatoFechaEs(fecha);
-    for (const destino of ENVASES_DESTINATARIOS[almacen]) {
-      await enviarConGraph(token, destino, asunto, html, cuerpo, null);
-    }
+    // Un solo correo con todos los destinatarios reales en el "Para" (antes
+    // se mandaba una copia aparte a cada uno, y ninguno veia a los demas).
+    await enviarConGraph(token, ENVASES_DESTINATARIOS[almacen], asunto, html, cuerpo, null);
   } catch (e) {
     console.error("registrarPedidoEnvasesAvitrans: envio de correo:", e.message);
   }
