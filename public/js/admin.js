@@ -5177,6 +5177,40 @@ function exportarComprasExcel() {
   XLSX.writeFile(wb, "Aldelis_Compras_Bandejas_" + new Date().toLocaleDateString("sv-SE") + ".xlsx");
 }
 
+// Dispara la revision del buzon (los 5 tipos de fichero) al momento, sin
+// esperar a la hora programada, y muestra el resultado en pantalla en vez
+// de tener que mirar logs por consola.
+function probarComprasCorreo() {
+  const cont = document.getElementById("compras-correo-resultado");
+  cont.style.display = "block";
+  cont.style.color = "";
+  cont.innerHTML = "Revisando el buzón...";
+  firebase.functions().httpsCallable("probarRevisarCorreoComprasBandejas")({})
+    .then(res => {
+      if (!res.data || !res.data.ok) {
+        cont.style.color = "#D41F3A";
+        cont.innerHTML = (res.data && res.data.error) || "No se pudo revisar el correo.";
+        return;
+      }
+      const noLeidos = res.data.asuntosNoLeidos || [];
+      const procesados = res.data.procesados || [];
+      let html = "<strong>" + noLeidos.length + " correo(s) no leído(s) en el buzón:</strong> " +
+        (noLeidos.length ? noLeidos.map(a => esc(a)).join(", ") : "(ninguno)") + "<br>";
+      if (procesados.length) {
+        html += "<strong>Procesados ahora:</strong><ul style='margin:6px 0 0 18px'>" +
+          procesados.map(p => "<li>" + esc(p.asunto) + " → " + esc(p.resultado) + "</li>").join("") +
+          "</ul>";
+      } else {
+        html += "Ninguno de los correos no leídos coincidía con los asuntos esperados (Stock bandejas, Informe Movimientos Bandejas, Transito bandejas N, Pedido base bandejas, Planificacion bandejas).";
+      }
+      cont.innerHTML = html;
+    })
+    .catch(e => {
+      cont.style.color = "#D41F3A";
+      cont.innerHTML = "Error: " + e.message;
+    });
+}
+
 function renderComprasMaestro(familia) {
   const tbody = document.querySelector("#compras-maestro-tabla-" + familia + " tbody");
   if (!tbody) return;

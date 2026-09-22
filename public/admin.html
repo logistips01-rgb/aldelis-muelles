@@ -463,10 +463,12 @@
         <div style="display:flex;gap:8px;align-items:center;margin:14px 0;flex-wrap:wrap">
           <button class="btn-informe" onclick="cargarCompras()">🔄 Recalcular</button>
           <button class="btn-excel" onclick="exportarComprasExcel()">Exportar Excel</button>
+          <button class="btn-ghost" style="width:auto;padding:6px 14px" onclick="probarComprasCorreo()">🧪 Probar correo ahora</button>
           <label style="font-weight:400;display:flex;align-items:center;gap:6px;margin-left:8px">
             <input type="checkbox" id="compras-mostrar-bajas" style="width:auto" onchange="renderComprasDashboard()"> Mostrar referencias de baja</label>
           <span id="compras-dashboard-estado" style="font-size:12px;color:#9CA3AF"></span>
         </div>
+        <div id="compras-correo-resultado" style="font-size:13px;margin-bottom:14px;display:none"></div>
         <div class="tabla-scroll"><table class="tabla-inf" id="compras-dashboard-tabla">
           <thead><tr>
             <th>Ref.</th><th>Descripción</th><th>Situación</th><th>CDM (pal/día)</th><th>Var. %</th>

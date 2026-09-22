@@ -4495,7 +4495,7 @@ const COMPRAS_TIPOS_CORREO = [
 async function revisarCorreoComprasBandejasTipos(nombreFuncion, tiposPermitidos) {
   let token;
   try { token = await obtenerTokenMS(); }
-  catch (e) { console.error(nombreFuncion + ": token:", e.message); return; }
+  catch (e) { console.error(nombreFuncion + ": token:", e.message); return { error: "token: " + e.message }; }
 
   let data;
   try {
@@ -4503,11 +4503,13 @@ async function revisarCorreoComprasBandejasTipos(nombreFuncion, tiposPermitidos)
       "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS +
       "/mailFolders/inbox/messages?$filter=isRead eq false&$top=25" +
       "&$select=id,subject,hasAttachments,from,receivedDateTime");
-  } catch (e) { console.error(nombreFuncion + ": listar mensajes:", e.message); return; }
+  } catch (e) { console.error(nombreFuncion + ": listar mensajes:", e.message); return { error: "listar mensajes: " + e.message }; }
 
-  console.log(nombreFuncion + ": " + (data.value || []).length + " correo(s) no leido(s) en el buzon. Asuntos: " +
-    (data.value || []).map(m => "\"" + (m.subject || "") + "\"").join(", "));
+  const asuntosNoLeidos = (data.value || []).map(m => m.subject || "");
+  console.log(nombreFuncion + ": " + asuntosNoLeidos.length + " correo(s) no leido(s) en el buzon. Asuntos: " +
+    asuntosNoLeidos.map(a => "\"" + a + "\"").join(", "));
 
+  const procesados = [];
   for (const msg of (data.value || [])) {
     const asunto = (msg.subject || "").trim();
     let tipoTransito = null;
@@ -4518,7 +4520,11 @@ async function revisarCorreoComprasBandejasTipos(nombreFuncion, tiposPermitidos)
       return true;
     });
     if (!conf) continue;
-    if (!msg.hasAttachments) { await graphMarcarLeido(token, msg.id); continue; }
+    if (!msg.hasAttachments) {
+      await graphMarcarLeido(token, msg.id);
+      procesados.push({ asunto, resultado: "sin adjunto, descartado" });
+      continue;
+    }
 
     // Idempotencia por mensaje: el "leido" de Graph no es del todo fiable
     // (visto en produccion con la extraccion de albaran), asi que se usa
@@ -4527,8 +4533,9 @@ async function revisarCorreoComprasBandejasTipos(nombreFuncion, tiposPermitidos)
     try {
       await procesadoRef.create({ ts: admin.firestore.Timestamp.now() });
     } catch (e) {
-      if (e.code === 6) continue; // ya atendido
+      if (e.code === 6) { procesados.push({ asunto, resultado: "ya atendido antes" }); continue; }
       console.error(nombreFuncion + ": guarda de idempotencia:", e.message);
+      procesados.push({ asunto, resultado: "error de idempotencia: " + e.message });
       continue;
     }
 
@@ -4539,6 +4546,7 @@ async function revisarCorreoComprasBandejasTipos(nombreFuncion, tiposPermitidos)
       if (!excel) {
         console.log(nombreFuncion + ": sin excel adjunto en", asunto);
         await graphMarcarLeido(token, msg.id);
+        procesados.push({ asunto, resultado: "adjuntos sin excel valido" });
         continue;
       }
       const buffer = Buffer.from(excel.contentBytes, "base64");
@@ -4547,16 +4555,20 @@ async function revisarCorreoComprasBandejasTipos(nombreFuncion, tiposPermitidos)
         : await conf.procesar(buffer);
       console.log(nombreFuncion + ":", asunto, "->", n, "referencia(s) actualizada(s).");
       await graphMarcarLeido(token, msg.id);
+      procesados.push({ asunto, resultado: n + " referencia(s) actualizada(s)" });
     } catch (e) {
       console.error(nombreFuncion + ": mensaje", msg.id, asunto, e.message);
+      procesados.push({ asunto, resultado: "error: " + e.message });
     }
   }
+  return { asuntosNoLeidos, procesados };
 }
 
-// Consumos llega 1 vez al dia a las 10:00 -> se revisa 1 vez al dia a las
-// 11:00 (margen de sobra), aparte del resto de ficheros.
+// TEMPORAL: cada 5 minutos mientras depuramos por que no se esta procesando
+// el correo de consumos. Volver a "0 11 * * *" (1 vez al dia, a las 11:00,
+// una hora despues del correo diario de las 10:00) en cuanto funcione bien.
 exports.revisarCorreoComprasBandejasConsumos = onSchedule(
-  { schedule: "0 11 * * *", timeZone: "Europe/Madrid" },
+  { schedule: "*/5 * * * *", timeZone: "Europe/Madrid" },
   () => revisarCorreoComprasBandejasTipos("revisarCorreoComprasBandejasConsumos", ["consumos"])
 );
 
@@ -4565,6 +4577,27 @@ exports.revisarCorreoComprasBandejas = onSchedule(
   { schedule: "0 * * * *", timeZone: "Europe/Madrid" },
   () => revisarCorreoComprasBandejasTipos("revisarCorreoComprasBandejas", ["stock", "transito", "pedido_base", "planificacion"])
 );
+
+// Boton "Probar ahora" del panel: dispara la revision de los 5 tipos al
+// momento (no espera a la hora programada) y devuelve el resultado a la
+// pantalla, para no depender de mirar logs por consola.
+exports.probarRevisarCorreoComprasBandejas = functions.https.onCall(async (request, context) => {
+  const esV2 = !!(request && typeof request === "object" && request.data !== undefined);
+  const ctx = esV2 ? request : (context || {});
+  if (!ctx.app) return { ok: false, error: "No autorizado" };
+  const email = (ctx.auth && ctx.auth.token && ctx.auth.token.email || "").toLowerCase();
+  if (!email || !(await puedeSeccionEstricto(email, "compras"))) return { ok: false, error: "Sin permiso" };
+
+  try {
+    const resultado = await revisarCorreoComprasBandejasTipos("probarRevisarCorreoComprasBandejas",
+      ["stock", "consumos", "transito", "pedido_base", "planificacion"]);
+    if (resultado && resultado.error) return { ok: false, error: resultado.error };
+    return { ok: true, asuntosNoLeidos: resultado.asuntosNoLeidos, procesados: resultado.procesados };
+  } catch (e) {
+    console.error("probarRevisarCorreoComprasBandejas:", e.message);
+    return { ok: false, error: e.message };
+  }
+});
 
 // Calculo del pedido (callable, se ejecuta al abrir el dashboard del panel,
 // no en cada sincronizacion): misma formula que el app.py original.
