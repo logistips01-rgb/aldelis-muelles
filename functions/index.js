@@ -3007,6 +3007,11 @@ function minutosDeHHMM(s) {
 exports.revisarCierresAlmacenes = onSchedule(
   { schedule: "*/15 7-20 * * *", timeZone: "Europe/Madrid" },
   async () => {
+    // DESACTIVADO A PETICION: la estimacion de "llegada a tiempo" no
+    // calcula bien todavia. Se reactiva quitando este return en cuanto se
+    // cuadren los tiempos (el resto de la funcion se deja intacto).
+    return;
+
     const hoy = fechaHoyMadrid();
 
     const [cierresSnap, estSnap, lanzSnap, ptsSnap] = await Promise.all([

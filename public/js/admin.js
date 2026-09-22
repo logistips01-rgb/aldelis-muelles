@@ -1303,6 +1303,11 @@ function minutosDeHHMM(s) {
 function revisarAlertasCierre(pendientePorAlmacen) {
   const banner = document.getElementById("alerta-cierres");
   if (!banner) return;
+  // DESACTIVADO A PETICION: la estimacion de "llegada a tiempo" no calcula
+  // bien todavia. Se reactiva quitando este return en cuanto se cuadren los
+  // tiempos (el resto de la funcion se deja intacto).
+  banner.style.display = "none";
+  return;
   const enRiesgo = [];
   ALMACENES_PEDIDOS.forEach(a => {
     if (!((pendientePorAlmacen || {})[a.id] > 0)) return;
