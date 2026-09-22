@@ -3585,11 +3585,36 @@ async function iaConsultarPedido(input) {
   if (!doc.exists) return { error: "No existe ningun pedido con el codigo " + pt };
   const d = doc.data();
   const pendiente = Math.max((d.palets || 0) - (d.recogido || 0), 0);
+
+  // Quien y cuando lo ha recogido (no solo el total): cada recogida real
+  // lleva su numero de lanzadera (0 = marcado a mano desde el panel/Robin,
+  // no un chofer) y su hora, dentro de "pts".
+  const recogidas = [];
+  try {
+    const recogSnap = await db.collection("recogidas_palets")
+      .where("almacen", "==", d.almacen).orderBy("ts", "desc").limit(200).get();
+    recogSnap.forEach(rd => {
+      const r = rd.data();
+      (r.pts || []).forEach(item => {
+        if (item.pt !== pt) return;
+        const local = r.ts ? r.ts.toDate().toLocaleString("sv-SE", { timeZone: "Europe/Madrid" }) : null;
+        recogidas.push({
+          lanzadera: r.numero > 0 ? r.numero : null,
+          marcadoAMano: !r.numero || r.numero === 0,
+          palets: item.palets,
+          fecha: local ? local.split(" ")[0] : null,
+          hora: local ? local.split(" ")[1].slice(0, 5) : null
+        });
+      });
+    });
+  } catch (e) { console.error("iaConsultarPedido: recogidas:", e.message); }
+
   return {
     pt, almacen: d.almacen,
     palets: d.palets || 0, recogido: d.recogido || 0, pendiente,
     estado: pendiente <= 0 ? "recogido" : "pendiente",
-    cerrado: !!d.cerrado
+    cerrado: !!d.cerrado,
+    recogidas
   };
 }
 
@@ -3749,7 +3774,7 @@ const HERRAMIENTAS_IA = [
   },
   {
     name: "consultar_pedido",
-    description: "Consulta el estado de un pedido de transferencia (PT) por su codigo: cuantos palets tiene en total, cuantos se han recogido ya y cuantos quedan pendientes de recoger.",
+    description: "Consulta el estado de un pedido de transferencia (PT) por su codigo: cuantos palets tiene en total, cuantos se han recogido ya, cuantos quedan pendientes, y el detalle de cada recogida registrada (que lanzadera, fecha y hora; lanzadera null si se marco a mano desde el panel/Robin en vez de un chofer).",
     input_schema: {
       type: "object",
       properties: { pt: { type: "string", description: "Codigo del pedido, ej: PT028980" } },
@@ -3950,6 +3975,35 @@ const HERRAMIENTAS_IA_SOLO_LECTURA = HERRAMIENTAS_IA.filter(h =>
 const IA_CORREO_SYSTEM_PROMPT = IA_SYSTEM_PROMPT +
   " En esta conversacion en concreto no tienes herramientas para enviar nada: tu respuesta de texto ES el " +
   "correo que se va a mandar, redactala ya como el cuerpo final de un email (sin encabezados tipo \"Asunto:\").";
+
+// Chat de lanzaderas (entre chofer y almacen): Robin solo responde si le
+// mencionan por su nombre en el mensaje, para no meterse en cada mensaje
+// normal ni gastar peticiones de IA sin que se lo pidan. Igual que el canal
+// de correo, aqui tampoco puede escribir nada (ni correo ni chat): solo
+// lectura, y su respuesta de texto es directamente el mensaje de chat.
+const IA_CHAT_SYSTEM_PROMPT = IA_SYSTEM_PROMPT +
+  " Te estan hablando desde el chat de una lanzadera (entre el chofer y el almacen), no desde el panel ni por " +
+  "correo. Responde muy breve, como un mensaje de chat normal (pocas lineas), nada de firmas ni encabezados. " +
+  "No tienes herramientas para enviar nada: tu respuesta de texto ES el mensaje que se va a mandar al chat.";
+
+const IA_CHAT_MENCION_REGEX = /\brobin\b/i;
+
+exports.robinRespondeChat = onDocumentCreated("mensajes/{msgId}", async (event) => {
+  const msg = event.data ? event.data.data() : null;
+  if (!msg || !msg.texto) return;
+  if (msg.emisor === "Robin (IA Muelles)") return; // evita que se responda a si mismo
+  const numero = Number(msg.lanzadera);
+  if (!(numero >= 1 && numero <= 4)) return;
+  if (!IA_CHAT_MENCION_REGEX.test(msg.texto)) return;
+
+  try {
+    const respuesta = await ejecutarConversacionIA(msg.texto, HERRAMIENTAS_IA_SOLO_LECTURA, IA_CHAT_SYSTEM_PROMPT);
+    await db.collection("mensajes").add({
+      lanzadera: numero, de: "almacen", emisor: "Robin (IA Muelles)", texto: respuesta.slice(0, 500),
+      ts: admin.firestore.Timestamp.now()
+    });
+  } catch (e) { console.error("robinRespondeChat:", e.message); }
+});
 
 async function graphResponderCorreo(token, msgId, textoRespuesta) {
   await fetch("https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS + "/messages/" + msgId + "/reply", {

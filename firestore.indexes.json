@@ -47,6 +47,14 @@
         { "fieldPath": "activa", "order": "ASCENDING" },
         { "fieldPath": "proximaEjecucion", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "recogidas_palets",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "almacen", "order": "ASCENDING" },
+        { "fieldPath": "ts", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []
