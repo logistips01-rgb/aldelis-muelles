@@ -4505,6 +4505,9 @@ async function revisarCorreoComprasBandejasTipos(nombreFuncion, tiposPermitidos)
       "&$select=id,subject,hasAttachments,from,receivedDateTime");
   } catch (e) { console.error(nombreFuncion + ": listar mensajes:", e.message); return; }
 
+  console.log(nombreFuncion + ": " + (data.value || []).length + " correo(s) no leido(s) en el buzon. Asuntos: " +
+    (data.value || []).map(m => "\"" + (m.subject || "") + "\"").join(", "));
+
   for (const msg of (data.value || [])) {
     const asunto = (msg.subject || "").trim();
     let tipoTransito = null;
