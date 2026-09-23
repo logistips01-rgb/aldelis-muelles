@@ -858,6 +858,19 @@
               <button class="btn-informe" onclick="probarAccesoBuzon()">Probar</button>
             </div>
             <div id="cfg-buzon-prueba-resultado" style="font-size:13px;margin-top:10px"></div>
+            <div style="margin-top:16px;border-top:1px solid #e5e5e7;padding-top:14px">
+              <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">Probar envío (opcional)</label>
+              <p style="font-size:12.5px;color:#6B7280;margin-bottom:10px">
+                Manda un correo de prueba desde el buzón de arriba. Por defecto se manda a sí mismo (no llega a
+                nadie más); si quieres probar con otro destinatario, cámbialo aquí.
+              </p>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <input type="email" id="cfg-buzon-prueba-destinatario" placeholder="(igual que el buzón de arriba)"
+                  style="flex:1;min-width:220px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
+                <button class="btn-ghost" style="width:auto;padding:9px 18px" onclick="probarEnvioBuzon()">Probar envío</button>
+              </div>
+              <div id="cfg-buzon-envio-resultado" style="font-size:13px;margin-top:10px"></div>
+            </div>
           </div>
 
         </div>

@@ -4496,6 +4496,49 @@ exports.probarAccesoBuzon = functions.https.onCall(async (request, context) => {
   }
 });
 
+// Prueba minima de envio: manda un correo de prueba DESDE el buzon indicado
+// (usa el permiso de aplicacion Mail.Send sobre ese buzon en concreto, no
+// sobre reservas@aldelis.com), para confirmar que tambien se puede enviar en
+// su nombre y no solo leer. Por defecto el destinatario es el mismo buzon
+// (prueba interna, no llega a nadie mas) salvo que se indique otro.
+exports.probarEnvioBuzon = functions.https.onCall(async (request, context) => {
+  const esV2 = !!(request && typeof request === "object" && request.data !== undefined);
+  const data = esV2 ? request.data : request;
+  const ctx  = esV2 ? request : (context || {});
+  if (!ctx.app) return { ok: false, error: "No autorizado" };
+  const email = (ctx.auth && ctx.auth.token && ctx.auth.token.email || "").toLowerCase();
+  if (!ADMINS_APP.includes(email)) return { ok: false, error: "Sin permiso" };
+
+  const buzon = (data && data.buzon) || "mlorente@aldelis.com";
+  const destinatario = (data && data.destinatario) || buzon;
+  try {
+    const token = await obtenerTokenMS();
+    const res = await fetch(
+      "https://graph.microsoft.com/v1.0/users/" + encodeURIComponent(buzon) + "/sendMail",
+      {
+        method: "POST",
+        headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: {
+            subject: "Prueba de envío — Robin",
+            body: { contentType: "Text", content: "Esto es una prueba de envío desde " + buzon + " a través de Robin. Si lo has recibido, el acceso de envío funciona correctamente." },
+            toRecipients: [{ emailAddress: { address: destinatario } }]
+          },
+          saveToSentItems: true
+        })
+      }
+    );
+    if (!res.ok) {
+      const cuerpo = await res.json().catch(() => ({}));
+      return { ok: false, error: "Graph " + res.status + ": " + (cuerpo.error && cuerpo.error.message || JSON.stringify(cuerpo)) };
+    }
+    return { ok: true, buzon, destinatario };
+  } catch (e) {
+    console.error("probarEnvioBuzon:", e.message);
+    return { ok: false, error: e.message };
+  }
+});
+
 // ── Robin por correo: asunto "info" ─────────────────────────────────────
 //
 // Los mismos compañeros autorizados pueden preguntarle a Robin por correo en
