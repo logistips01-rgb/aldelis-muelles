@@ -2134,66 +2134,87 @@ async function calcularPedidoEnvasesPorStockMinimo(buffer) {
 
 exports.revisarCorreoStockMinimoEnvases = onSchedule(
   { schedule: "0 * * * *", timeZone: "Europe/Madrid" },
-  async () => {
-    let token;
-    try { token = await obtenerTokenMS(); }
-    catch (e) { console.error("revisarCorreoStockMinimoEnvases: token:", e.message); return; }
+  () => revisarCorreoStockMinimoEnvasesInterno("revisarCorreoStockMinimoEnvases")
+);
 
-    let data;
+// Logica compartida entre el cron por horas y el boton "Probar ahora" del
+// panel (misma idea que revisarCorreoComprasBandejasTipos).
+async function revisarCorreoStockMinimoEnvasesInterno(origen) {
+  const token = await obtenerTokenMS();
+
+  const data = await graphGet(token,
+    "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS +
+    "/mailFolders/inbox/messages?$filter=" + encodeURIComponent("isRead eq false and subject eq 'Stock envases'") +
+    "&$top=10&$select=id,subject,hasAttachments,receivedDateTime");
+
+  const candidatos = (data.value || []).length;
+  console.log(origen + ": " + candidatos + " correo(s) candidato(s).");
+
+  let procesados = 0;
+  for (const msg of (data.value || [])) {
+    if (!msg.hasAttachments) { await graphMarcarLeido(token, msg.id); continue; }
+
+    // Idempotencia por mensaje (mismo mecanismo que compras/extraccion de
+    // albaran): el "leido" de Graph no siempre persiste.
+    const procesadoRef = db.collection("envases_stock_minimo_procesados").doc(msg.id);
     try {
-      data = await graphGet(token,
-        "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS +
-        "/mailFolders/inbox/messages?$filter=" + encodeURIComponent("isRead eq false and subject eq 'Stock envases'") +
-        "&$top=10&$select=id,subject,hasAttachments,receivedDateTime");
-    } catch (e) { console.error("revisarCorreoStockMinimoEnvases: listar mensajes:", e.message); return; }
+      await procesadoRef.create({ ts: admin.firestore.Timestamp.now() });
+    } catch (e) {
+      if (e.code === 6) continue; // ya atendido
+      console.error(origen + ": guarda de idempotencia:", e.message);
+      continue;
+    }
 
-    console.log("revisarCorreoStockMinimoEnvases: " + (data.value || []).length + " correo(s) candidato(s).");
+    try {
+      const adjuntos = await graphGet(token,
+        "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS + "/messages/" + msg.id + "/attachments");
+      const excel = (adjuntos.value || []).find(a => a.contentBytes && /\.xlsx?$/i.test(a.name || ""));
+      if (!excel) { await graphMarcarLeido(token, msg.id); continue; }
 
-    for (const msg of (data.value || [])) {
-      if (!msg.hasAttachments) { await graphMarcarLeido(token, msg.id); continue; }
+      const buffer = Buffer.from(excel.contentBytes, "base64");
+      const resultado = await calcularPedidoEnvasesPorStockMinimo(buffer);
 
-      // Idempotencia por mensaje (mismo mecanismo que compras/extraccion de
-      // albaran): el "leido" de Graph no siempre persiste.
-      const procesadoRef = db.collection("envases_stock_minimo_procesados").doc(msg.id);
-      try {
-        await procesadoRef.create({ ts: admin.firestore.Timestamp.now() });
-      } catch (e) {
-        if (e.code === 6) continue; // ya atendido
-        console.error("revisarCorreoStockMinimoEnvases: guarda de idempotencia:", e.message);
-        continue;
+      if (!resultado.lineas.length) {
+        await enviarConGraph(token, ENVASES_DESTINATARIO_PRUEBA,
+          "[PRUEBA] Pedido envases por stock minimo — sin necesidad", null,
+          "No hace falta pedir nada: todas las referencias estan por encima de su stock minimo.", null);
+      } else {
+        const pt = "ENV-EST-" + Date.now().toString(36).toUpperCase();
+        const etiqueta = "<div style='background:#FEF3C7;padding:10px;border-radius:6px;margin-bottom:12px'>" +
+          "⚠️ PRUEBA: pedido calculado por stock minimo, solo informativo (no se ha mandado a Avitrans ni sumado a pendientes).</div>";
+        const html = htmlPedidoEnvases(pt, resultado.lineas, etiqueta);
+        const cuerpo = "PRUEBA — Pedido nº " + pt + " (" + resultado.total + " huecos de camion)\n\n" +
+          resultado.lineas.map(l => l.ref + " - " + l.desc + ": " + l.cantidad).join("\n");
+        await enviarConGraph(token, ENVASES_DESTINATARIO_PRUEBA,
+          "[PRUEBA] Pedido envases por stock minimo (" + resultado.total + " huecos)", html, cuerpo, null);
       }
-
-      try {
-        const adjuntos = await graphGet(token,
-          "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS + "/messages/" + msg.id + "/attachments");
-        const excel = (adjuntos.value || []).find(a => a.contentBytes && /\.xlsx?$/i.test(a.name || ""));
-        if (!excel) { await graphMarcarLeido(token, msg.id); continue; }
-
-        const buffer = Buffer.from(excel.contentBytes, "base64");
-        const resultado = await calcularPedidoEnvasesPorStockMinimo(buffer);
-
-        if (!resultado.lineas.length) {
-          await enviarConGraph(token, ENVASES_DESTINATARIO_PRUEBA,
-            "[PRUEBA] Pedido envases por stock minimo — sin necesidad", null,
-            "No hace falta pedir nada: todas las referencias estan por encima de su stock minimo.", null);
-        } else {
-          const pt = "ENV-EST-" + Date.now().toString(36).toUpperCase();
-          const etiqueta = "<div style='background:#FEF3C7;padding:10px;border-radius:6px;margin-bottom:12px'>" +
-            "⚠️ PRUEBA: pedido calculado por stock minimo, solo informativo (no se ha mandado a Avitrans ni sumado a pendientes).</div>";
-          const html = htmlPedidoEnvases(pt, resultado.lineas, etiqueta);
-          const cuerpo = "PRUEBA — Pedido nº " + pt + " (" + resultado.total + " huecos de camion)\n\n" +
-            resultado.lineas.map(l => l.ref + " - " + l.desc + ": " + l.cantidad).join("\n");
-          await enviarConGraph(token, ENVASES_DESTINATARIO_PRUEBA,
-            "[PRUEBA] Pedido envases por stock minimo (" + resultado.total + " huecos)", html, cuerpo, null);
-        }
-        await graphMarcarLeido(token, msg.id);
-        console.log("revisarCorreoStockMinimoEnvases:", resultado.lineas.length, "referencia(s) con pedido.");
-      } catch (e) {
-        console.error("revisarCorreoStockMinimoEnvases: mensaje", msg.id, e.message);
-      }
+      await graphMarcarLeido(token, msg.id);
+      procesados++;
+      console.log(origen + ":", resultado.lineas.length, "referencia(s) con pedido.");
+    } catch (e) {
+      console.error(origen + ": mensaje", msg.id, e.message);
     }
   }
-);
+  return { candidatos, procesados };
+}
+
+// Boton "Probar ahora" del panel: dispara la revision al momento (no espera
+// a la hora programada) y devuelve el resultado a la pantalla.
+exports.probarRevisarCorreoStockMinimoEnvases = functions.https.onCall(async (request, context) => {
+  const esV2 = !!(request && typeof request === "object" && request.data !== undefined);
+  const ctx = esV2 ? request : (context || {});
+  if (!ctx.app) return { ok: false, error: "No autorizado" };
+  const email = (ctx.auth && ctx.auth.token && ctx.auth.token.email || "").toLowerCase();
+  if (!email || !ADMINS_APP.includes(email)) return { ok: false, error: "Sin permiso" };
+
+  try {
+    const resultado = await revisarCorreoStockMinimoEnvasesInterno("probarRevisarCorreoStockMinimoEnvases");
+    return { ok: true, candidatos: resultado.candidatos, procesados: resultado.procesados };
+  } catch (e) {
+    console.error("probarRevisarCorreoStockMinimoEnvases:", e.message);
+    return { ok: false, error: e.message };
+  }
+});
 
 // A veces el chofer se olvida de marcarlo al salir: se registra a mano desde
 // el panel, exactamente igual que si lo hubiera marcado el (misma coleccion

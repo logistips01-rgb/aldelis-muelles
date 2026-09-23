@@ -1756,6 +1756,30 @@ function guardarConfigStockMinimoEnvases() {
     });
 }
 
+// Dispara la revision del buzon (correo "Stock envases") al momento, sin
+// esperar a la hora programada, para poder probar sin tener que esperar.
+function probarStockMinimoEnvasesCorreo() {
+  const cont = document.getElementById("envases-stock-min-correo-resultado");
+  cont.style.display = "block";
+  cont.style.color = "";
+  cont.innerHTML = "Revisando el buzón...";
+  firebase.functions().httpsCallable("probarRevisarCorreoStockMinimoEnvases")({})
+    .then(res => {
+      if (!res.data || !res.data.ok) {
+        cont.style.color = "#D41F3A";
+        cont.innerHTML = (res.data && res.data.error) || "No se pudo revisar el correo.";
+        return;
+      }
+      cont.style.color = "";
+      cont.innerHTML = res.data.candidatos + " correo(s) candidato(s) encontrado(s), " +
+        res.data.procesados + " procesado(s) ahora. Si hay pedido, revisa tu correo de prueba.";
+    })
+    .catch(e => {
+      cont.style.color = "#D41F3A";
+      cont.innerHTML = "Error: " + e.message;
+    });
+}
+
 // Turno "dia": recogida mañana, salvo que hoy sea viernes, que entonces es
 // el lunes (se salta el fin de semana). Turno "noche": siempre hoy. Mismo
 // calculo que fechaRecogidaTurno en el servidor.
