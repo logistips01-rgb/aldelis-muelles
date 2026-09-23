@@ -2108,16 +2108,40 @@ function normalizarFilaEnvasesStockMinimo(fila) {
   return out;
 }
 
-// Pedido = max(Stock_minimo + Incremento - Stock_actual, 0) por referencia,
-// con la misma logica de Europool (doble cantidad, mitad de hueco de camion)
-// que el resto de pedidos de envases. El stock minimo/incremento salen de
-// Firestore (config de panel), nunca del propio Excel recibido por correo.
-// Si la celda de Stock actual viene vacia (referencia obsoleta, o se olvido
-// rellenarla), se asume el 50% del stock minimo, para no pedir de mas (como
-// si no quedara nada) ni de menos (como si estuviera lleno).
+// Cuanto hay ya pedido a Avitrans y todavia pendiente de recoger, por
+// referencia (para no volver a pedirlo). Cuenta cualquier pedido activo
+// (cerrado=false), sea manual, automatico o de un correo anterior: si un
+// pedido esta recogido solo a medias, se cuenta la cantidad ORIGINAL
+// completa de cada linea igualmente, porque el sistema no distingue que
+// referencias en concreto se recogieron de un pedido parcial.
+async function pendientePorReferenciaAvitrans() {
+  const snap = await db.collection("pedidos_transferencia")
+    .where("almacen", "==", "avitrans").where("cerrado", "==", false).get();
+  const pendiente = {};
+  snap.forEach(d => {
+    const data = d.data();
+    (data.lineas || []).forEach(l => {
+      if (!l || !l.ref) return;
+      pendiente[l.ref] = (pendiente[l.ref] || 0) + (Number(l.cantidad) || 0);
+    });
+  });
+  return pendiente;
+}
+
+// Pedido = max(Stock_minimo + Incremento - Stock_actual - Pendiente_recogida, 0)
+// por referencia, con la misma logica de Europool (doble cantidad, mitad de
+// hueco de camion) que el resto de pedidos de envases. El stock
+// minimo/incremento salen de Firestore (config de panel), nunca del propio
+// Excel recibido por correo. Si la celda de Stock actual viene vacia
+// (referencia obsoleta, o se olvido rellenarla), se asume el 50% del stock
+// minimo, para no pedir de mas (como si no quedara nada) ni de menos (como
+// si estuviera lleno).
 async function calcularPedidoEnvasesPorStockMinimo(buffer) {
   const filas = leerExcelConHeaderAuto(buffer).map(normalizarFilaEnvasesStockMinimo);
-  const configSnap = await db.collection("envases_stock_minimo_config").get();
+  const [configSnap, pendiente] = await Promise.all([
+    db.collection("envases_stock_minimo_config").get(),
+    pendientePorReferenciaAvitrans()
+  ]);
   const config = {};
   configSnap.forEach(d => { config[d.id] = d.data(); });
 
@@ -2133,7 +2157,8 @@ async function calcularPedidoEnvasesPorStockMinimo(buffer) {
     const incremento = Number(cfg.incremento) || 0;
     const celdaVacia = f.StockActual === null || f.StockActual === undefined || String(f.StockActual).trim() === "";
     const stockActual = celdaVacia ? stockMinimo * 0.5 : (Number(f.StockActual) || 0);
-    const cantidad = Math.max(stockMinimo + incremento - stockActual, 0);
+    const yaPendiente = pendiente[ref] || 0;
+    const cantidad = Math.max(stockMinimo + incremento - stockActual - yaPendiente, 0);
     if (cantidad <= 0) return;
     lineas.push({ ref, desc: cat.desc, cantidad });
     if (cat.tipo === "europool") europool += cantidad; else normal += cantidad;

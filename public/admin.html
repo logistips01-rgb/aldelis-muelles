@@ -377,7 +377,8 @@
             esta plantilla, rellena "Stock actual" y mándala por correo a reservas@aldelis.com con asunto
             <strong>"Stock envases"</strong>. Este es para <strong>recogida hoy mismo</strong> (a diferencia del
             automático de las 11:30, que es para mañana), y también se manda ya de verdad a Avitrans y se suma a
-            los pendientes.
+            los pendientes. Antes de calcular, resta lo que ya tengas pedido y pendiente de recoger de Avitrans
+            (de cualquier pedido activo, no solo de este flujo), para no pedir de más.
           </p>
           <button class="btn-informe" onclick="descargarPlantillaStockEnvases()">⬇️ Descargar plantilla Excel (solo stock actual)</button>
           <button class="btn-ghost" style="margin-left:8px" onclick="probarStockMinimoEnvasesCorreo()">🧪 Revisar correo ahora</button>
