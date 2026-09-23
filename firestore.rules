@@ -449,7 +449,9 @@ service cloud.firestore {
       return d.stockMinimo is number && d.stockMinimo >= 0
         && d.incremento is number && d.incremento >= 0
         // porcentajeAuto es opcional (si no viene, se usa el 40% por defecto).
-        && (!('porcentajeAuto' in d) || (d.porcentajeAuto is number && d.porcentajeAuto >= 0 && d.porcentajeAuto <= 100));
+        && (!('porcentajeAuto' in d) || (d.porcentajeAuto is number && d.porcentajeAuto >= 0 && d.porcentajeAuto <= 100))
+        // almacen es opcional (si no viene, se pide a avitrans por defecto).
+        && (!('almacen' in d) || d.almacen in ['avitrans', 'txt']);
     }
 
     // Marca de "hoy ya se ha mandado el pedido automatico diario (11:30)",

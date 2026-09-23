@@ -2142,9 +2142,9 @@ function normalizarFilaEnvasesStockMinimo(fila) {
 // pedido esta recogido solo a medias, se cuenta la cantidad ORIGINAL
 // completa de cada linea igualmente, porque el sistema no distingue que
 // referencias en concreto se recogieron de un pedido parcial.
-async function pendientePorReferenciaAvitrans() {
+async function pendientePorReferenciaEnAlmacen(almacen) {
   const snap = await db.collection("pedidos_transferencia")
-    .where("almacen", "==", "avitrans").where("cerrado", "==", false).get();
+    .where("almacen", "==", almacen).where("cerrado", "==", false).get();
   const pendiente = {};
   snap.forEach(d => {
     const data = d.data();
@@ -2153,6 +2153,23 @@ async function pendientePorReferenciaAvitrans() {
       pendiente[l.ref] = (pendiente[l.ref] || 0) + (Number(l.cantidad) || 0);
     });
   });
+  return pendiente;
+}
+
+// Pendiente de recoger de cada referencia, en el almacen que tenga
+// configurado (avitrans por defecto). Se consultan los dos almacenes de
+// golpe para no repetir la consulta por cada referencia.
+async function pendientePorReferenciaSegunAlmacenConfigurado(config) {
+  const [avitrans, txt] = await Promise.all([
+    pendientePorReferenciaEnAlmacen("avitrans"),
+    pendientePorReferenciaEnAlmacen("txt")
+  ]);
+  const porAlmacen = { avitrans, txt };
+  const pendiente = {};
+  for (const ref in config) {
+    const almacen = config[ref].almacen === "txt" ? "txt" : "avitrans";
+    pendiente[ref] = porAlmacen[almacen][ref] || 0;
+  }
   return pendiente;
 }
 
@@ -2173,18 +2190,30 @@ const ENVASES_PORCENTAJE_AUTO_DEFECTO = 40;
 // (config de panel), nunca del propio Excel recibido por correo. Si la
 // celda de Stock actual viene vacia, no se pide nada de esa referencia (para
 // no adivinar), aunque tenga stock minimo configurado.
+function nuevoAcumuladorPorAlmacen() {
+  return {
+    avitrans: { lineas: [], normal: 0, europool: 0 },
+    txt: { lineas: [], normal: 0, europool: 0 }
+  };
+}
+function cerrarAcumuladorPorAlmacen(acc) {
+  const out = {};
+  for (const almacen in acc) {
+    const a = acc[almacen];
+    out[almacen] = { lineas: a.lineas, total: a.normal + Math.ceil(a.europool / 2) };
+  }
+  return out;
+}
+
 async function calcularPedidoEnvasesStockMinimoFiltrado(buffer, incluirRef) {
   const filas = leerExcelConHeaderAuto(buffer).map(normalizarFilaEnvasesStockMinimo);
-  const [configSnap, pendiente] = await Promise.all([
-    db.collection("envases_stock_minimo_config").get(),
-    pendientePorReferenciaAvitrans()
-  ]);
+  const configSnap = await db.collection("envases_stock_minimo_config").get();
   const config = {};
   configSnap.forEach(d => { config[d.id] = d.data(); });
+  const pendiente = await pendientePorReferenciaSegunAlmacenConfigurado(config);
 
-  const lineas = [];
+  const porAlmacen = nuevoAcumuladorPorAlmacen();
   const avisosStockCero = [];
-  let normal = 0, europool = 0;
   filas.forEach(f => {
     const ref = String(f.Referencia || "").trim();
     const cat = CATALOGO_ENVASES_AVITRANS[ref];
@@ -2209,10 +2238,12 @@ async function calcularPedidoEnvasesStockMinimoFiltrado(buffer, incluirRef) {
     // Europool: se pide el doble de la necesidad (remontado), y el total de
     // huecos de camion se calcula dividiendo esa cantidad ya doblada entre 2.
     const cantidad = cat.tipo === "europool" ? necesidad * 2 : necesidad;
-    lineas.push({ ref, desc: cat.desc, cantidad });
-    if (cat.tipo === "europool") europool += cantidad; else normal += cantidad;
+    // Almacen configurado a mano por referencia (panel), avitrans por defecto.
+    const almacen = cfg.almacen === "txt" ? "txt" : "avitrans";
+    porAlmacen[almacen].lineas.push({ ref, desc: cat.desc, cantidad });
+    if (cat.tipo === "europool") porAlmacen[almacen].europool += cantidad; else porAlmacen[almacen].normal += cantidad;
   });
-  return { lineas, total: normal + Math.ceil(europool / 2), avisosStockCero };
+  return { porAlmacen: cerrarAcumuladorPorAlmacen(porAlmacen), avisosStockCero };
 }
 
 // Correo principal "Stock envases": todas las referencias salvo Logifruit
@@ -2257,6 +2288,51 @@ exports.revisarCorreoStockMinimoLogifruitEnvasesAgil = onSchedule(
   () => revisarCorreoStockMinimoEnvasesInterno("revisarCorreoStockMinimoLogifruitEnvasesAgil",
     "Stock envases logifruit", "envases_stock_minimo_logifruit_procesados", calcularPedidoEnvasesLogifruitPorStockMinimo, true)
 );
+
+const ENVASES_ALMACEN_ETIQUETA = { avitrans: "Avitrans", txt: "Txt" };
+
+// Manda un pedido (o correo de prueba) por cada almacen que tenga lineas en
+// porAlmacen ({avitrans:{lineas,total}, txt:{lineas,total}}), cada uno
+// marcado con el nombre del almacen en el asunto para distinguirlos. Si
+// ningun almacen tiene lineas, manda un unico aviso de "sin necesidad".
+// Devuelve el total de lineas mandadas (de todos los almacenes), para el log.
+async function enviarPedidosStockMinimoPorAlmacen(token, porAlmacen, marca, ptPrefijo, origenPedido, fechaRecogida) {
+  const almacenesConLineas = Object.keys(porAlmacen).filter(a => porAlmacen[a].lineas.length);
+
+  if (!almacenesConLineas.length) {
+    await enviarConGraph(token, ENVASES_DESTINATARIO_PRUEBA,
+      (ENVASES_STOCK_MINIMO_MODO_PRUEBA ? "[PRUEBA] " : "") + "Pedido envases por stock mínimo" + marca + " — sin necesidad", null,
+      "No hace falta pedir nada: todas las referencias estan por encima de su stock minimo.", null);
+    return 0;
+  }
+
+  let totalLineas = 0;
+  for (const almacen of almacenesConLineas) {
+    const resultado = porAlmacen[almacen];
+    const etiquetaAlmacen = " (" + ENVASES_ALMACEN_ETIQUETA[almacen] + ")" + marca;
+    totalLineas += resultado.lineas.length;
+
+    if (ENVASES_STOCK_MINIMO_MODO_PRUEBA) {
+      const pt = "ENV-EST-" + Date.now().toString(36).toUpperCase();
+      const etiqueta = "<div style='background:#FEF3C7;padding:10px;border-radius:6px;margin-bottom:12px'>" +
+        "⚠️ PRUEBA: pedido calculado por stock minimo" + etiquetaAlmacen + ", solo informativo (no se ha mandado a " +
+        ENVASES_ALMACEN_ETIQUETA[almacen] + " ni sumado a pendientes).</div>";
+      const html = htmlPedidoEnvases(pt, resultado.lineas, etiqueta, fechaRecogida);
+      const cuerpo = textoPedidoEnvases(pt, resultado.lineas, fechaRecogida, "PRUEBA" + etiquetaAlmacen + "\n\n");
+      await enviarConGraph(token, ENVASES_DESTINATARIO_PRUEBA,
+        "[PRUEBA] Pedido envases por stock mínimo" + etiquetaAlmacen + " (" + resultado.total + " huecos)", html, cuerpo, null);
+    } else {
+      const pt = ptPrefijo + Date.now().toString(36).toUpperCase();
+      await crearPedidoTransferencia(pt, almacen, { palets: resultado.total, lineas: resultado.lineas },
+        origenPedido, fechaRecogida);
+      const html = htmlPedidoEnvases(pt, resultado.lineas, null, fechaRecogida);
+      const cuerpo = textoPedidoEnvases(pt, resultado.lineas, fechaRecogida, etiquetaAlmacen.trim() + "\n\n");
+      await enviarConGraph(token, ENVASES_STOCK_MINIMO_DESTINATARIOS,
+        "Recogida " + formatoFechaEs(fechaRecogida) + etiquetaAlmacen, html, cuerpo, null);
+    }
+  }
+  return totalLineas;
+}
 
 // Logica compartida entre el cron por horas y el boton "Probar ahora" del
 // panel (misma idea que revisarCorreoComprasBandejasTipos).
@@ -2317,27 +2393,9 @@ async function revisarCorreoStockMinimoEnvasesInterno(origen, asunto, coleccionP
       const ptPrefijo = esLogifruit ? "ENV-LOGIFRUIT-" : "ENV-";
       const origenPedido = esLogifruit ? "stock-minimo-logifruit-correo" : "stock-minimo-correo";
 
-      if (!resultado.lineas.length) {
-        await enviarConGraph(token, ENVASES_DESTINATARIO_PRUEBA,
-          (ENVASES_STOCK_MINIMO_MODO_PRUEBA ? "[PRUEBA] " : "") + "Pedido envases por stock mínimo" + marca + " — sin necesidad", null,
-          "No hace falta pedir nada: todas las referencias estan por encima de su stock minimo.", null);
-      } else if (ENVASES_STOCK_MINIMO_MODO_PRUEBA) {
-        const pt = "ENV-EST-" + Date.now().toString(36).toUpperCase();
-        const etiqueta = "<div style='background:#FEF3C7;padding:10px;border-radius:6px;margin-bottom:12px'>" +
-          "⚠️ PRUEBA: pedido calculado por stock minimo" + marca + ", solo informativo (no se ha mandado a Avitrans ni sumado a pendientes).</div>";
-        const html = htmlPedidoEnvases(pt, resultado.lineas, etiqueta, fechaRecogida);
-        const cuerpo = textoPedidoEnvases(pt, resultado.lineas, fechaRecogida, "PRUEBA" + marca + "\n\n");
-        await enviarConGraph(token, ENVASES_DESTINATARIO_PRUEBA,
-          "[PRUEBA] Pedido envases por stock mínimo" + marca + " (" + resultado.total + " huecos)", html, cuerpo, null);
-      } else {
-        const pt = ptPrefijo + Date.now().toString(36).toUpperCase();
-        await crearPedidoTransferencia(pt, "avitrans", { palets: resultado.total, lineas: resultado.lineas },
-          origenPedido, fechaRecogida);
-        const html = htmlPedidoEnvases(pt, resultado.lineas, null, fechaRecogida);
-        const cuerpo = textoPedidoEnvases(pt, resultado.lineas, fechaRecogida, marca ? marca.trim() + "\n\n" : "");
-        await enviarConGraph(token, ENVASES_STOCK_MINIMO_DESTINATARIOS,
-          "Recogida " + formatoFechaEs(fechaRecogida) + marca, html, cuerpo, null);
-      }
+      const totalLineas = await enviarPedidosStockMinimoPorAlmacen(
+        token, resultado.porAlmacen, marca, ptPrefijo, origenPedido, fechaRecogida);
+
       // Referencias que siempre se piden a mano (ENVASES_PEDIDO_SIEMPRE_MANUAL):
       // si hoy se reporta su stock a 0, se avisa aparte (no es un pedido).
       if (resultado.avisosStockCero && resultado.avisosStockCero.length) {
@@ -2354,7 +2412,7 @@ async function revisarCorreoStockMinimoEnvasesInterno(origen, asunto, coleccionP
 
       await graphMarcarLeido(token, msg.id);
       procesados++;
-      console.log(origen + ":", resultado.lineas.length, "referencia(s) con pedido.");
+      console.log(origen + ":", totalLineas, "referencia(s) con pedido.");
     } catch (e) {
       console.error(origen + ": mensaje", msg.id, e.message);
     }
@@ -2405,8 +2463,7 @@ exports.probarRevisarCorreoStockMinimoLogifruitEnvases = functions.https.onCall(
 // stock actual ni incremento). Si un dia hace falta pedir algo mas, se hace
 // a mano desde el resto de apartados de envases.
 function calcularPedidoAutomaticoStockMinimo(config) {
-  const lineas = [];
-  let normal = 0, europool = 0;
+  const porAlmacen = nuevoAcumuladorPorAlmacen();
   for (const ref in config) {
     const cat = CATALOGO_ENVASES_AVITRANS[ref];
     if (!cat) continue;
@@ -2422,10 +2479,11 @@ function calcularPedidoAutomaticoStockMinimo(config) {
     // Europool: se pide el doble de la necesidad (remontado), y el total de
     // huecos de camion se calcula dividiendo esa cantidad ya doblada entre 2.
     const cantidad = cat.tipo === "europool" ? necesidad * 2 : necesidad;
-    lineas.push({ ref, desc: cat.desc, cantidad });
-    if (cat.tipo === "europool") europool += cantidad; else normal += cantidad;
+    const almacen = config[ref].almacen === "txt" ? "txt" : "avitrans";
+    porAlmacen[almacen].lineas.push({ ref, desc: cat.desc, cantidad });
+    if (cat.tipo === "europool") porAlmacen[almacen].europool += cantidad; else porAlmacen[almacen].normal += cantidad;
   }
-  return { lineas, total: normal + Math.ceil(europool / 2) };
+  return cerrarAcumuladorPorAlmacen(porAlmacen);
 }
 
 // soloVista=true (boton "Ver pedido de hoy" del panel): calcula el pedido de
@@ -2445,35 +2503,18 @@ async function ejecutarPedidoAutomaticoStockMinimoEnvases(origen, soloVista) {
   const configSnap = await db.collection("envases_stock_minimo_config").get();
   const config = {};
   configSnap.forEach(d => { config[d.id] = d.data(); });
-  const resultado = calcularPedidoAutomaticoStockMinimo(config);
+  const porAlmacen = calcularPedidoAutomaticoStockMinimo(config);
   const fechaRecogida = fechaRecogidaTurno("dia", hoy);
 
-  if (soloVista) return { ok: true, total: resultado.total, lineas: resultado.lineas.length };
+  const totalCombinado = porAlmacen.avitrans.total + porAlmacen.txt.total;
+  const lineasCombinadas = porAlmacen.avitrans.lineas.length + porAlmacen.txt.lineas.length;
+  if (soloVista) return { ok: true, total: totalCombinado, lineas: lineasCombinadas };
 
+  let totalLineas;
   try {
     const token = await obtenerTokenMS();
-    if (!resultado.lineas.length) {
-      await enviarConGraph(token, ENVASES_DESTINATARIO_PRUEBA,
-        (ENVASES_STOCK_MINIMO_MODO_PRUEBA ? "[PRUEBA] " : "") + "Pedido automático diario de envases — sin referencias configuradas", null,
-        "No hay ninguna referencia con stock mínimo configurado, asi que no se ha pedido nada hoy.", null);
-    } else if (ENVASES_STOCK_MINIMO_MODO_PRUEBA) {
-      const pt = "ENV-EST-" + Date.now().toString(36).toUpperCase();
-      const etiqueta = "<div style='background:#FEF3C7;color:#92400E;padding:10px 14px;border-radius:6px;margin-bottom:14px'>" +
-        "⚠️ PRUEBA: pedido automático diario (40% del stock mínimo de cada referencia configurada). " +
-        "No se ha enviado a Avitrans, es solo para revisar el formato.</div>";
-      const html = htmlPedidoEnvases(pt, resultado.lineas, etiqueta, fechaRecogida);
-      const cuerpo = textoPedidoEnvases(pt, resultado.lineas, fechaRecogida, "PRUEBA (automático diario)\n\n");
-      await enviarConGraph(token, ENVASES_DESTINATARIO_PRUEBA,
-        "[PRUEBA] Pedido automático diario de envases (" + resultado.total + " huecos)", html, cuerpo, null);
-    } else {
-      const pt = "ENV-" + Date.now().toString(36).toUpperCase();
-      await crearPedidoTransferencia(pt, "avitrans", { palets: resultado.total, lineas: resultado.lineas },
-        "stock-minimo-auto", fechaRecogida);
-      const html = htmlPedidoEnvases(pt, resultado.lineas, null, fechaRecogida);
-      const cuerpo = textoPedidoEnvases(pt, resultado.lineas, fechaRecogida);
-      await enviarConGraph(token, ENVASES_STOCK_MINIMO_DESTINATARIOS,
-        "Recogida " + formatoFechaEs(fechaRecogida), html, cuerpo, null);
-    }
+    totalLineas = await enviarPedidosStockMinimoPorAlmacen(
+      token, porAlmacen, "", "ENV-", "stock-minimo-auto", fechaRecogida);
   } catch (e) {
     console.error(origen + ": envio de correo:", e.message);
     return { ok: false, motivo: "error_envio" };
@@ -2484,7 +2525,7 @@ async function ejecutarPedidoAutomaticoStockMinimoEnvases(origen, soloVista) {
       { enviado: true, ts: admin.firestore.Timestamp.now() }, { merge: true });
   } catch (e) { console.error(origen + ": marcar dia:", e.message); }
 
-  return { ok: true, total: resultado.total, lineas: resultado.lineas.length };
+  return { ok: true, total: totalCombinado, lineas: totalLineas };
 }
 
 exports.pedidoAutomaticoStockMinimoEnvases = onSchedule(

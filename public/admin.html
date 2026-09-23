@@ -358,11 +358,13 @@
           11:30): se piden siempre a mano — si el correo reporta su stock a 0, te llega un aviso aparte, no un
           pedido. El pedido ya se crea de verdad y suma a los pendientes, pero <strong>de momento el correo solo te
           llega a ti</strong> (mientras se termina de verificar) — eres tú quien lo reenvía a Avitrans tras
-          revisarlo.
+          revisarlo. La columna <strong>Almacén</strong> decide a dónde se pide cada referencia (Avitrans o Txt);
+          si hay referencias en los dos almacenes el mismo día, se generan pedidos y correos separados, uno por
+          almacén. Puedes cambiarlo cuando quieras.
         </p>
         <div class="tabla-scroll">
           <table class="tabla-inf" id="envases-stock-min-tabla">
-            <thead><tr><th>Referencia</th><th>Descripción envase</th><th style="width:130px">Stock mínimo</th><th style="width:130px">Incremento</th><th style="width:130px">% automático</th></tr></thead>
+            <thead><tr><th>Referencia</th><th>Descripción envase</th><th style="width:130px">Stock mínimo</th><th style="width:130px">Incremento</th><th style="width:130px">% automático</th><th style="width:120px">Almacén</th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
