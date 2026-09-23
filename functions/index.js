@@ -2182,7 +2182,7 @@ async function revisarCorreoStockMinimoEnvasesInterno(origen) {
 
       const buffer = Buffer.from(excel.contentBytes, "base64");
       const resultado = await calcularPedidoEnvasesPorStockMinimo(buffer);
-      const fechaRecogida = fechaRecogidaTurno("dia", fechaHoyMadrid());
+      const fechaRecogida = fechaHoyMadrid(); // recogida hoy mismo (el automatico de las 11:30 es el de manana)
 
       if (!resultado.lineas.length) {
         await enviarConGraph(token, [ENVASES_DESTINATARIO_PRUEBA, "hmanero@aldelis.com"],
