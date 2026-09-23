@@ -2079,16 +2079,18 @@ exports.probarEstimacionEnvasesTurno = functions.https.onCall(async (request, co
 
 // ── Pedido automatico de envases por stock minimo (EN PRUEBA) ──────────────
 // Distinto del flujo de turnos de arriba (que estima a partir del consumo
-// historico): aqui el propio admin manda una plantilla con el stock actual,
-// el stock minimo que quiere mantener y un incremento (ofertas) por
-// referencia, y se pide la diferencia. Sigue en fase de prueba: el correo
-// calculado solo va al admin, no se manda a Avitrans ni se crea un pedido
-// real todavia (ver ENVASES_DESTINATARIO_PRUEBA mas arriba).
+// historico): aqui el propio admin manda una plantilla solo con el stock
+// actual por referencia, y se pide la diferencia hasta el stock minimo (mas
+// el incremento de ofertas) que tenga configurado esa referencia. El stock
+// minimo y el incremento SOLO se configuran a mano desde el panel (coleccion
+// envases_stock_minimo_config, ver firestore.rules), nunca desde la
+// plantilla de Excel, para que nadie pueda manipularlos por correo. Sigue en
+// fase de prueba: el correo calculado solo va al admin, no se manda a
+// Avitrans ni se crea un pedido real todavia (ver ENVASES_DESTINATARIO_PRUEBA
+// mas arriba).
 const ENVASES_STOCK_MINIMO_ALIAS = {
   "referencia": "Referencia",
-  "stockactual": "StockActual", "stock actual": "StockActual",
-  "stockminimo": "StockMinimo", "stock minimo": "StockMinimo",
-  "incremento": "Incremento"
+  "stockactual": "StockActual", "stock actual": "StockActual"
 };
 
 function normalizarFilaEnvasesStockMinimo(fila) {
@@ -2103,18 +2105,25 @@ function normalizarFilaEnvasesStockMinimo(fila) {
 
 // Pedido = max(Stock_minimo + Incremento - Stock_actual, 0) por referencia,
 // con la misma logica de Europool (doble cantidad, mitad de hueco de camion)
-// que el resto de pedidos de envases.
-function calcularPedidoEnvasesPorStockMinimo(buffer) {
+// que el resto de pedidos de envases. El stock minimo/incremento salen de
+// Firestore (config de panel), nunca del propio Excel recibido por correo.
+async function calcularPedidoEnvasesPorStockMinimo(buffer) {
   const filas = leerExcelConHeaderAuto(buffer).map(normalizarFilaEnvasesStockMinimo);
+  const configSnap = await db.collection("envases_stock_minimo_config").get();
+  const config = {};
+  configSnap.forEach(d => { config[d.id] = d.data(); });
+
   const lineas = [];
   let normal = 0, europool = 0;
   filas.forEach(f => {
     const ref = String(f.Referencia || "").trim();
     const cat = CATALOGO_ENVASES_AVITRANS[ref];
     if (!cat) return;
+    const cfg = config[ref];
+    if (!cfg) return; // sin stock minimo configurado, no se pide nada de esta referencia
     const stockActual = Number(f.StockActual) || 0;
-    const stockMinimo = Number(f.StockMinimo) || 0;
-    const incremento = Number(f.Incremento) || 0;
+    const stockMinimo = Number(cfg.stockMinimo) || 0;
+    const incremento = Number(cfg.incremento) || 0;
     const cantidad = Math.max(stockMinimo + incremento - stockActual, 0);
     if (cantidad <= 0) return;
     lineas.push({ ref, desc: cat.desc, cantidad });
@@ -2161,7 +2170,7 @@ exports.revisarCorreoStockMinimoEnvases = onSchedule(
         if (!excel) { await graphMarcarLeido(token, msg.id); continue; }
 
         const buffer = Buffer.from(excel.contentBytes, "base64");
-        const resultado = calcularPedidoEnvasesPorStockMinimo(buffer);
+        const resultado = await calcularPedidoEnvasesPorStockMinimo(buffer);
 
         if (!resultado.lineas.length) {
           await enviarConGraph(token, ENVASES_DESTINATARIO_PRUEBA,

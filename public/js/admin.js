@@ -702,7 +702,10 @@ function aplicarRol() {
     if (esAdminIA) renderEnvasesDetalladoAdmin();
   }
   const envasesStockMin = document.getElementById("envases-stock-minimo-admin");
-  if (envasesStockMin) envasesStockMin.style.display = esAdminIA ? "" : "none";
+  if (envasesStockMin) {
+    envasesStockMin.style.display = esAdminIA ? "" : "none";
+    if (esAdminIA) cargarConfigStockMinimoEnvases();
+  }
 
   // Abrir la primera vista disponible
   const orden = ["rejilla", "lista", "lanzaderas", "pedidos", "bizerba", "cargas", "merca", "arento", "informes", "costes", "cambios", "furgoneta", "compras", "config"];
@@ -1692,6 +1695,67 @@ function renderEnvasesDetalladoAdmin() {
   if (inFecha && !inFecha.value) inFecha.value = new Date().toLocaleDateString("sv-SE");
 }
 
+// Stock minimo / incremento por referencia para el pedido automatico por
+// correo (revisarCorreoStockMinimoEnvases): se configura SOLO aqui, nunca
+// desde la plantilla de Excel, para que nadie pueda manipularlo.
+function cargarConfigStockMinimoEnvases() {
+  const tbody = document.querySelector("#envases-stock-min-tabla tbody");
+  if (!tbody) return;
+  tbody.innerHTML = CATALOGO_ENVASES_AVITRANS.map(l =>
+    "<tr>" +
+    "<td>" + esc(l.ref) + "</td>" +
+    "<td>" + esc(l.desc) + "</td>" +
+    "<td><input type='number' min='0' step='1' placeholder='0' data-stockmin-ref='" + l.ref + "' " +
+    "style='width:100px;padding:6px;border:1px solid #D1D5DB;border-radius:6px'></td>" +
+    "<td><input type='number' min='0' step='1' placeholder='0' data-incremento-ref='" + l.ref + "' " +
+    "style='width:100px;padding:6px;border:1px solid #D1D5DB;border-radius:6px'></td>" +
+    "</tr>"
+  ).join("");
+
+  db.collection("envases_stock_minimo_config").get().then(snap => {
+    snap.forEach(d => {
+      const data = d.data();
+      const inMin = tbody.querySelector("[data-stockmin-ref='" + d.id + "']");
+      const inInc = tbody.querySelector("[data-incremento-ref='" + d.id + "']");
+      if (inMin && data.stockMinimo != null) inMin.value = data.stockMinimo;
+      if (inInc && data.incremento != null) inInc.value = data.incremento;
+    });
+  }).catch(e => console.error("cargarConfigStockMinimoEnvases:", e));
+}
+
+function guardarConfigStockMinimoEnvases() {
+  const errEl = document.getElementById("envases-stock-min-error");
+  const okEl = document.getElementById("envases-stock-min-guardado");
+  errEl.style.display = "none";
+  okEl.textContent = "";
+
+  const batch = db.batch();
+  let algunaLinea = false;
+  for (const l of CATALOGO_ENVASES_AVITRANS) {
+    const inMin = document.querySelector("[data-stockmin-ref='" + l.ref + "']");
+    const inInc = document.querySelector("[data-incremento-ref='" + l.ref + "']");
+    const stockMinimo = Number(inMin.value) || 0;
+    const incremento = Number(inInc.value) || 0;
+    if (stockMinimo < 0 || incremento < 0) {
+      errEl.textContent = "No puede haber valores negativos (referencia " + l.ref + ").";
+      errEl.style.display = "block";
+      return;
+    }
+    if (!stockMinimo && !incremento) continue; // no hace falta guardar ceros
+    algunaLinea = true;
+    batch.set(db.collection("envases_stock_minimo_config").doc(l.ref), { stockMinimo, incremento });
+  }
+
+  if (!algunaLinea) { okEl.textContent = "No hay ningun valor que guardar."; return; }
+
+  batch.commit()
+    .then(() => { okEl.style.color = "#1D9E75"; okEl.textContent = "Guardado."; })
+    .catch(e => {
+      errEl.textContent = "Error al guardar: " + e.message;
+      errEl.style.display = "block";
+    });
+}
+
 // Turno "dia": recogida mañana, salvo que hoy sea viernes, que entonces es
 // el lunes (se salta el fin de semana). Turno "noche": siempre hoy. Mismo
 // calculo que fechaRecogidaTurno en el servidor.
@@ -1811,12 +1875,12 @@ function probarEstimacionEnvasesTurno() {
 }
 
 // Plantilla para el pedido automatico por stock minimo: una fila por
-// referencia del catalogo, con las 3 columnas que hay que rellenar a mano
-// (el servidor las reconoce por nombre de columna al recibir el correo).
+// referencia del catalogo, solo con el stock actual a rellenar a mano (el
+// stock minimo y el incremento se configuran aparte, en el panel, para que
+// nadie pueda tocarlos desde esta plantilla).
 function descargarPlantillaStockEnvases() {
   const filas = CATALOGO_ENVASES_AVITRANS.map(c => ({
-    "Referencia": c.ref, "Descripcion": c.desc,
-    "Stock actual": "", "Stock minimo": "", "Incremento": ""
+    "Referencia": c.ref, "Descripcion": c.desc, "Stock actual": ""
   }));
   const ws = XLSX.utils.json_to_sheet(filas);
   estilizarHojaExcel(ws, filas);

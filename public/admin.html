@@ -351,13 +351,24 @@
       <div id="envases-stock-minimo-admin" style="display:none;margin-top:28px;border-top:1px solid #e5e5e7;padding-top:20px">
         <div class="sitio-elegir">5. Pedido automático por stock mínimo <span class="opt">(en prueba)</span></div>
         <p class="card-desc" style="margin-bottom:12px">
-          Descarga la plantilla, rellena "Stock actual", "Stock mínimo" e "Incremento" por referencia, y mándala por
-          correo a reservas@aldelis.com con asunto <strong>"Stock envases"</strong>. Se calcula el pedido como
-          <em>Stock mínimo + Incremento − Stock actual</em> por referencia (nunca negativo), con la misma lógica de
-          Europool (doble cantidad, mitad de hueco de camión). De momento el resultado solo se manda a tu correo
-          como prueba, no se manda a Avitrans ni se suma a los pendientes todavía.
+          Configura aquí el stock mínimo y el incremento (ofertas) que quieres mantener por referencia. Luego
+          descarga la plantilla, rellena solo "Stock actual" y mándala por correo a reservas@aldelis.com con asunto
+          <strong>"Stock envases"</strong>. Se calcula el pedido como <em>Stock mínimo + Incremento − Stock actual</em>
+          por referencia (nunca negativo), con la misma lógica de Europool (doble cantidad, mitad de hueco de
+          camión). El mínimo y el incremento solo se pueden cambiar aquí, nunca desde la plantilla de correo. De
+          momento el resultado solo se manda a tu correo como prueba, no se manda a Avitrans ni se suma a los
+          pendientes todavía.
         </p>
-        <button class="btn-informe" onclick="descargarPlantillaStockEnvases()">⬇️ Descargar plantilla Excel</button>
+        <div class="tabla-scroll">
+          <table class="tabla-inf" id="envases-stock-min-tabla">
+            <thead><tr><th>Referencia</th><th>Descripción envase</th><th style="width:130px">Stock mínimo</th><th style="width:130px">Incremento</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div id="envases-stock-min-error" style="color:#D41F3A;font-size:13px;margin:10px 0;display:none"></div>
+        <button class="btn-primary" style="width:auto;padding:9px 20px;margin-top:12px" onclick="guardarConfigStockMinimoEnvases()">Guardar stock mínimo / incremento</button>
+        <div id="envases-stock-min-guardado" style="font-size:13px;margin-top:8px"></div>
+        <button class="btn-informe" style="margin-top:16px" onclick="descargarPlantillaStockEnvases()">⬇️ Descargar plantilla Excel (solo stock actual)</button>
       </div>
     </div>
 

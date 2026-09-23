@@ -435,6 +435,21 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Stock minimo / incremento por referencia de envases, para el pedido
+    // automatico por correo (revisarCorreoStockMinimoEnvases). Solo se
+    // configura desde el panel por un admin, nunca desde la plantilla de
+    // Excel que se manda por correo, para que nadie pueda manipularlo.
+    match /envases_stock_minimo_config/{referencia} {
+      allow read: if esAdmin();
+      allow create, update: if esAdmin() && validEnvasesStockMinimoConfig();
+      allow delete: if esAdmin();
+    }
+    function validEnvasesStockMinimoConfig() {
+      let d = request.resource.data;
+      return d.stockMinimo is number && d.stockMinimo >= 0
+        && d.incremento is number && d.incremento >= 0;
+    }
+
     // Carton: mismo maestro editable a mano; stock/consumo/transito/pedido
     // base son los MISMOS documentos que bandejas (misma recogida de datos,
     // los mismos almacenes), asi que no hace falta duplicar esas reglas.
