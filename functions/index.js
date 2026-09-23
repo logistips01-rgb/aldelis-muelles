@@ -2156,6 +2156,12 @@ async function pendientePorReferenciaAvitrans() {
   return pendiente;
 }
 
+// Estas referencias nunca se piden por ningun flujo automatico (correo ni
+// automatico diario): se piden siempre a mano. La unica excepcion: si el
+// correo reporta su stock actual a 0, se manda un aviso aparte (no un
+// pedido) para que no se quede sin avisar.
+const ENVASES_PEDIDO_SIEMPRE_MANUAL = ["999988", "999932"]; // PALET LPR ROJO, CHEP PLASTICO
+
 // Pedido = max(Stock_minimo + Incremento - Stock_actual - Pendiente_recogida, 0)
 // por referencia, redondeado hacia arriba y doblado para Europool (va
 // remontado, dos unidades reales por hueco de camion), igual que en el resto
@@ -2173,14 +2179,19 @@ async function calcularPedidoEnvasesStockMinimoFiltrado(buffer, incluirRef) {
   configSnap.forEach(d => { config[d.id] = d.data(); });
 
   const lineas = [];
+  const avisosStockCero = [];
   let normal = 0, europool = 0;
   filas.forEach(f => {
     const ref = String(f.Referencia || "").trim();
     const cat = CATALOGO_ENVASES_AVITRANS[ref];
     if (!cat || !incluirRef(cat)) return;
+    const celdaVacia = f.StockActual === null || f.StockActual === undefined || String(f.StockActual).trim() === "";
+    if (ENVASES_PEDIDO_SIEMPRE_MANUAL.includes(ref)) {
+      if (!celdaVacia && Number(f.StockActual) === 0) avisosStockCero.push({ ref, desc: cat.desc });
+      return; // nunca se pide por aqui, siempre a mano
+    }
     const cfg = config[ref];
     if (!cfg) return; // sin stock minimo configurado, no se pide nada de esta referencia
-    const celdaVacia = f.StockActual === null || f.StockActual === undefined || String(f.StockActual).trim() === "";
     if (celdaVacia) return; // sin stock actual no se pide nada de esta referencia, para no adivinar
     const stockMinimo = Number(cfg.stockMinimo) || 0;
     const incremento = Number(cfg.incremento) || 0;
@@ -2195,7 +2206,7 @@ async function calcularPedidoEnvasesStockMinimoFiltrado(buffer, incluirRef) {
     lineas.push({ ref, desc: cat.desc, cantidad });
     if (cat.tipo === "europool") europool += cantidad; else normal += cantidad;
   });
-  return { lineas, total: normal + Math.ceil(europool / 2) };
+  return { lineas, total: normal + Math.ceil(europool / 2), avisosStockCero };
 }
 
 // Correo principal "Stock envases": todas las referencias salvo Logifruit
@@ -2321,6 +2332,20 @@ async function revisarCorreoStockMinimoEnvasesInterno(origen, asunto, coleccionP
         await enviarConGraph(token, ENVASES_STOCK_MINIMO_DESTINATARIOS,
           "Recogida " + formatoFechaEs(fechaRecogida) + marca, html, cuerpo, null);
       }
+      // Referencias que siempre se piden a mano (ENVASES_PEDIDO_SIEMPRE_MANUAL):
+      // si hoy se reporta su stock a 0, se avisa aparte (no es un pedido).
+      if (resultado.avisosStockCero && resultado.avisosStockCero.length) {
+        try {
+          await enviarConGraph(token, ENVASES_DESTINATARIO_PRUEBA,
+            "Aviso: stock a 0 (pedido manual)" + marca,
+            null,
+            "Segun el correo de hoy, estas referencias estan a 0 de stock. Se piden siempre a mano, " +
+            "asi que no se ha generado ningun pedido automatico para ellas:\n\n" +
+            resultado.avisosStockCero.map(a => a.ref + " - " + a.desc).join("\n"),
+            null);
+        } catch (e) { console.error(origen + ": aviso stock cero:", e.message); }
+      }
+
       await graphMarcarLeido(token, msg.id);
       procesados++;
       console.log(origen + ":", resultado.lineas.length, "referencia(s) con pedido.");
@@ -2379,6 +2404,7 @@ function calcularPedidoAutomaticoStockMinimo(config) {
   for (const ref in config) {
     const cat = CATALOGO_ENVASES_AVITRANS[ref];
     if (!cat) continue;
+    if (ENVASES_PEDIDO_SIEMPRE_MANUAL.includes(ref)) continue; // siempre a mano, nunca automatico
     const stockMinimo = Number(config[ref].stockMinimo) || 0;
     if (stockMinimo <= 0) continue;
     const necesidad = Math.ceil(stockMinimo * 0.4);
