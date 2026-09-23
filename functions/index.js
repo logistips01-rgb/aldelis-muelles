@@ -2201,7 +2201,10 @@ async function calcularPedidoEnvasesStockMinimoFiltrado(buffer, incluirRef) {
     const incremento = Number(cfg.incremento) || 0;
     const stockActual = Number(f.StockActual) || 0;
     const yaPendiente = pendiente[ref] || 0;
-    const necesidad = Math.ceil(Math.max(stockMinimo + incremento - stockActual - yaPendiente, 0));
+    // Redondeo por aproximacion (no siempre hacia arriba): para Europool
+    // esto ya deja la cantidad en multiplos de 2 automaticamente, al
+    // doblarla despues.
+    const necesidad = Math.round(Math.max(stockMinimo + incremento - stockActual - yaPendiente, 0));
     if (necesidad <= 0) return;
     // Europool: se pide el doble de la necesidad (remontado), y el total de
     // huecos de camion se calcula dividiendo esa cantidad ya doblada entre 2.
@@ -2411,7 +2414,10 @@ function calcularPedidoAutomaticoStockMinimo(config) {
     const stockMinimo = Number(config[ref].stockMinimo) || 0;
     if (stockMinimo <= 0) continue;
     const porcentajeAuto = config[ref].porcentajeAuto != null ? Number(config[ref].porcentajeAuto) : ENVASES_PORCENTAJE_AUTO_DEFECTO;
-    const necesidad = Math.ceil(stockMinimo * (porcentajeAuto / 100));
+    // Redondeo por aproximacion: si el % no cae en un numero entero exacto,
+    // no siempre se redondea hacia arriba. Europool queda en multiplos de 2
+    // igualmente, al doblarse despues.
+    const necesidad = Math.round(stockMinimo * (porcentajeAuto / 100));
     if (necesidad <= 0) continue;
     // Europool: se pide el doble de la necesidad (remontado), y el total de
     // huecos de camion se calcula dividiendo esa cantidad ya doblada entre 2.
