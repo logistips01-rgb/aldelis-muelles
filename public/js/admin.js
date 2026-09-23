@@ -1717,6 +1717,8 @@ function cargarConfigStockMinimoEnvases() {
     "style='width:100px;padding:6px;border:1px solid #D1D5DB;border-radius:6px'></td>" +
     "<td><input type='number' min='0' step='1' placeholder='0' data-incremento-ref='" + l.ref + "' " +
     "style='width:100px;padding:6px;border:1px solid #D1D5DB;border-radius:6px'></td>" +
+    "<td><input type='number' min='0' max='100' step='1' placeholder='40' data-pctauto-ref='" + l.ref + "' " +
+    "style='width:100px;padding:6px;border:1px solid #D1D5DB;border-radius:6px'></td>" +
     "</tr>"
   ).join("");
 
@@ -1725,8 +1727,10 @@ function cargarConfigStockMinimoEnvases() {
       const data = d.data();
       const inMin = tbody.querySelector("[data-stockmin-ref='" + d.id + "']");
       const inInc = tbody.querySelector("[data-incremento-ref='" + d.id + "']");
+      const inPct = tbody.querySelector("[data-pctauto-ref='" + d.id + "']");
       if (inMin && data.stockMinimo != null) inMin.value = data.stockMinimo;
       if (inInc && data.incremento != null) inInc.value = data.incremento;
+      if (inPct && data.porcentajeAuto != null) inPct.value = data.porcentajeAuto;
     });
   }).catch(e => console.error("cargarConfigStockMinimoEnvases:", e));
 }
@@ -1742,16 +1746,27 @@ function guardarConfigStockMinimoEnvases() {
   for (const l of CATALOGO_ENVASES_AVITRANS) {
     const inMin = document.querySelector("[data-stockmin-ref='" + l.ref + "']");
     const inInc = document.querySelector("[data-incremento-ref='" + l.ref + "']");
+    const inPct = document.querySelector("[data-pctauto-ref='" + l.ref + "']");
     const stockMinimo = Number(inMin.value) || 0;
     const incremento = Number(inInc.value) || 0;
+    // Vacio = usar el 40% por defecto (no se guarda el campo).
+    const porcentajeAutoTexto = inPct.value.trim();
+    const porcentajeAuto = porcentajeAutoTexto === "" ? null : Number(porcentajeAutoTexto);
     if (stockMinimo < 0 || incremento < 0) {
       errEl.textContent = "No puede haber valores negativos (referencia " + l.ref + ").";
       errEl.style.display = "block";
       return;
     }
-    if (!stockMinimo && !incremento) continue; // no hace falta guardar ceros
+    if (porcentajeAuto != null && (porcentajeAuto < 0 || porcentajeAuto > 100)) {
+      errEl.textContent = "El % automático debe estar entre 0 y 100 (referencia " + l.ref + ").";
+      errEl.style.display = "block";
+      return;
+    }
+    if (!stockMinimo && !incremento && porcentajeAuto == null) continue; // no hace falta guardar ceros
     algunaLinea = true;
-    batch.set(db.collection("envases_stock_minimo_config").doc(l.ref), { stockMinimo, incremento });
+    const doc = { stockMinimo, incremento };
+    if (porcentajeAuto != null) doc.porcentajeAuto = porcentajeAuto;
+    batch.set(db.collection("envases_stock_minimo_config").doc(l.ref), doc);
   }
 
   if (!algunaLinea) { okEl.textContent = "No hay ningun valor que guardar."; return; }

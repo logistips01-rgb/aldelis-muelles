@@ -2162,6 +2162,10 @@ async function pendientePorReferenciaAvitrans() {
 // pedido) para que no se quede sin avisar.
 const ENVASES_PEDIDO_SIEMPRE_MANUAL = ["999988", "999932"]; // PALET LPR ROJO, CHEP PLASTICO
 
+// % del stock minimo que se pide en el automatico diario si la referencia no
+// tiene configurado su propio porcentaje (ver panel, columna "% automático").
+const ENVASES_PORCENTAJE_AUTO_DEFECTO = 40;
+
 // Pedido = max(Stock_minimo + Incremento - Stock_actual - Pendiente_recogida, 0)
 // por referencia, redondeado hacia arriba y doblado para Europool (va
 // remontado, dos unidades reales por hueco de camion), igual que en el resto
@@ -2406,7 +2410,8 @@ function calcularPedidoAutomaticoStockMinimo(config) {
     if (ENVASES_PEDIDO_SIEMPRE_MANUAL.includes(ref)) continue; // siempre a mano, nunca automatico
     const stockMinimo = Number(config[ref].stockMinimo) || 0;
     if (stockMinimo <= 0) continue;
-    const necesidad = Math.ceil(stockMinimo * 0.4);
+    const porcentajeAuto = config[ref].porcentajeAuto != null ? Number(config[ref].porcentajeAuto) : ENVASES_PORCENTAJE_AUTO_DEFECTO;
+    const necesidad = Math.ceil(stockMinimo * (porcentajeAuto / 100));
     if (necesidad <= 0) continue;
     // Europool: se pide el doble de la necesidad (remontado), y el total de
     // huecos de camion se calcula dividiendo esa cantidad ya doblada entre 2.

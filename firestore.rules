@@ -447,7 +447,9 @@ service cloud.firestore {
     function validEnvasesStockMinimoConfig() {
       let d = request.resource.data;
       return d.stockMinimo is number && d.stockMinimo >= 0
-        && d.incremento is number && d.incremento >= 0;
+        && d.incremento is number && d.incremento >= 0
+        // porcentajeAuto es opcional (si no viene, se usa el 40% por defecto).
+        && (!('porcentajeAuto' in d) || (d.porcentajeAuto is number && d.porcentajeAuto >= 0 && d.porcentajeAuto <= 100));
     }
 
     // Marca de "hoy ya se ha mandado el pedido automatico diario (11:30)",
