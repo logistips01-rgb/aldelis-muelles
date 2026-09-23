@@ -2220,11 +2220,17 @@ async function calcularPedidoEnvasesStockMinimoFiltrado(buffer, incluirRef) {
 
   const porAlmacen = nuevoAcumuladorPorAlmacen();
   const avisosStockCero = [];
+  // Stock actual reportado hoy, de TODAS las referencias que traiga el
+  // correo (tengan o no pedido), para ir guardando historico y poder
+  // calcular mas adelante un consumo real por referencia (como CDM en
+  // bandejas), sin depender de porcentajes fijos.
+  const stocksActuales = [];
   filas.forEach(f => {
     const ref = String(f.Referencia || "").trim();
     const cat = CATALOGO_ENVASES_AVITRANS[ref];
     if (!cat || !incluirRef(cat)) return;
     const celdaVacia = f.StockActual === null || f.StockActual === undefined || String(f.StockActual).trim() === "";
+    if (!celdaVacia) stocksActuales.push({ ref, desc: cat.desc, stockActual: Number(f.StockActual) || 0 });
     if (ENVASES_PEDIDO_SIEMPRE_MANUAL.includes(ref)) {
       if (!celdaVacia && Number(f.StockActual) === 0) avisosStockCero.push({ ref, desc: cat.desc });
       return; // nunca se pide por aqui, siempre a mano
@@ -2249,7 +2255,7 @@ async function calcularPedidoEnvasesStockMinimoFiltrado(buffer, incluirRef) {
     porAlmacen[almacen].lineas.push({ ref, desc: cat.desc, cantidad });
     if (cat.tipo === "europool") porAlmacen[almacen].europool += cantidad; else porAlmacen[almacen].normal += cantidad;
   });
-  return { porAlmacen: cerrarAcumuladorPorAlmacen(porAlmacen), avisosStockCero };
+  return { porAlmacen: cerrarAcumuladorPorAlmacen(porAlmacen), avisosStockCero, stocksActuales };
 }
 
 // Correo principal "Stock envases": todas las referencias salvo Logifruit
@@ -2294,6 +2300,23 @@ exports.revisarCorreoStockMinimoLogifruitEnvasesAgil = onSchedule(
   () => revisarCorreoStockMinimoEnvasesInterno("revisarCorreoStockMinimoLogifruitEnvasesAgil",
     "Stock envases logifruit", "envases_stock_minimo_logifruit_procesados", calcularPedidoEnvasesLogifruitPorStockMinimo, true)
 );
+
+// Guarda un snapshot diario del stock actual reportado por referencia, para
+// ir acumulando historico (de cara a calcular mas adelante un consumo real
+// por referencia, sin depender de porcentajes fijos). Un doc por referencia
+// y dia (se sobreescribe si llega mas de un correo el mismo dia, se queda
+// con el ultimo). flujo: "principal" o "logifruit", solo informativo.
+async function guardarHistoricoStockEnvases(stocksActuales, flujo, fecha) {
+  if (!stocksActuales || !stocksActuales.length) return;
+  const batch = db.batch();
+  stocksActuales.forEach(s => {
+    batch.set(db.collection("envases_stock_historico").doc(s.ref + "_" + fecha), {
+      ref: s.ref, desc: s.desc, fecha, stockActual: s.stockActual, flujo,
+      ts: admin.firestore.Timestamp.now()
+    });
+  });
+  await batch.commit();
+}
 
 const ENVASES_ALMACEN_ETIQUETA = { avitrans: "Avitrans", txt: "Txt" };
 
@@ -2398,6 +2421,10 @@ async function revisarCorreoStockMinimoEnvasesInterno(origen, asunto, coleccionP
       const marca = esLogifruit ? " (Logifruit)" : "";
       const ptPrefijo = esLogifruit ? "ENV-LOGIFRUIT-" : "ENV-";
       const origenPedido = esLogifruit ? "stock-minimo-logifruit-correo" : "stock-minimo-correo";
+
+      try {
+        await guardarHistoricoStockEnvases(resultado.stocksActuales, esLogifruit ? "logifruit" : "principal", fechaRecogida);
+      } catch (e) { console.error(origen + ": guardar historico stock:", e.message); }
 
       const totalLineas = await enviarPedidosStockMinimoPorAlmacen(
         token, resultado.porAlmacen, marca, ptPrefijo, origenPedido, fechaRecogida);

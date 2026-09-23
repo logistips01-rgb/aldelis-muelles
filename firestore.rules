@@ -469,6 +469,14 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Historico diario de stock actual reportado por referencia (para
+    // calcular mas adelante un consumo real, sin depender de porcentajes
+    // fijos). Solo lectura, solo el servidor escribe.
+    match /envases_stock_historico/{id} {
+      allow read: if esAdminEnvases();
+      allow write: if false;
+    }
+
     // Carton: mismo maestro editable a mano; stock/consumo/transito/pedido
     // base son los MISMOS documentos que bandejas (misma recogida de datos,
     // los mismos almacenes), asi que no hace falta duplicar esas reglas.
