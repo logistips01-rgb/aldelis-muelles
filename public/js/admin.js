@@ -1808,6 +1808,30 @@ function probarStockMinimoEnvasesCorreo() {
     });
 }
 
+// Igual que probarStockMinimoEnvasesCorreo pero para el correo separado de
+// Logifruit ("Stock envases logifruit").
+function probarStockMinimoEnvasesLogifruitCorreo() {
+  const cont = document.getElementById("envases-stock-min-logifruit-resultado");
+  cont.style.display = "block";
+  cont.style.color = "";
+  cont.innerHTML = "Revisando el buzón...";
+  firebase.functions().httpsCallable("probarRevisarCorreoStockMinimoLogifruitEnvases")({})
+    .then(res => {
+      if (!res.data || !res.data.ok) {
+        cont.style.color = "#D41F3A";
+        cont.innerHTML = (res.data && res.data.error) || "No se pudo revisar el correo.";
+        return;
+      }
+      cont.style.color = "";
+      cont.innerHTML = res.data.candidatos + " correo(s) candidato(s) encontrado(s), " +
+        res.data.procesados + " procesado(s) ahora. Si hay pedido, revisa tu correo de prueba.";
+    })
+    .catch(e => {
+      cont.style.color = "#D41F3A";
+      cont.innerHTML = "Error: " + e.message;
+    });
+}
+
 // Turno "dia": recogida mañana, salvo que hoy sea viernes, que entonces es
 // el lunes (se salta el fin de semana). Turno "noche": siempre hoy. Mismo
 // calculo que fechaRecogidaTurno en el servidor.
@@ -1931,7 +1955,7 @@ function probarEstimacionEnvasesTurno() {
 // stock minimo y el incremento se configuran aparte, en el panel, para que
 // nadie pueda tocarlos desde esta plantilla).
 function descargarPlantillaStockEnvases() {
-  const filas = CATALOGO_ENVASES_AVITRANS.map(c => ({
+  const filas = CATALOGO_ENVASES_AVITRANS.filter(c => !c.desc.includes("LOGIFRUIT")).map(c => ({
     "Referencia": c.ref, "Descripcion": c.desc, "Stock actual": ""
   }));
   const ws = XLSX.utils.json_to_sheet(filas);
@@ -1939,6 +1963,19 @@ function descargarPlantillaStockEnvases() {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Stock envases");
   XLSX.writeFile(wb, "Plantilla_Stock_Envases.xlsx");
+}
+
+// Plantilla separada solo con las referencias Logifruit (las cuenta otra
+// persona distinta, en un correo aparte con asunto "Stock envases logifruit").
+function descargarPlantillaStockEnvasesLogifruit() {
+  const filas = CATALOGO_ENVASES_AVITRANS.filter(c => c.desc.includes("LOGIFRUIT")).map(c => ({
+    "Referencia": c.ref, "Descripcion": c.desc, "Stock actual": ""
+  }));
+  const ws = XLSX.utils.json_to_sheet(filas);
+  estilizarHojaExcel(ws, filas);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Stock envases logifruit");
+  XLSX.writeFile(wb, "Plantilla_Stock_Envases_Logifruit.xlsx");
 }
 
 function cargarLanzaderas() {

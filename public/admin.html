@@ -377,13 +377,26 @@
             <strong>"Stock envases"</strong>. Este sería para <strong>recogida hoy mismo</strong> (a diferencia del
             automático de las 11:30, que es para mañana). Antes de calcular, resta lo que ya tengas pedido y
             pendiente de recoger de Avitrans (de cualquier pedido activo, no solo de este flujo), para no pedir de
-            más. Las referencias Logifruit no se tienen en cuenta aquí (aunque vengan en el excel), porque las
-            cuenta otra persona y las pides tú a mano para recogida en el día. De momento, en prueba: solo se manda
-            a tu correo, no se manda a Avitrans ni se suma a los pendientes todavía.
+            más. Las referencias Logifruit no se tienen en cuenta aquí (aunque vengan en el excel): las cuenta otra
+            persona distinta, que manda su propio correo aparte (ver más abajo). De momento, en prueba: solo se
+            manda a tu correo, no se manda a Avitrans ni se suma a los pendientes todavía.
           </p>
           <button class="btn-informe" onclick="descargarPlantillaStockEnvases()">⬇️ Descargar plantilla Excel (solo stock actual)</button>
           <button class="btn-ghost" style="margin-left:8px" onclick="probarStockMinimoEnvasesCorreo()">🧪 Probar correo ahora</button>
           <div id="envases-stock-min-correo-resultado" style="font-size:13px;margin-top:8px;display:none"></div>
+        </div>
+
+        <div style="margin-top:24px;border-top:1px solid #e5e5e7;padding-top:16px">
+          <div class="sitio-elegir" style="font-size:14px">Correo aparte para Logifruit</div>
+          <p class="card-desc" style="margin-bottom:12px">
+            Como el stock de Logifruit lo cuenta otra persona, va en un correo aparte: descarga esta plantilla
+            (solo las 3 referencias Logifruit), que la rellene y la mande a reservas@aldelis.com con asunto
+            <strong>"Stock envases logifruit"</strong>. Recogida hoy mismo, igual que el correo principal. De
+            momento, en prueba: solo se manda a tu correo.
+          </p>
+          <button class="btn-informe" onclick="descargarPlantillaStockEnvasesLogifruit()">⬇️ Descargar plantilla Logifruit</button>
+          <button class="btn-ghost" style="margin-left:8px" onclick="probarStockMinimoEnvasesLogifruitCorreo()">🧪 Probar correo ahora</button>
+          <div id="envases-stock-min-logifruit-resultado" style="font-size:13px;margin-top:8px;display:none"></div>
         </div>
       </div>
     </div>

@@ -2143,7 +2143,7 @@ async function pendientePorReferenciaAvitrans() {
 // (referencia obsoleta, o se olvido rellenarla), se asume el 50% del stock
 // minimo, para no pedir de mas (como si no quedara nada) ni de menos (como
 // si estuviera lleno).
-async function calcularPedidoEnvasesPorStockMinimo(buffer) {
+async function calcularPedidoEnvasesStockMinimoFiltrado(buffer, incluirRef) {
   const filas = leerExcelConHeaderAuto(buffer).map(normalizarFilaEnvasesStockMinimo);
   const [configSnap, pendiente] = await Promise.all([
     db.collection("envases_stock_minimo_config").get(),
@@ -2157,8 +2157,7 @@ async function calcularPedidoEnvasesPorStockMinimo(buffer) {
   filas.forEach(f => {
     const ref = String(f.Referencia || "").trim();
     const cat = CATALOGO_ENVASES_AVITRANS[ref];
-    if (!cat) return;
-    if (cat.desc.includes("LOGIFRUIT")) return; // las cuenta otra persona, se piden a mano; se ignoran aunque vengan en el excel
+    if (!cat || !incluirRef(cat)) return;
     const cfg = config[ref];
     if (!cfg) return; // sin stock minimo configurado, no se pide nada de esta referencia
     const stockMinimo = Number(cfg.stockMinimo) || 0;
@@ -2174,19 +2173,44 @@ async function calcularPedidoEnvasesPorStockMinimo(buffer) {
   return { lineas, total: normal + Math.ceil(europool / 2) };
 }
 
+// Correo principal "Stock envases": todas las referencias salvo Logifruit
+// (las cuenta otra persona y se piden a mano; se ignoran aunque vengan en el
+// excel). Logifruit tiene su propio correo separado, ver mas abajo.
+function calcularPedidoEnvasesPorStockMinimo(buffer) {
+  return calcularPedidoEnvasesStockMinimoFiltrado(buffer, cat => !cat.desc.includes("LOGIFRUIT"));
+}
+
+// Correo separado "Stock envases logifruit": solo las 3 referencias
+// Logifruit, porque las cuenta otra persona distinta y llegan en un correo
+// aparte.
+function calcularPedidoEnvasesLogifruitPorStockMinimo(buffer) {
+  return calcularPedidoEnvasesStockMinimoFiltrado(buffer, cat => cat.desc.includes("LOGIFRUIT"));
+}
+
 exports.revisarCorreoStockMinimoEnvases = onSchedule(
   { schedule: "0 * * * *", timeZone: "Europe/Madrid" },
-  () => revisarCorreoStockMinimoEnvasesInterno("revisarCorreoStockMinimoEnvases")
+  () => revisarCorreoStockMinimoEnvasesInterno("revisarCorreoStockMinimoEnvases",
+    "Stock envases", "envases_stock_minimo_procesados", calcularPedidoEnvasesPorStockMinimo)
+);
+
+// Correo separado con el stock de Logifruit (lo manda otra persona distinta).
+exports.revisarCorreoStockMinimoLogifruitEnvases = onSchedule(
+  { schedule: "0 * * * *", timeZone: "Europe/Madrid" },
+  () => revisarCorreoStockMinimoEnvasesInterno("revisarCorreoStockMinimoLogifruitEnvases",
+    "Stock envases logifruit", "envases_stock_minimo_logifruit_procesados", calcularPedidoEnvasesLogifruitPorStockMinimo)
 );
 
 // Logica compartida entre el cron por horas y el boton "Probar ahora" del
 // panel (misma idea que revisarCorreoComprasBandejasTipos).
-async function revisarCorreoStockMinimoEnvasesInterno(origen) {
+// asunto: subject exacto del correo a buscar. coleccionProcesados: coleccion
+// de idempotencia propia (para no compartirla entre el correo principal y el
+// de Logifruit). calcularFn: cual de las dos funciones de calculo usar.
+async function revisarCorreoStockMinimoEnvasesInterno(origen, asunto, coleccionProcesados, calcularFn) {
   const token = await obtenerTokenMS();
 
   const data = await graphGet(token,
     "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS +
-    "/mailFolders/inbox/messages?$filter=" + encodeURIComponent("isRead eq false and subject eq 'Stock envases'") +
+    "/mailFolders/inbox/messages?$filter=" + encodeURIComponent("isRead eq false and subject eq '" + asunto + "'") +
     "&$top=10&$select=id,subject,hasAttachments,receivedDateTime");
 
   const candidatos = (data.value || []).length;
@@ -2198,7 +2222,7 @@ async function revisarCorreoStockMinimoEnvasesInterno(origen) {
 
     // Idempotencia por mensaje (mismo mecanismo que compras/extraccion de
     // albaran): el "leido" de Graph no siempre persiste.
-    const procesadoRef = db.collection("envases_stock_minimo_procesados").doc(msg.id);
+    const procesadoRef = db.collection(coleccionProcesados).doc(msg.id);
     try {
       await procesadoRef.create({ ts: admin.firestore.Timestamp.now() });
     } catch (e) {
@@ -2214,7 +2238,7 @@ async function revisarCorreoStockMinimoEnvasesInterno(origen) {
       if (!excel) { await graphMarcarLeido(token, msg.id); continue; }
 
       const buffer = Buffer.from(excel.contentBytes, "base64");
-      const resultado = await calcularPedidoEnvasesPorStockMinimo(buffer);
+      const resultado = await calcularFn(buffer);
       const fechaRecogida = fechaHoyMadrid(); // recogida hoy mismo (el automatico de las 11:30 es el de manana)
 
       if (!resultado.lineas.length) {
@@ -2260,10 +2284,29 @@ exports.probarRevisarCorreoStockMinimoEnvases = functions.https.onCall(async (re
   if (!email || !ADMINS_APP.includes(email)) return { ok: false, error: "Sin permiso" };
 
   try {
-    const resultado = await revisarCorreoStockMinimoEnvasesInterno("probarRevisarCorreoStockMinimoEnvases");
+    const resultado = await revisarCorreoStockMinimoEnvasesInterno("probarRevisarCorreoStockMinimoEnvases",
+      "Stock envases", "envases_stock_minimo_procesados", calcularPedidoEnvasesPorStockMinimo);
     return { ok: true, candidatos: resultado.candidatos, procesados: resultado.procesados };
   } catch (e) {
     console.error("probarRevisarCorreoStockMinimoEnvases:", e.message);
+    return { ok: false, error: e.message };
+  }
+});
+
+// Boton "Probar ahora" del panel para el correo separado de Logifruit.
+exports.probarRevisarCorreoStockMinimoLogifruitEnvases = functions.https.onCall(async (request, context) => {
+  const esV2 = !!(request && typeof request === "object" && request.data !== undefined);
+  const ctx = esV2 ? request : (context || {});
+  if (!ctx.app) return { ok: false, error: "No autorizado" };
+  const email = (ctx.auth && ctx.auth.token && ctx.auth.token.email || "").toLowerCase();
+  if (!email || !ADMINS_APP.includes(email)) return { ok: false, error: "Sin permiso" };
+
+  try {
+    const resultado = await revisarCorreoStockMinimoEnvasesInterno("probarRevisarCorreoStockMinimoLogifruitEnvases",
+      "Stock envases logifruit", "envases_stock_minimo_logifruit_procesados", calcularPedidoEnvasesLogifruitPorStockMinimo);
+    return { ok: true, candidatos: resultado.candidatos, procesados: resultado.procesados };
+  } catch (e) {
+    console.error("probarRevisarCorreoStockMinimoLogifruitEnvases:", e.message);
     return { ok: false, error: e.message };
   }
 });
