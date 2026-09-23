@@ -4459,6 +4459,43 @@ exports.preguntarAsistente = functions.https.onCall(async (request, context) => 
   }
 });
 
+// Prueba minima de solo lectura: comprueba si el mismo token de aplicacion
+// que ya usamos para reservas@aldelis.com tambien puede leer OTRO buzon del
+// tenant (p.ej. mlorente@aldelis.com). El permiso de aplicacion de Graph
+// (Mail.Read) puede estar concedido a nivel de todo el tenant, o restringido
+// solo a un buzon en concreto mediante una politica de acceso de Exchange -
+// esto es lo que distingue una cosa de otra. No modifica nada, solo lista
+// los ultimos 3 asuntos para confirmar que el acceso funciona.
+exports.probarAccesoBuzon = functions.https.onCall(async (request, context) => {
+  const esV2 = !!(request && typeof request === "object" && request.data !== undefined);
+  const data = esV2 ? request.data : request;
+  const ctx  = esV2 ? request : (context || {});
+  if (!ctx.app) return { ok: false, error: "No autorizado" };
+  const email = (ctx.auth && ctx.auth.token && ctx.auth.token.email || "").toLowerCase();
+  if (!ADMINS_APP.includes(email)) return { ok: false, error: "Sin permiso" };
+
+  const buzon = (data && data.buzon) || "mlorente@aldelis.com";
+  try {
+    const token = await obtenerTokenMS();
+    const res = await fetch(
+      "https://graph.microsoft.com/v1.0/users/" + encodeURIComponent(buzon) +
+      "/mailFolders/inbox/messages?$top=3&$select=subject,receivedDateTime&$orderby=receivedDateTime desc",
+      { headers: { Authorization: "Bearer " + token } }
+    );
+    const cuerpo = await res.json();
+    if (!res.ok) {
+      return { ok: false, error: "Graph " + res.status + ": " + (cuerpo.error && cuerpo.error.message || JSON.stringify(cuerpo)) };
+    }
+    return {
+      ok: true, buzon,
+      asuntos: (cuerpo.value || []).map(m => m.subject + " (" + m.receivedDateTime + ")")
+    };
+  } catch (e) {
+    console.error("probarAccesoBuzon:", e.message);
+    return { ok: false, error: e.message };
+  }
+});
+
 // ── Robin por correo: asunto "info" ─────────────────────────────────────
 //
 // Los mismos compañeros autorizados pueden preguntarle a Robin por correo en

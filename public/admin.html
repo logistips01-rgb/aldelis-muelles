@@ -845,6 +845,21 @@
             <p id="cfg-robin-uso-hoy" style="font-size:12px;color:#9CA3AF;margin-top:10px"></p>
           </div>
 
+          <div class="informe-card" style="margin-top:16px">
+            <div class="informe-card-title">Probar acceso a otro buzón (solo lectura)</div>
+            <p style="font-size:13px;color:#6B7280;margin-bottom:12px">
+              Comprueba si el mismo acceso que ya usamos para reservas@aldelis.com también puede leer otro buzón
+              del tenant (por ejemplo, tu correo personal de trabajo). No cambia nada, solo lista los últimos 3
+              asuntos para confirmar si funciona.
+            </p>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <input type="email" id="cfg-buzon-prueba" placeholder="mlorente@aldelis.com" value="mlorente@aldelis.com"
+                style="flex:1;min-width:220px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
+              <button class="btn-informe" onclick="probarAccesoBuzon()">Probar</button>
+            </div>
+            <div id="cfg-buzon-prueba-resultado" style="font-size:13px;margin-top:10px"></div>
+          </div>
+
         </div>
       </div>
 

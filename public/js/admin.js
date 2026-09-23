@@ -4431,6 +4431,31 @@ async function guardarRobinLimite() {
   } catch (e) { alert("Error al guardar: " + e.message); }
 }
 
+function probarAccesoBuzon() {
+  const buzon = document.getElementById("cfg-buzon-prueba").value.trim();
+  const cont = document.getElementById("cfg-buzon-prueba-resultado");
+  if (!buzon) { cont.style.color = "#D41F3A"; cont.textContent = "Pon un correo."; return; }
+  cont.style.color = "";
+  cont.textContent = "Probando...";
+  firebase.functions().httpsCallable("probarAccesoBuzon")({ buzon })
+    .then(res => {
+      if (!res.data || !res.data.ok) {
+        cont.style.color = "#D41F3A";
+        cont.textContent = (res.data && res.data.error) || "No se pudo probar el acceso.";
+        return;
+      }
+      cont.style.color = "#1D9E75";
+      cont.innerHTML = "Acceso correcto a " + esc(res.data.buzon) + "." +
+        (res.data.asuntos.length
+          ? "<br><span style='color:#6B7280'>Últimos asuntos: " + res.data.asuntos.map(esc).join(" · ") + "</span>"
+          : "<br><span style='color:#6B7280'>La bandeja de entrada está vacía.</span>");
+    })
+    .catch(e => {
+      cont.style.color = "#D41F3A";
+      cont.textContent = "Error: " + e.message;
+    });
+}
+
 async function guardarCierresAlmacenes() {
   const datos = {};
   for (const id of ["avitrans", "caserfri", "txt"]) {
