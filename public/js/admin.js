@@ -701,6 +701,8 @@ function aplicarRol() {
     envasesDet.style.display = esAdminIA ? "" : "none";
     if (esAdminIA) renderEnvasesDetalladoAdmin();
   }
+  const envasesStockMin = document.getElementById("envases-stock-minimo-admin");
+  if (envasesStockMin) envasesStockMin.style.display = esAdminIA ? "" : "none";
 
   // Abrir la primera vista disponible
   const orden = ["rejilla", "lista", "lanzaderas", "pedidos", "bizerba", "cargas", "merca", "arento", "informes", "costes", "cambios", "furgoneta", "compras", "config"];
@@ -1806,6 +1808,21 @@ function probarEstimacionEnvasesTurno() {
       resEl.textContent = "No se pudo generar la estimación.";
     })
     .finally(() => { btn.disabled = false; btn.textContent = "🧪 Probar estimación ahora (turno elegido)"; });
+}
+
+// Plantilla para el pedido automatico por stock minimo: una fila por
+// referencia del catalogo, con las 3 columnas que hay que rellenar a mano
+// (el servidor las reconoce por nombre de columna al recibir el correo).
+function descargarPlantillaStockEnvases() {
+  const filas = CATALOGO_ENVASES_AVITRANS.map(c => ({
+    "Referencia": c.ref, "Descripcion": c.desc,
+    "Stock actual": "", "Stock minimo": "", "Incremento": ""
+  }));
+  const ws = XLSX.utils.json_to_sheet(filas);
+  estilizarHojaExcel(ws, filas);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Stock envases");
+  XLSX.writeFile(wb, "Plantilla_Stock_Envases.xlsx");
 }
 
 function cargarLanzaderas() {

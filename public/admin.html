@@ -347,6 +347,18 @@
         <button class="btn-ghost" style="width:auto;padding:9px 20px;margin-top:12px;margin-left:8px" id="envases-det-btn-probar" onclick="probarEstimacionEnvasesTurno()">🧪 Probar estimación ahora (turno elegido)</button>
         <div id="envases-det-prueba-resultado" style="font-size:13px;margin-top:8px"></div>
       </div>
+
+      <div id="envases-stock-minimo-admin" style="display:none;margin-top:28px;border-top:1px solid #e5e5e7;padding-top:20px">
+        <div class="sitio-elegir">5. Pedido automático por stock mínimo <span class="opt">(en prueba)</span></div>
+        <p class="card-desc" style="margin-bottom:12px">
+          Descarga la plantilla, rellena "Stock actual", "Stock mínimo" e "Incremento" por referencia, y mándala por
+          correo a reservas@aldelis.com con asunto <strong>"Stock envases"</strong>. Se calcula el pedido como
+          <em>Stock mínimo + Incremento − Stock actual</em> por referencia (nunca negativo), con la misma lógica de
+          Europool (doble cantidad, mitad de hueco de camión). De momento el resultado solo se manda a tu correo
+          como prueba, no se manda a Avitrans ni se suma a los pendientes todavía.
+        </p>
+        <button class="btn-informe" onclick="descargarPlantillaStockEnvases()">⬇️ Descargar plantilla Excel</button>
+      </div>
     </div>
 
     <div id="vista-cargas" class="reservas-wrap" style="display:none">

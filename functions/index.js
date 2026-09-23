@@ -2077,6 +2077,115 @@ exports.probarEstimacionEnvasesTurno = functions.https.onCall(async (request, co
   return { ok: true, pt: resultado.pt, total: resultado.total, muestras: resultado.muestras, enviadoA: resultado.enviadoA };
 });
 
+// ── Pedido automatico de envases por stock minimo (EN PRUEBA) ──────────────
+// Distinto del flujo de turnos de arriba (que estima a partir del consumo
+// historico): aqui el propio admin manda una plantilla con el stock actual,
+// el stock minimo que quiere mantener y un incremento (ofertas) por
+// referencia, y se pide la diferencia. Sigue en fase de prueba: el correo
+// calculado solo va al admin, no se manda a Avitrans ni se crea un pedido
+// real todavia (ver ENVASES_DESTINATARIO_PRUEBA mas arriba).
+const ENVASES_STOCK_MINIMO_ALIAS = {
+  "referencia": "Referencia",
+  "stockactual": "StockActual", "stock actual": "StockActual",
+  "stockminimo": "StockMinimo", "stock minimo": "StockMinimo",
+  "incremento": "Incremento"
+};
+
+function normalizarFilaEnvasesStockMinimo(fila) {
+  const out = {};
+  for (const k in fila) {
+    const norm = String(k).trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+    const canon = ENVASES_STOCK_MINIMO_ALIAS[norm];
+    if (canon) out[canon] = fila[k];
+  }
+  return out;
+}
+
+// Pedido = max(Stock_minimo + Incremento - Stock_actual, 0) por referencia,
+// con la misma logica de Europool (doble cantidad, mitad de hueco de camion)
+// que el resto de pedidos de envases.
+function calcularPedidoEnvasesPorStockMinimo(buffer) {
+  const filas = leerExcelConHeaderAuto(buffer).map(normalizarFilaEnvasesStockMinimo);
+  const lineas = [];
+  let normal = 0, europool = 0;
+  filas.forEach(f => {
+    const ref = String(f.Referencia || "").trim();
+    const cat = CATALOGO_ENVASES_AVITRANS[ref];
+    if (!cat) return;
+    const stockActual = Number(f.StockActual) || 0;
+    const stockMinimo = Number(f.StockMinimo) || 0;
+    const incremento = Number(f.Incremento) || 0;
+    const cantidad = Math.max(stockMinimo + incremento - stockActual, 0);
+    if (cantidad <= 0) return;
+    lineas.push({ ref, desc: cat.desc, cantidad });
+    if (cat.tipo === "europool") europool += cantidad; else normal += cantidad;
+  });
+  return { lineas, total: normal + Math.ceil(europool / 2) };
+}
+
+exports.revisarCorreoStockMinimoEnvases = onSchedule(
+  { schedule: "0 * * * *", timeZone: "Europe/Madrid" },
+  async () => {
+    let token;
+    try { token = await obtenerTokenMS(); }
+    catch (e) { console.error("revisarCorreoStockMinimoEnvases: token:", e.message); return; }
+
+    let data;
+    try {
+      data = await graphGet(token,
+        "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS +
+        "/mailFolders/inbox/messages?$filter=" + encodeURIComponent("isRead eq false and subject eq 'Stock envases'") +
+        "&$top=10&$select=id,subject,hasAttachments,receivedDateTime");
+    } catch (e) { console.error("revisarCorreoStockMinimoEnvases: listar mensajes:", e.message); return; }
+
+    console.log("revisarCorreoStockMinimoEnvases: " + (data.value || []).length + " correo(s) candidato(s).");
+
+    for (const msg of (data.value || [])) {
+      if (!msg.hasAttachments) { await graphMarcarLeido(token, msg.id); continue; }
+
+      // Idempotencia por mensaje (mismo mecanismo que compras/extraccion de
+      // albaran): el "leido" de Graph no siempre persiste.
+      const procesadoRef = db.collection("envases_stock_minimo_procesados").doc(msg.id);
+      try {
+        await procesadoRef.create({ ts: admin.firestore.Timestamp.now() });
+      } catch (e) {
+        if (e.code === 6) continue; // ya atendido
+        console.error("revisarCorreoStockMinimoEnvases: guarda de idempotencia:", e.message);
+        continue;
+      }
+
+      try {
+        const adjuntos = await graphGet(token,
+          "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS + "/messages/" + msg.id + "/attachments");
+        const excel = (adjuntos.value || []).find(a => a.contentBytes && /\.xlsx?$/i.test(a.name || ""));
+        if (!excel) { await graphMarcarLeido(token, msg.id); continue; }
+
+        const buffer = Buffer.from(excel.contentBytes, "base64");
+        const resultado = calcularPedidoEnvasesPorStockMinimo(buffer);
+
+        if (!resultado.lineas.length) {
+          await enviarConGraph(token, ENVASES_DESTINATARIO_PRUEBA,
+            "[PRUEBA] Pedido envases por stock minimo — sin necesidad", null,
+            "No hace falta pedir nada: todas las referencias estan por encima de su stock minimo.", null);
+        } else {
+          const pt = "ENV-EST-" + Date.now().toString(36).toUpperCase();
+          const etiqueta = "<div style='background:#FEF3C7;padding:10px;border-radius:6px;margin-bottom:12px'>" +
+            "⚠️ PRUEBA: pedido calculado por stock minimo, solo informativo (no se ha mandado a Avitrans ni sumado a pendientes).</div>";
+          const html = htmlPedidoEnvases(pt, resultado.lineas, etiqueta);
+          const cuerpo = "PRUEBA — Pedido nº " + pt + " (" + resultado.total + " huecos de camion)\n\n" +
+            resultado.lineas.map(l => l.ref + " - " + l.desc + ": " + l.cantidad).join("\n");
+          await enviarConGraph(token, ENVASES_DESTINATARIO_PRUEBA,
+            "[PRUEBA] Pedido envases por stock minimo (" + resultado.total + " huecos)", html, cuerpo, null);
+        }
+        await graphMarcarLeido(token, msg.id);
+        console.log("revisarCorreoStockMinimoEnvases:", resultado.lineas.length, "referencia(s) con pedido.");
+      } catch (e) {
+        console.error("revisarCorreoStockMinimoEnvases: mensaje", msg.id, e.message);
+      }
+    }
+  }
+);
+
 // A veces el chofer se olvida de marcarlo al salir: se registra a mano desde
 // el panel, exactamente igual que si lo hubiera marcado el (misma coleccion
 // recogidas_palets), para que el pedido y el saldo del almacen queden
