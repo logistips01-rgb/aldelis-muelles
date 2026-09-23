@@ -2230,16 +2230,23 @@ exports.revisarCorreoStockMinimoLogifruitEnvasesAgil = onSchedule(
 async function revisarCorreoStockMinimoEnvasesInterno(origen, asunto, coleccionProcesados, calcularFn, esLogifruit) {
   const token = await obtenerTokenMS();
 
+  // Filtro amplio en el servidor (no leidos, con adjunto) y comparacion del
+  // asunto en el propio codigo (sin distinguir mayusculas/minusculas ni
+  // espacios de mas) - mas tolerante que un "eq" exacto en Graph, que no
+  // siempre se comporta igual segun mayusculas.
   const data = await graphGet(token,
     "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS +
-    "/mailFolders/inbox/messages?$filter=" + encodeURIComponent("isRead eq false and subject eq '" + asunto + "'") +
-    "&$top=10&$select=id,subject,hasAttachments,receivedDateTime");
+    "/mailFolders/inbox/messages?$filter=" + encodeURIComponent("isRead eq false and hasAttachments eq true") +
+    "&$top=50&$select=id,subject,hasAttachments,receivedDateTime");
 
-  const candidatos = (data.value || []).length;
+  const asuntoNorm = asunto.trim().toLowerCase();
+  const mensajes = (data.value || []).filter(m => (m.subject || "").trim().toLowerCase() === asuntoNorm);
+
+  const candidatos = mensajes.length;
   console.log(origen + ": " + candidatos + " correo(s) candidato(s).");
 
   let procesados = 0;
-  for (const msg of (data.value || [])) {
+  for (const msg of mensajes) {
     if (!msg.hasAttachments) { await graphMarcarLeido(token, msg.id); continue; }
 
     // Idempotencia por mensaje (mismo mecanismo que compras/extraccion de
