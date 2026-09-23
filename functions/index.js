@@ -2139,13 +2139,12 @@ async function pendientePorReferenciaAvitrans() {
 }
 
 // Pedido = max(Stock_minimo + Incremento - Stock_actual - Pendiente_recogida, 0)
-// por referencia, con la misma logica de Europool (doble cantidad, mitad de
-// hueco de camion) que el resto de pedidos de envases. El stock
-// minimo/incremento salen de Firestore (config de panel), nunca del propio
-// Excel recibido por correo. Si la celda de Stock actual viene vacia
-// (referencia obsoleta, o se olvido rellenarla), se asume el 50% del stock
-// minimo, para no pedir de mas (como si no quedara nada) ni de menos (como
-// si estuviera lleno).
+// por referencia, redondeado hacia arriba y doblado para Europool (va
+// remontado, dos unidades reales por hueco de camion), igual que en el resto
+// de pedidos de envases. El stock minimo/incremento salen de Firestore
+// (config de panel), nunca del propio Excel recibido por correo. Si la
+// celda de Stock actual viene vacia, no se pide nada de esa referencia (para
+// no adivinar), aunque tenga stock minimo configurado.
 async function calcularPedidoEnvasesStockMinimoFiltrado(buffer, incluirRef) {
   const filas = leerExcelConHeaderAuto(buffer).map(normalizarFilaEnvasesStockMinimo);
   const [configSnap, pendiente] = await Promise.all([
@@ -2163,16 +2162,18 @@ async function calcularPedidoEnvasesStockMinimoFiltrado(buffer, incluirRef) {
     if (!cat || !incluirRef(cat)) return;
     const cfg = config[ref];
     if (!cfg) return; // sin stock minimo configurado, no se pide nada de esta referencia
+    const celdaVacia = f.StockActual === null || f.StockActual === undefined || String(f.StockActual).trim() === "";
+    if (celdaVacia) return; // sin stock actual no se pide nada de esta referencia, para no adivinar
     const stockMinimo = Number(cfg.stockMinimo) || 0;
     const incremento = Number(cfg.incremento) || 0;
-    const celdaVacia = f.StockActual === null || f.StockActual === undefined || String(f.StockActual).trim() === "";
-    const stockActual = celdaVacia ? stockMinimo * 0.5 : (Number(f.StockActual) || 0);
+    const stockActual = Number(f.StockActual) || 0;
     const yaPendiente = pendiente[ref] || 0;
-    // Redondeado hacia arriba: no se puede pedir "2.5 unidades" de un envase.
-    // Puede salir fraccionario si la celda de stock actual viene vacia (se
-    // asume el 50% del minimo) y el minimo configurado es impar.
-    const cantidad = Math.ceil(Math.max(stockMinimo + incremento - stockActual - yaPendiente, 0));
-    if (cantidad <= 0) return;
+    const necesidad = Math.ceil(Math.max(stockMinimo + incremento - stockActual - yaPendiente, 0));
+    if (necesidad <= 0) return;
+    // Europool va remontado (dos unidades reales por hueco de camion): se
+    // pide el doble de la necesidad para que lleguen los huecos que hacen
+    // falta, igual que en el resto de pedidos de envases.
+    const cantidad = cat.tipo === "europool" ? necesidad * 2 : necesidad;
     lineas.push({ ref, desc: cat.desc, cantidad });
     if (cat.tipo === "europool") europool += cantidad; else normal += cantidad;
   });
@@ -2364,8 +2365,11 @@ function calcularPedidoAutomaticoStockMinimo(config) {
     if (!cat) continue;
     const stockMinimo = Number(config[ref].stockMinimo) || 0;
     if (stockMinimo <= 0) continue;
-    const cantidad = Math.ceil(stockMinimo * 0.4);
-    if (cantidad <= 0) continue;
+    const necesidad = Math.ceil(stockMinimo * 0.4);
+    if (necesidad <= 0) continue;
+    // Europool va remontado (dos unidades reales por hueco de camion): se
+    // pide el doble de la necesidad, igual que en el resto de pedidos.
+    const cantidad = cat.tipo === "europool" ? necesidad * 2 : necesidad;
     lineas.push({ ref, desc: cat.desc, cantidad });
     if (cat.tipo === "europool") europool += cantidad; else normal += cantidad;
   }
