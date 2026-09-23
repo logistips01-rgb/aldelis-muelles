@@ -698,6 +698,8 @@ function aplicarRol() {
   const esAdminIA = auth.currentUser && ADMINS.includes((auth.currentUser.email || "").toLowerCase());
   const btnAsistente = document.getElementById("btn-vista-asistente");
   if (btnAsistente) btnAsistente.style.display = esAdminIA ? "" : "none";
+  const btnCorreo = document.getElementById("btn-vista-correo");
+  if (btnCorreo) btnCorreo.style.display = esAdminIA ? "" : "none";
 
   // Pedido de envases detallado a Avitrans: de momento, solo admin.
   const envasesDet = document.getElementById("envases-detallado-admin");
@@ -736,7 +738,7 @@ document.addEventListener("click", (ev) => {
 function switchVista(vista) {
   // No permitir entrar en una vista sin permiso
   if (_perms.ver && _perms.ver[vista] === false) return;
-  ["rejilla", "lista", "informes", "lanzaderas", "pedidos", "cargas", "merca", "arento", "bizerba", "config", "costes", "cambios", "furgoneta", "compras", "asistente"].forEach(v => {
+  ["rejilla", "lista", "informes", "lanzaderas", "pedidos", "cargas", "merca", "arento", "bizerba", "config", "costes", "cambios", "furgoneta", "compras", "asistente", "correo"].forEach(v => {
     document.getElementById("vista-" + v).style.display = vista === v ? "block" : "none";
     document.getElementById("btn-vista-" + v).classList.toggle("active", vista === v);
   });
@@ -5317,6 +5319,45 @@ function hablarAsistente(texto) {
     u.lang = "es-ES";
     window.speechSynthesis.speak(u);
   } catch (e) { console.warn("hablarAsistente:", e.message); }
+}
+
+// ─── ROBIN GESTIONANDO EL CORREO PERSONAL (pestaña "Correo") ────────────────
+// Mismo patron que el Asistente, pero llamando a preguntarRobinCorreo (que
+// usa herramientas propias sobre el correo personal del usuario, no el
+// buzon de pedidos).
+function agregarMensajeCorreo(rol, texto) {
+  const cont = document.getElementById("correo-conversacion");
+  if (!cont) return;
+  const esUsuario = rol === "usuario";
+  const burbuja = document.createElement("div");
+  burbuja.style.cssText = "align-self:" + (esUsuario ? "flex-end" : "flex-start") +
+    ";max-width:80%;padding:10px 14px;border-radius:12px;font-size:14px;white-space:pre-wrap;" +
+    (esUsuario ? "background:#1A1A1A;color:#fff" : "background:#F1F2F5;color:#1A1A1A");
+  burbuja.textContent = texto;
+  cont.appendChild(burbuja);
+  cont.scrollTop = cont.scrollHeight;
+}
+
+async function preguntarRobinCorreoUI() {
+  const input = document.getElementById("correo-input");
+  const mensaje = (input.value || "").trim();
+  if (!mensaje) return;
+  const estado = document.getElementById("correo-estado");
+  agregarMensajeCorreo("usuario", mensaje);
+  input.value = "";
+  estado.textContent = "Pensando...";
+  try {
+    const res = await firebase.functions().httpsCallable("preguntarRobinCorreo")({ mensaje });
+    if (res.data && res.data.ok) {
+      agregarMensajeCorreo("asistente", res.data.respuesta);
+      estado.textContent = "";
+    } else {
+      estado.textContent = (res.data && res.data.error) || "No se pudo obtener respuesta.";
+    }
+  } catch (e) {
+    console.error("preguntarRobinCorreoUI:", e);
+    estado.textContent = "Error al preguntar.";
+  }
 }
 
 let _asistenteReconocimiento = null;

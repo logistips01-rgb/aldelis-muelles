@@ -68,6 +68,7 @@
         <button class="tab-view" id="btn-vista-compras" onclick="switchVista('compras')" style="display:none">Compras</button>
         <button class="tab-view" id="btn-vista-config" onclick="switchVista('config')" style="display:none">Config</button>
         <button class="tab-view" id="btn-vista-asistente" onclick="switchVista('asistente')" style="display:none">🤖 Asistente</button>
+        <button class="tab-view" id="btn-vista-correo" onclick="switchVista('correo')" style="display:none">✉️ Correo</button>
 
         <div class="topbar-dropdown" id="topbar-mas-wrap">
           <button class="tab-view" id="btn-topbar-mas" onclick="toggleTopbarMas(event)">Más ▾</button>
@@ -468,6 +469,26 @@
         <button class="btn-confirm" style="width:auto" onclick="preguntarAsistenteIA()">Preguntar</button>
       </div>
       <div id="asistente-estado" style="font-size:12px;color:#9CA3AF;margin-top:8px"></div>
+    </div>
+
+    <div id="vista-correo" class="reservas-wrap" style="display:none">
+      <div class="informe-header">
+        <div class="section-title" style="margin-bottom:0">Correo</div>
+      </div>
+      <p style="font-size:13px;color:#6B7280;margin-bottom:14px">
+        Gestiona tu correo de trabajo: pídele que te resuma correos de un remitente, que liste los no leídos,
+        que borre correos anteriores a una fecha (siempre te enseña cuáles antes de borrar y espera tu
+        confirmación) o que envíe o programe una respuesta. Solo actúa sobre tu propio correo, nunca el de
+        otra persona.
+      </p>
+      <div id="correo-conversacion" style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px;max-width:720px"></div>
+      <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;max-width:720px">
+        <textarea id="correo-input" rows="2" placeholder="Ej: resume los últimos correos de fulano@empresa.com"
+          style="flex:1;min-width:240px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit;resize:vertical"
+          onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();preguntarRobinCorreoUI();}"></textarea>
+        <button class="btn-confirm" style="width:auto" onclick="preguntarRobinCorreoUI()">Preguntar</button>
+      </div>
+      <div id="correo-estado" style="font-size:12px;color:#9CA3AF;margin-top:8px"></div>
     </div>
 
     <div id="vista-costes" class="reservas-wrap" style="display:none">
