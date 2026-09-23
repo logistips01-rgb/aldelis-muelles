@@ -4539,6 +4539,60 @@ exports.probarEnvioBuzon = functions.https.onCall(async (request, context) => {
   }
 });
 
+// Prueba funcional de Mail.ReadWrite (no solo mirar si aparece concedido en
+// Azure, sino comprobar que de verdad funciona): coge el correo mas reciente
+// del buzon, le cambia el "leido" al valor contrario y lo vuelve a dejar
+// como estaba, para no dejar ningun efecto secundario. Si el primer cambio
+// falla con 403, el permiso no esta concedido (o esta bloqueado por alguna
+// politica); si el que falla es el de deshacerlo, se avisa igualmente para
+// que se revise a mano ese correo en concreto.
+exports.probarEscrituraBuzon = functions.https.onCall(async (request, context) => {
+  const esV2 = !!(request && typeof request === "object" && request.data !== undefined);
+  const data = esV2 ? request.data : request;
+  const ctx  = esV2 ? request : (context || {});
+  if (!ctx.app) return { ok: false, error: "No autorizado" };
+  const email = (ctx.auth && ctx.auth.token && ctx.auth.token.email || "").toLowerCase();
+  if (!ADMINS_APP.includes(email)) return { ok: false, error: "Sin permiso" };
+
+  const buzon = (data && data.buzon) || "mlorente@aldelis.com";
+  try {
+    const token = await obtenerTokenMS();
+
+    const listado = await fetch(
+      "https://graph.microsoft.com/v1.0/users/" + encodeURIComponent(buzon) +
+      "/mailFolders/inbox/messages?$top=1&$select=id,subject,isRead",
+      { headers: { Authorization: "Bearer " + token } }
+    );
+    const listadoCuerpo = await listado.json();
+    if (!listado.ok) {
+      return { ok: false, error: "Graph " + listado.status + ": " + (listadoCuerpo.error && listadoCuerpo.error.message || JSON.stringify(listadoCuerpo)) };
+    }
+    const msg = (listadoCuerpo.value || [])[0];
+    if (!msg) return { ok: false, error: "No hay ningun correo en la bandeja de entrada de " + buzon + " para poder probarlo." };
+
+    const patch = async (isRead) => fetch(
+      "https://graph.microsoft.com/v1.0/users/" + encodeURIComponent(buzon) + "/messages/" + msg.id,
+      { method: "PATCH", headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" }, body: JSON.stringify({ isRead }) }
+    );
+
+    const cambio = await patch(!msg.isRead);
+    if (!cambio.ok) {
+      const cuerpo = await cambio.json().catch(() => ({}));
+      return { ok: false, error: "Graph " + cambio.status + ": " + (cuerpo.error && cuerpo.error.message || JSON.stringify(cuerpo)) + " — Mail.ReadWrite no funciona sobre este buzon." };
+    }
+
+    const deshacer = await patch(msg.isRead);
+    if (!deshacer.ok) {
+      return { ok: true, buzon, asunto: msg.subject, aviso: "El cambio funcionó, pero no se pudo deshacer: revisa a mano el correo \"" + msg.subject + "\" (puede haber quedado marcado " + (!msg.isRead ? "leído" : "no leído") + ")." };
+    }
+
+    return { ok: true, buzon, asunto: msg.subject };
+  } catch (e) {
+    console.error("probarEscrituraBuzon:", e.message);
+    return { ok: false, error: e.message };
+  }
+});
+
 // ── Robin por correo: asunto "info" ─────────────────────────────────────
 //
 // Los mismos compañeros autorizados pueden preguntarle a Robin por correo en

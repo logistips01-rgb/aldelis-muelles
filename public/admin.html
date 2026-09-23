@@ -871,6 +871,16 @@
               </div>
               <div id="cfg-buzon-envio-resultado" style="font-size:13px;margin-top:10px"></div>
             </div>
+            <div style="margin-top:16px;border-top:1px solid #e5e5e7;padding-top:14px">
+              <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">Probar archivar/gestionar (Mail.ReadWrite)</label>
+              <p style="font-size:12.5px;color:#6B7280;margin-bottom:10px">
+                Coge el correo más reciente del buzón de arriba, le cambia el estado de "leído" y lo deja tal cual
+                estaba, para comprobar si el permiso de lectura/escritura funciona de verdad (no solo si aparece
+                concedido en Azure). No archiva ni borra nada, solo prueba el permiso.
+              </p>
+              <button class="btn-ghost" style="width:auto;padding:9px 18px" onclick="probarEscrituraBuzon()">Probar lectura/escritura</button>
+              <div id="cfg-buzon-escritura-resultado" style="font-size:13px;margin-top:10px"></div>
+            </div>
           </div>
 
         </div>

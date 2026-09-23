@@ -4479,6 +4479,29 @@ function probarEnvioBuzon() {
     });
 }
 
+function probarEscrituraBuzon() {
+  const buzon = document.getElementById("cfg-buzon-prueba").value.trim();
+  const cont = document.getElementById("cfg-buzon-escritura-resultado");
+  if (!buzon) { cont.style.color = "#D41F3A"; cont.textContent = "Pon primero el buzón de arriba."; return; }
+  cont.style.color = "";
+  cont.textContent = "Probando...";
+  firebase.functions().httpsCallable("probarEscrituraBuzon")({ buzon })
+    .then(res => {
+      if (!res.data || !res.data.ok) {
+        cont.style.color = "#D41F3A";
+        cont.textContent = (res.data && res.data.error) || "No se pudo probar la lectura/escritura.";
+        return;
+      }
+      cont.style.color = res.data.aviso ? "#F59E0B" : "#1D9E75";
+      cont.textContent = res.data.aviso ||
+        ("Funciona correctamente sobre \"" + res.data.asunto + "\" — el permiso de lectura/escritura está activo.");
+    })
+    .catch(e => {
+      cont.style.color = "#D41F3A";
+      cont.textContent = "Error: " + e.message;
+    });
+}
+
 async function guardarCierresAlmacenes() {
   const datos = {};
   for (const id of ["avitrans", "caserfri", "txt"]) {
