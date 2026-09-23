@@ -1450,9 +1450,17 @@ function abrirPtDetalle(id) {
   if (esEnvase) {
     lineasEl.innerHTML = "<div class='pt-admin-tit'>Contenido (" + lineas.length + " referencia" + (lineas.length === 1 ? "" : "s") + ")</div>" +
       "<div style='max-height:220px;overflow-y:auto'>" +
-      lineas.map(l => "<div class='pt-admin-row' style='cursor:default;flex-direction:column;align-items:flex-start;gap:2px'>" +
-        "<span>" + esc(l.desc || l.ref || "") + "</span>" +
-        "<span class='tnum' style='color:#9CA3AF;font-size:12px'>" + esc(l.ref || "") + " · " + (l.cantidad || 0) + " ud.</span></div>").join("") +
+      lineas.map(l => {
+        // Europool va remontado: la cantidad son unidades reales (el doble
+        // de lo que ocupa en huecos de camion), asi que se aclara aparte
+        // para que cuadre a simple vista con el total de "Palets del pedido".
+        const cat = CATALOGO_ENVASES_AVITRANS.find(c => c.ref === l.ref);
+        const esEuropool = cat && cat.tipo === "europool";
+        const huecos = esEuropool ? " (" + Math.ceil((l.cantidad || 0) / 2) + " hueco" + (Math.ceil((l.cantidad || 0) / 2) === 1 ? "" : "s") + " de camión)" : "";
+        return "<div class='pt-admin-row' style='cursor:default;flex-direction:column;align-items:flex-start;gap:2px'>" +
+          "<span>" + esc(l.desc || l.ref || "") + "</span>" +
+          "<span class='tnum' style='color:#9CA3AF;font-size:12px'>" + esc(l.ref || "") + " · " + (l.cantidad || 0) + " ud." + huecos + "</span></div>";
+      }).join("") +
       "</div>";
   } else if (lineas.length) {
     lineasEl.innerHTML = "<div class='pt-admin-tit'>Contenido (" + lineas.length + " SSCC)</div>" +
