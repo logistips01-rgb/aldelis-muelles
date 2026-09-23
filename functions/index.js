@@ -2107,6 +2107,9 @@ function normalizarFilaEnvasesStockMinimo(fila) {
 // con la misma logica de Europool (doble cantidad, mitad de hueco de camion)
 // que el resto de pedidos de envases. El stock minimo/incremento salen de
 // Firestore (config de panel), nunca del propio Excel recibido por correo.
+// Si la celda de Stock actual viene vacia (referencia obsoleta, o se olvido
+// rellenarla), se asume el 50% del stock minimo, para no pedir de mas (como
+// si no quedara nada) ni de menos (como si estuviera lleno).
 async function calcularPedidoEnvasesPorStockMinimo(buffer) {
   const filas = leerExcelConHeaderAuto(buffer).map(normalizarFilaEnvasesStockMinimo);
   const configSnap = await db.collection("envases_stock_minimo_config").get();
@@ -2121,9 +2124,10 @@ async function calcularPedidoEnvasesPorStockMinimo(buffer) {
     if (!cat) return;
     const cfg = config[ref];
     if (!cfg) return; // sin stock minimo configurado, no se pide nada de esta referencia
-    const stockActual = Number(f.StockActual) || 0;
     const stockMinimo = Number(cfg.stockMinimo) || 0;
     const incremento = Number(cfg.incremento) || 0;
+    const celdaVacia = f.StockActual === null || f.StockActual === undefined || String(f.StockActual).trim() === "";
+    const stockActual = celdaVacia ? stockMinimo * 0.5 : (Number(f.StockActual) || 0);
     const cantidad = Math.max(stockMinimo + incremento - stockActual, 0);
     if (cantidad <= 0) return;
     lineas.push({ ref, desc: cat.desc, cantidad });
