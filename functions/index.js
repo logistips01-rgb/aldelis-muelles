@@ -2196,10 +2196,26 @@ exports.revisarCorreoStockMinimoEnvases = onSchedule(
     "Stock envases", "envases_stock_minimo_procesados", calcularPedidoEnvasesPorStockMinimo)
 );
 
+// Entre las 10:00 y las 11:30 (justo antes del automatico de las 11:30) se
+// revisa cada 15 min en vez de cada hora, para dar mas margen a que el
+// correo real llegue a tiempo. La idempotencia por mensaje evita cualquier
+// problema si coincide con la pasada horaria de arriba.
+exports.revisarCorreoStockMinimoEnvasesAgil = onSchedule(
+  { schedule: "*/15 10-11 * * *", timeZone: "Europe/Madrid" },
+  () => revisarCorreoStockMinimoEnvasesInterno("revisarCorreoStockMinimoEnvasesAgil",
+    "Stock envases", "envases_stock_minimo_procesados", calcularPedidoEnvasesPorStockMinimo)
+);
+
 // Correo separado con el stock de Logifruit (lo manda otra persona distinta).
 exports.revisarCorreoStockMinimoLogifruitEnvases = onSchedule(
   { schedule: "0 * * * *", timeZone: "Europe/Madrid" },
   () => revisarCorreoStockMinimoEnvasesInterno("revisarCorreoStockMinimoLogifruitEnvases",
+    "Stock envases logifruit", "envases_stock_minimo_logifruit_procesados", calcularPedidoEnvasesLogifruitPorStockMinimo)
+);
+
+exports.revisarCorreoStockMinimoLogifruitEnvasesAgil = onSchedule(
+  { schedule: "*/15 10-11 * * *", timeZone: "Europe/Madrid" },
+  () => revisarCorreoStockMinimoEnvasesInterno("revisarCorreoStockMinimoLogifruitEnvasesAgil",
     "Stock envases logifruit", "envases_stock_minimo_logifruit_procesados", calcularPedidoEnvasesLogifruitPorStockMinimo)
 );
 
