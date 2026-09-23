@@ -5507,11 +5507,12 @@ async function eliminarComprasMaestro(familia, ref) {
 // ficheros que llegan por correo (primera fila con algun texto), para que
 // el maestro se importe igual aunque venga con alguna fila en blanco antes.
 const COMPRAS_ALIAS_MAESTRO_IMPORT = {
-  "referencia": "Referencia", "descripcion": "Descripcion",
-  "lead_time": "Lead_time", "leadtime": "Lead_time",
+  "referencia": "Referencia", "descripcion": "Descripcion", "cod": "Referencia",
+  "lead_time": "Lead_time", "leadtime": "Lead_time", "lead time (dias)": "Lead_time",
   "stock_seguridad": "Stock_seguridad", "stockseguridad": "Stock_seguridad",
-  "unidades_palet": "Unidades_palet", "unidadespalet": "Unidades_palet",
-  "incremento": "Incremento", "situacion": "Situacion"
+  "unidades_palet": "Unidades_palet", "unidadespalet": "Unidades_palet", "ud": "Unidades_palet",
+  "incremento": "Incremento", "situacion": "Situacion",
+  "proveedor": "Proveedor", "almacen": "Almacen", "medida": "Medida", "obs": "Obs"
 };
 
 function leerExcelConHeaderAutoCliente(datosBinarios) {
@@ -5545,7 +5546,7 @@ function importarComprasMaestroExcel(familia, input) {
       const filas = leerExcelConHeaderAutoCliente(ev.target.result).map(f => {
         const out = {};
         for (const k in f) {
-          const norm = String(k).trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+          const norm = String(k).trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ");
           const canon = COMPRAS_ALIAS_MAESTRO_IMPORT[norm];
           if (canon) out[canon] = f[k];
         }
@@ -5557,18 +5558,25 @@ function importarComprasMaestroExcel(familia, input) {
       filas.forEach(f => {
         const ref = String(f.Referencia || "").trim().toUpperCase();
         const leadTime = Number(f.Lead_time);
-        const stockSeguridad = Number(f.Stock_seguridad);
+        // Si el archivo no trae stock de seguridad (p.ej. el maestro de
+        // SAICA), se pone a 0 y se afina despues a mano, en vez de
+        // descartar la referencia entera.
+        const stockSeguridad = Number(f.Stock_seguridad) || 0;
         const unidadesPalet = Number(f.Unidades_palet);
         const incremento = Number(f.Incremento) || 0;
         let situacion = String(f.Situacion || "ACTIVA").trim().toUpperCase();
         if (!["ACTIVA", "BAJA", "MERCA"].includes(situacion)) situacion = "ACTIVA";
-        if (!ref || !(leadTime >= 0) || !(stockSeguridad >= 0) || !(unidadesPalet > 0)) {
+        if (!ref || !(leadTime >= 0) || !(unidadesPalet > 0)) {
           descartadas.push(ref || "(sin referencia)");
           return;
         }
         validas.push({
           ref, descripcion: String(f.Descripcion || "").trim(),
-          leadTime, stockSeguridad, unidadesPalet, incremento, situacion
+          leadTime, stockSeguridad, unidadesPalet, incremento, situacion,
+          proveedor: f.Proveedor ? String(f.Proveedor).trim() : null,
+          almacen: f.Almacen ? String(f.Almacen).trim() : null,
+          medida: f.Medida ? String(f.Medida).trim() : null,
+          obs: f.Obs ? String(f.Obs).trim() : null
         });
       });
 
@@ -5584,7 +5592,8 @@ function importarComprasMaestroExcel(familia, input) {
         validas.slice(i, i + 400).forEach(v => {
           batch.set(db.collection("compras_" + familia + "_maestro").doc(v.ref), {
             descripcion: v.descripcion, leadTime: v.leadTime, stockSeguridad: v.stockSeguridad,
-            unidadesPalet: v.unidadesPalet, incremento: v.incremento, situacion: v.situacion
+            unidadesPalet: v.unidadesPalet, incremento: v.incremento, situacion: v.situacion,
+            proveedor: v.proveedor, almacen: v.almacen, medida: v.medida, obs: v.obs
           });
         });
         await batch.commit();

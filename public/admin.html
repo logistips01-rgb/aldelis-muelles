@@ -591,9 +591,11 @@
         <div class="informe-card" style="margin-bottom:16px">
           <div class="informe-card-title">Importar maestro desde Excel</div>
           <p style="font-size:12.5px;color:#6B7280;margin-bottom:10px">
-            Columnas esperadas: Referencia, Descripcion, Lead_time, Stock_Seguridad, Unidades_Palet,
-            Incremento (opcional), Situacion (opcional, ACTIVA por defecto). Reemplaza por completo los
-            datos de cada referencia que aparezca en el archivo; las que no estén en el archivo no se tocan.
+            Columnas esperadas: Referencia (o COD), Descripcion, Lead_time (o "Lead Time (dias)"),
+            Unidades_Palet (o Ud), Stock_Seguridad (opcional, 0 si no viene), Incremento (opcional),
+            Situacion (opcional, ACTIVA por defecto). También admite Proveedor, Almacen, Medida y Obs si
+            vienen en el archivo (se guardan aunque no se usen todavía). Reemplaza por completo los datos
+            de cada referencia que aparezca en el archivo; las que no estén en el archivo no se tocan.
           </p>
           <input type="file" id="compras-m-import-file-carton" accept=".xlsx,.xls" onchange="importarComprasMaestroExcel('carton', this)">
           <div id="compras-m-import-estado-carton" style="font-size:13px;margin-top:8px"></div>
