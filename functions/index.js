@@ -2541,7 +2541,7 @@ async function ejecutarPedidoAutomaticoStockMinimoEnvases(origen, soloVista) {
 
   const totalCombinado = porAlmacen.avitrans.total + porAlmacen.txt.total;
   const lineasCombinadas = porAlmacen.avitrans.lineas.length + porAlmacen.txt.lineas.length;
-  if (soloVista) return { ok: true, total: totalCombinado, lineas: lineasCombinadas };
+  if (soloVista) return { ok: true, total: totalCombinado, lineas: lineasCombinadas, porAlmacen };
 
   let totalLineas;
   try {
@@ -2577,7 +2577,7 @@ exports.probarPedidoAutomaticoStockMinimoEnvases = functions.https.onCall(async 
 
   const resultado = await ejecutarPedidoAutomaticoStockMinimoEnvases("probarPedidoAutomaticoStockMinimoEnvases", true);
   if (!resultado.ok) return { ok: false, error: "No se pudo calcular el pedido." };
-  return { ok: true, total: resultado.total, lineas: resultado.lineas };
+  return { ok: true, total: resultado.total, lineas: resultado.lineas, porAlmacen: resultado.porAlmacen };
 });
 
 // A veces el chofer se olvida de marcarlo al salir: se registra a mano desde

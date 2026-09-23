@@ -1806,10 +1806,8 @@ function probarPedidoAutomaticoStockMinimoEnvases() {
         return;
       }
       cont.style.color = "";
-      cont.innerHTML = (res.data.lineas === 0
-        ? "Hoy no se pediría nada (ninguna referencia configurada con stock mínimo)."
-        : res.data.lineas + " referencia(s) con pedido, " + res.data.total + " huecos de camión.") +
-        " Esto es solo una vista previa: no se ha enviado nada.";
+      cont.innerHTML = formatearDetallePorAlmacen(res.data.porAlmacen, res.data.lineas === 0) +
+        "<div style='margin-top:8px;color:#6B7280'>Vista previa (recogida mañana): no se ha enviado nada.</div>";
     })
     .catch(e => {
       cont.style.color = "#D41F3A";
@@ -1851,6 +1849,26 @@ function formatearResultadoProbarCorreoStockMinimo(data) {
       data.asuntosVistos.map(esc).join(" · ") + "</span>";
   }
   return html;
+}
+
+const ENVASES_ALMACEN_ETIQUETA_CLIENTE = { avitrans: "Avitrans", txt: "Txt" };
+
+// Pinta el detalle de un pedido calculado por almacen (formato
+// {avitrans:{lineas,total}, txt:{lineas,total}}), tal y como devuelven los
+// callables de stock minimo, para verlo en el panel sin tener que mirar el
+// correo.
+function formatearDetallePorAlmacen(porAlmacen, sinNada) {
+  if (sinNada || !porAlmacen) return "<div>No hace falta pedir nada.</div>";
+  const almacenesConLineas = Object.keys(porAlmacen).filter(a => porAlmacen[a].lineas && porAlmacen[a].lineas.length);
+  if (!almacenesConLineas.length) return "<div>No hace falta pedir nada.</div>";
+  return almacenesConLineas.map(almacen => {
+    const r = porAlmacen[almacen];
+    return "<div style='margin-top:8px'>" +
+      "<strong>" + (ENVASES_ALMACEN_ETIQUETA_CLIENTE[almacen] || almacen) + "</strong> (" + r.total + " huecos de camión)" +
+      "<ul style='margin:4px 0 0 18px;padding:0'>" +
+      r.lineas.map(l => "<li>" + esc(l.ref) + " - " + esc(l.desc) + ": " + l.cantidad + "</li>").join("") +
+      "</ul></div>";
+  }).join("");
 }
 
 // Igual que probarStockMinimoEnvasesCorreo pero para el correo separado de
