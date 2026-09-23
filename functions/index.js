@@ -2262,6 +2262,7 @@ function calcularPedidoAutomaticoStockMinimo(config) {
   for (const ref in config) {
     const cat = CATALOGO_ENVASES_AVITRANS[ref];
     if (!cat) continue;
+    if (cat.desc.includes("LOGIFRUIT")) continue; // logifruit se pide a mano (o via el correo), nunca en el 40% automatico
     const stockMinimo = Number(config[ref].stockMinimo) || 0;
     if (stockMinimo <= 0) continue;
     const cantidad = Math.ceil(stockMinimo * 0.4);
