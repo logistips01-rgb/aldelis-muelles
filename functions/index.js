@@ -2232,18 +2232,22 @@ async function revisarCorreoStockMinimoEnvasesInterno(origen, asunto, coleccionP
 
   // Filtro amplio en el servidor (no leidos, con adjunto) y comparacion del
   // asunto en el propio codigo (sin distinguir mayusculas/minusculas ni
-  // espacios de mas) - mas tolerante que un "eq" exacto en Graph, que no
-  // siempre se comporta igual segun mayusculas.
+  // espacios de mas) - mas tolerante que un "eq" exacto en Graph. Se ordena
+  // por fecha de recepcion descendente y se pide un buen numero de
+  // resultados para que el correo de hoy no se quede fuera de la pagina si
+  // el buzon compartido tiene mucho trafico sin leer (albaranes, ACOPAL...).
   const data = await graphGet(token,
     "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS +
     "/mailFolders/inbox/messages?$filter=" + encodeURIComponent("isRead eq false and hasAttachments eq true") +
-    "&$top=50&$select=id,subject,hasAttachments,receivedDateTime");
+    "&$orderby=receivedDateTime desc&$top=100&$select=id,subject,hasAttachments,receivedDateTime");
 
   const asuntoNorm = asunto.trim().toLowerCase();
-  const mensajes = (data.value || []).filter(m => (m.subject || "").trim().toLowerCase() === asuntoNorm);
+  const todos = data.value || [];
+  const mensajes = todos.filter(m => (m.subject || "").trim().toLowerCase() === asuntoNorm);
 
   const candidatos = mensajes.length;
-  console.log(origen + ": " + candidatos + " correo(s) candidato(s).");
+  console.log(origen + ": " + candidatos + " correo(s) candidato(s) de " + todos.length +
+    " no leido(s) con adjunto. Asuntos vistos: " + todos.slice(0, 20).map(m => "'" + m.subject + "'").join(", "));
 
   let procesados = 0;
   for (const msg of mensajes) {
@@ -2303,7 +2307,7 @@ async function revisarCorreoStockMinimoEnvasesInterno(origen, asunto, coleccionP
       console.error(origen + ": mensaje", msg.id, e.message);
     }
   }
-  return { candidatos, procesados };
+  return { candidatos, procesados, asuntosVistos: todos.slice(0, 20).map(m => m.subject || "(sin asunto)") };
 }
 
 // Boton "Probar ahora" del panel: dispara la revision al momento (no espera
@@ -2318,7 +2322,7 @@ exports.probarRevisarCorreoStockMinimoEnvases = functions.https.onCall(async (re
   try {
     const resultado = await revisarCorreoStockMinimoEnvasesInterno("probarRevisarCorreoStockMinimoEnvases",
       "Stock envases", "envases_stock_minimo_procesados", calcularPedidoEnvasesPorStockMinimo, false);
-    return { ok: true, candidatos: resultado.candidatos, procesados: resultado.procesados };
+    return { ok: true, candidatos: resultado.candidatos, procesados: resultado.procesados, asuntosVistos: resultado.asuntosVistos };
   } catch (e) {
     console.error("probarRevisarCorreoStockMinimoEnvases:", e.message);
     return { ok: false, error: e.message };
@@ -2336,7 +2340,7 @@ exports.probarRevisarCorreoStockMinimoLogifruitEnvases = functions.https.onCall(
   try {
     const resultado = await revisarCorreoStockMinimoEnvasesInterno("probarRevisarCorreoStockMinimoLogifruitEnvases",
       "Stock envases logifruit", "envases_stock_minimo_logifruit_procesados", calcularPedidoEnvasesLogifruitPorStockMinimo, true);
-    return { ok: true, candidatos: resultado.candidatos, procesados: resultado.procesados };
+    return { ok: true, candidatos: resultado.candidatos, procesados: resultado.procesados, asuntosVistos: resultado.asuntosVistos };
   } catch (e) {
     console.error("probarRevisarCorreoStockMinimoLogifruitEnvases:", e.message);
     return { ok: false, error: e.message };

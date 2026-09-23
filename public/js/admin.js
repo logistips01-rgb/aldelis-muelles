@@ -1799,13 +1799,25 @@ function probarStockMinimoEnvasesCorreo() {
         return;
       }
       cont.style.color = "";
-      cont.innerHTML = res.data.candidatos + " correo(s) candidato(s) encontrado(s), " +
-        res.data.procesados + " procesado(s) ahora. Si hay pedido, revisa tu correo de prueba.";
+      cont.innerHTML = formatearResultadoProbarCorreoStockMinimo(res.data);
     })
     .catch(e => {
       cont.style.color = "#D41F3A";
       cont.innerHTML = "Error: " + e.message;
     });
+}
+
+// Cuando no encuentra ningun candidato, enseña que asuntos SI ha visto entre
+// los no leidos con adjunto, para poder diagnosticar sin mirar logs (p.ej.
+// si el correo real tiene un asunto ligeramente distinto al esperado).
+function formatearResultadoProbarCorreoStockMinimo(data) {
+  let html = data.candidatos + " correo(s) candidato(s) encontrado(s), " +
+    data.procesados + " procesado(s) ahora. Si hay pedido, revisa tu correo de prueba.";
+  if (!data.candidatos && data.asuntosVistos && data.asuntosVistos.length) {
+    html += "<br><span style='color:#6B7280'>Asuntos vistos entre los no leídos con adjunto: " +
+      data.asuntosVistos.map(esc).join(" · ") + "</span>";
+  }
+  return html;
 }
 
 // Igual que probarStockMinimoEnvasesCorreo pero para el correo separado de
@@ -1823,8 +1835,7 @@ function probarStockMinimoEnvasesLogifruitCorreo() {
         return;
       }
       cont.style.color = "";
-      cont.innerHTML = res.data.candidatos + " correo(s) candidato(s) encontrado(s), " +
-        res.data.procesados + " procesado(s) ahora. Si hay pedido, revisa tu correo de prueba.";
+      cont.innerHTML = formatearResultadoProbarCorreoStockMinimo(res.data);
     })
     .catch(e => {
       cont.style.color = "#D41F3A";
