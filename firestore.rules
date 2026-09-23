@@ -450,6 +450,18 @@ service cloud.firestore {
         && d.incremento is number && d.incremento >= 0;
     }
 
+    // Ultimo stock conocido por referencia y marca de "hoy ya se resolvio"
+    // (correo real o estimacion), usados por la estimacion automatica si no
+    // llega el correo antes de la hora limite. Solo los escribe el servidor.
+    match /envases_stock_minimo_ultimo/{referencia} {
+      allow read: if esAdmin();
+      allow write: if false;
+    }
+    match /envases_stock_minimo_dia/{fecha} {
+      allow read: if esAdmin();
+      allow write: if false;
+    }
+
     // Carton: mismo maestro editable a mano; stock/consumo/transito/pedido
     // base son los MISMOS documentos que bandejas (misma recogida de datos,
     // los mismos almacenes), asi que no hace falta duplicar esas reglas.

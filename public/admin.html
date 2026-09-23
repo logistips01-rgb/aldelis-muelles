@@ -371,6 +371,22 @@
         <button class="btn-informe" style="margin-top:16px" onclick="descargarPlantillaStockEnvases()">⬇️ Descargar plantilla Excel (solo stock actual)</button>
         <button class="btn-ghost" style="margin-top:16px;margin-left:8px" onclick="probarStockMinimoEnvasesCorreo()">🧪 Probar correo ahora</button>
         <div id="envases-stock-min-correo-resultado" style="font-size:13px;margin-top:8px;display:none"></div>
+
+        <div style="margin-top:24px;border-top:1px solid #e5e5e7;padding-top:16px">
+          <div class="sitio-elegir" style="font-size:14px">Si no llega el correo</div>
+          <p class="card-desc" style="margin-bottom:12px">
+            Si a esta hora no ha llegado el correo de "Stock envases" de hoy, se manda un pedido estimado (de
+            prueba), calculado con el último stock conocido de cada referencia.
+          </p>
+          <div class="field" style="max-width:160px;margin-bottom:12px">
+            <label>Hora límite</label>
+            <input type="time" id="cfg-envases-stockmin-hora">
+          </div>
+          <button class="btn-primary" style="width:auto;padding:9px 20px" onclick="guardarHoraLimiteStockMinimoEnvases()">Guardar hora límite</button>
+          <div id="envases-stock-min-hora-guardado" style="font-size:13px;margin-top:8px"></div>
+          <button class="btn-ghost" style="margin-top:12px" onclick="probarEstimacionStockMinimoEnvases()">🧪 Probar estimación ahora</button>
+          <div id="envases-stock-min-estimacion-resultado" style="font-size:13px;margin-top:8px;display:none"></div>
+        </div>
       </div>
     </div>
 
