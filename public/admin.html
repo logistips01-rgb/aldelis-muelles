@@ -349,14 +349,14 @@
       </div>
 
       <div id="envases-stock-minimo-admin" style="display:none;margin-top:28px;border-top:1px solid #e5e5e7;padding-top:20px">
-        <div class="sitio-elegir">5. Pedido automático por stock mínimo <span class="opt">(en prueba)</span></div>
+        <div class="sitio-elegir">5. Pedido automático por stock mínimo</div>
         <p class="card-desc" style="margin-bottom:12px">
           Configura aquí el stock mínimo que quieres mantener por referencia. Todos los días a las 11:30 se pide
-          automáticamente el <strong>40% de ese stock mínimo</strong> de cada referencia configurada (con la misma
-          lógica de Europool: doble cantidad, mitad de hueco de camión). Ya no hace falta mandar ningún correo cada
-          día; si un día hace falta pedir algo extra, se hace a mano desde los apartados 3 o 4 de más arriba. De
-          momento el resultado solo se manda a tu correo como prueba, no se manda a Avitrans ni se suma a los
-          pendientes todavía.
+          automáticamente a Avitrans el <strong>40% de ese stock mínimo</strong> de cada referencia configurada (con
+          la misma lógica de Europool: doble cantidad, mitad de hueco de camión), para recoger al día siguiente. El
+          pedido se manda de verdad a Avitrans (copia a mlorente y hmanero) y se suma a los pendientes. Ya no hace
+          falta mandar ningún correo cada día; si hace falta pedir algo extra, se hace a mano desde los apartados 3
+          o 4 de más arriba.
         </p>
         <div class="tabla-scroll">
           <table class="tabla-inf" id="envases-stock-min-tabla">
@@ -367,7 +367,7 @@
         <div id="envases-stock-min-error" style="color:#D41F3A;font-size:13px;margin:10px 0;display:none"></div>
         <button class="btn-primary" style="width:auto;padding:9px 20px;margin-top:12px" onclick="guardarConfigStockMinimoEnvases()">Guardar stock mínimo / incremento</button>
         <div id="envases-stock-min-guardado" style="font-size:13px;margin-top:8px"></div>
-        <button class="btn-ghost" style="margin-top:16px" onclick="probarPedidoAutomaticoStockMinimoEnvases()">🧪 Probar pedido automático ahora</button>
+        <button class="btn-ghost" style="margin-top:16px" onclick="probarPedidoAutomaticoStockMinimoEnvases()">👁️ Ver pedido de hoy <span class="opt">(sin enviarlo)</span></button>
         <div id="envases-stock-min-auto-resultado" style="font-size:13px;margin-top:8px;display:none"></div>
 
         <div style="margin-top:24px;border-top:1px solid #e5e5e7;padding-top:16px">
@@ -375,10 +375,11 @@
           <p class="card-desc" style="margin-bottom:12px">
             Si algún día quieres calcular el pedido con el stock actual real en vez del 40% automático, descarga
             esta plantilla, rellena "Stock actual" y mándala por correo a reservas@aldelis.com con asunto
-            <strong>"Stock envases"</strong>.
+            <strong>"Stock envases"</strong>. Este también se manda ya de verdad a Avitrans y se suma a los
+            pendientes.
           </p>
           <button class="btn-informe" onclick="descargarPlantillaStockEnvases()">⬇️ Descargar plantilla Excel (solo stock actual)</button>
-          <button class="btn-ghost" style="margin-left:8px" onclick="probarStockMinimoEnvasesCorreo()">🧪 Probar correo ahora</button>
+          <button class="btn-ghost" style="margin-left:8px" onclick="probarStockMinimoEnvasesCorreo()">🧪 Revisar correo ahora</button>
           <div id="envases-stock-min-correo-resultado" style="font-size:13px;margin-top:8px;display:none"></div>
         </div>
       </div>

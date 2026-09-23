@@ -1987,6 +1987,11 @@ async function estimarPedidoEnvasesTurno(turno, hoy) {
 // "almacen@avitrans.com" y descomentar la creacion del pedido real.
 const ENVASES_DESTINATARIO_PRUEBA = "mlorente@aldelis.com";
 
+// Destinatarios reales del pedido de envases por stock minimo (correo
+// procesado y automatico diario, ya en produccion): el propio Avitrans mas
+// mlorente/hmanero en copia, para poder verificar que se ha mandado.
+const ENVASES_STOCK_MINIMO_DESTINATARIOS = ["almacen@avitrans.com", "mlorente@aldelis.com", "hmanero@aldelis.com"];
+
 // forzar=true (boton "probar ahora" del panel) se salta la comprobacion de
 // "ya enviado hoy", para poder ver el correo de prueba sin esperar a la
 // hora de corte ni a que no haya pedido de hoy todavia.
@@ -2177,20 +2182,21 @@ async function revisarCorreoStockMinimoEnvasesInterno(origen) {
 
       const buffer = Buffer.from(excel.contentBytes, "base64");
       const resultado = await calcularPedidoEnvasesPorStockMinimo(buffer);
+      const fechaRecogida = fechaRecogidaTurno("dia", fechaHoyMadrid());
 
       if (!resultado.lineas.length) {
-        await enviarConGraph(token, ENVASES_DESTINATARIO_PRUEBA,
-          "[PRUEBA] Pedido envases por stock minimo — sin necesidad", null,
+        await enviarConGraph(token, [ENVASES_DESTINATARIO_PRUEBA, "hmanero@aldelis.com"],
+          "Pedido envases por stock mínimo — sin necesidad", null,
           "No hace falta pedir nada: todas las referencias estan por encima de su stock minimo.", null);
       } else {
-        const pt = "ENV-EST-" + Date.now().toString(36).toUpperCase();
-        const etiqueta = "<div style='background:#FEF3C7;padding:10px;border-radius:6px;margin-bottom:12px'>" +
-          "⚠️ PRUEBA: pedido calculado por stock minimo, solo informativo (no se ha mandado a Avitrans ni sumado a pendientes).</div>";
-        const html = htmlPedidoEnvases(pt, resultado.lineas, etiqueta);
-        const cuerpo = "PRUEBA — Pedido nº " + pt + " (" + resultado.total + " huecos de camion)\n\n" +
+        const pt = "ENV-" + Date.now().toString(36).toUpperCase();
+        await crearPedidoTransferencia(pt, "avitrans", { palets: resultado.total, lineas: resultado.lineas },
+          "stock-minimo-correo", fechaRecogida);
+        const html = htmlPedidoEnvases(pt, resultado.lineas);
+        const cuerpo = "Pedido nº " + pt + " (" + resultado.total + " huecos de camion)\n\n" +
           resultado.lineas.map(l => l.ref + " - " + l.desc + ": " + l.cantidad).join("\n");
-        await enviarConGraph(token, ENVASES_DESTINATARIO_PRUEBA,
-          "[PRUEBA] Pedido envases por stock minimo (" + resultado.total + " huecos)", html, cuerpo, null);
+        await enviarConGraph(token, ENVASES_STOCK_MINIMO_DESTINATARIOS,
+          "Recogida " + formatoFechaEs(fechaRecogida), html, cuerpo, null);
       }
       await graphMarcarLeido(token, msg.id);
       procesados++;
@@ -2241,13 +2247,14 @@ function calcularPedidoAutomaticoStockMinimo(config) {
   return { lineas, total: normal + Math.ceil(europool / 2) };
 }
 
-// forzar=true (boton "Probar ahora" del panel) se salta la comprobacion de
-// "ya enviado hoy", para poder probarlo sin esperar a las 11:30 ni depender
-// de si ya se disparo el cron.
-async function ejecutarPedidoAutomaticoStockMinimoEnvases(origen, forzar) {
+// soloVista=true (boton "Ver pedido de hoy" del panel): calcula el pedido de
+// hoy pero NO manda ningun correo, no crea el pedido real ni marca el dia
+// como enviado - es solo para consultar el importe sin efectos, ahora que
+// esto ya crea pedidos y correos reales de verdad.
+async function ejecutarPedidoAutomaticoStockMinimoEnvases(origen, soloVista) {
   const hoy = fechaHoyMadrid();
 
-  if (!forzar) {
+  if (!soloVista) {
     let diaDoc;
     try { diaDoc = await db.collection("envases_stock_minimo_auto_dia").doc(hoy).get(); }
     catch (e) { console.error(origen + ": consulta dia:", e.message); return { ok: false, motivo: "error_consulta" }; }
@@ -2258,23 +2265,25 @@ async function ejecutarPedidoAutomaticoStockMinimoEnvases(origen, forzar) {
   const config = {};
   configSnap.forEach(d => { config[d.id] = d.data(); });
   const resultado = calcularPedidoAutomaticoStockMinimo(config);
+  const fechaRecogida = fechaRecogidaTurno("dia", hoy);
+
+  if (soloVista) return { ok: true, total: resultado.total, lineas: resultado.lineas.length };
 
   try {
     const token = await obtenerTokenMS();
     if (!resultado.lineas.length) {
-      await enviarConGraph(token, ENVASES_DESTINATARIO_PRUEBA,
-        "[PRUEBA] Pedido automático diario de envases — sin referencias configuradas", null,
+      await enviarConGraph(token, [ENVASES_DESTINATARIO_PRUEBA, "hmanero@aldelis.com"],
+        "Pedido automático diario de envases — sin referencias configuradas", null,
         "No hay ninguna referencia con stock mínimo configurado, asi que no se ha pedido nada hoy.", null);
     } else {
-      const pt = "ENV-EST-" + Date.now().toString(36).toUpperCase();
-      const etiqueta = "<div style='background:#FEF3C7;color:#92400E;padding:10px 14px;border-radius:6px;margin-bottom:14px'>" +
-        "⚠️ PRUEBA: pedido automático diario (40% del stock mínimo de cada referencia configurada). " +
-        "No se ha enviado a Avitrans, es solo para revisar el formato.</div>";
-      const html = htmlPedidoEnvases(pt, resultado.lineas, etiqueta);
-      const cuerpo = "PRUEBA — Pedido automático diario nº " + pt + " (" + resultado.total + " huecos de camion)\n\n" +
+      const pt = "ENV-" + Date.now().toString(36).toUpperCase();
+      await crearPedidoTransferencia(pt, "avitrans", { palets: resultado.total, lineas: resultado.lineas },
+        "stock-minimo-auto", fechaRecogida);
+      const html = htmlPedidoEnvases(pt, resultado.lineas);
+      const cuerpo = "Pedido nº " + pt + " (" + resultado.total + " huecos de camion)\n\n" +
         resultado.lineas.map(l => l.ref + " - " + l.desc + ": " + l.cantidad).join("\n");
-      await enviarConGraph(token, ENVASES_DESTINATARIO_PRUEBA,
-        "[PRUEBA] Pedido automático diario de envases (" + resultado.total + " huecos)", html, cuerpo, null);
+      await enviarConGraph(token, ENVASES_STOCK_MINIMO_DESTINATARIOS,
+        "Recogida " + formatoFechaEs(fechaRecogida), html, cuerpo, null);
     }
   } catch (e) {
     console.error(origen + ": envio de correo:", e.message);
@@ -2294,7 +2303,8 @@ exports.pedidoAutomaticoStockMinimoEnvases = onSchedule(
   () => ejecutarPedidoAutomaticoStockMinimoEnvases("pedidoAutomaticoStockMinimoEnvases", false)
 );
 
-// Boton "Probar pedido automatico ahora" del panel.
+// Boton "Ver pedido de hoy" del panel: solo calcula y muestra, no manda nada
+// ni crea ningun pedido (para no duplicar el envio real de las 11:30).
 exports.probarPedidoAutomaticoStockMinimoEnvases = functions.https.onCall(async (request, context) => {
   const esV2 = !!(request && typeof request === "object" && request.data !== undefined);
   const ctx = esV2 ? request : (context || {});
@@ -2303,7 +2313,7 @@ exports.probarPedidoAutomaticoStockMinimoEnvases = functions.https.onCall(async 
   if (!email || !ADMINS_APP.includes(email)) return { ok: false, error: "Sin permiso" };
 
   const resultado = await ejecutarPedidoAutomaticoStockMinimoEnvases("probarPedidoAutomaticoStockMinimoEnvases", true);
-  if (!resultado.ok) return { ok: false, error: "No se pudo generar el pedido automático." };
+  if (!resultado.ok) return { ok: false, error: "No se pudo calcular el pedido." };
   return { ok: true, total: resultado.total, lineas: resultado.lineas };
 });
 

@@ -1758,21 +1758,25 @@ function guardarConfigStockMinimoEnvases() {
 
 // Dispara el pedido automatico diario (40% del stock minimo) al momento, sin
 // esperar a las 11:30, para poder probarlo sin tener que esperar.
+// Solo consulta el pedido que se mandaria hoy a las 11:30, no manda nada ni
+// crea ningun pedido (para no duplicar el envio real automatico).
 function probarPedidoAutomaticoStockMinimoEnvases() {
   const cont = document.getElementById("envases-stock-min-auto-resultado");
   cont.style.display = "block";
   cont.style.color = "";
-  cont.innerHTML = "Generando pedido automático...";
+  cont.innerHTML = "Calculando...";
   firebase.functions().httpsCallable("probarPedidoAutomaticoStockMinimoEnvases")({})
     .then(res => {
       if (!res.data || !res.data.ok) {
         cont.style.color = "#D41F3A";
-        cont.innerHTML = (res.data && res.data.error) || "No se pudo generar el pedido automático.";
+        cont.innerHTML = (res.data && res.data.error) || "No se pudo calcular el pedido.";
         return;
       }
       cont.style.color = "";
-      cont.innerHTML = res.data.lineas + " referencia(s) con pedido, " + res.data.total +
-        " huecos de camión. Revisa tu correo de prueba.";
+      cont.innerHTML = (res.data.lineas === 0
+        ? "Hoy no se pediría nada (ninguna referencia configurada con stock mínimo)."
+        : res.data.lineas + " referencia(s) con pedido, " + res.data.total + " huecos de camión.") +
+        " Esto es solo una vista previa: no se ha enviado nada.";
     })
     .catch(e => {
       cont.style.color = "#D41F3A";
@@ -1796,7 +1800,7 @@ function probarStockMinimoEnvasesCorreo() {
       }
       cont.style.color = "";
       cont.innerHTML = res.data.candidatos + " correo(s) candidato(s) encontrado(s), " +
-        res.data.procesados + " procesado(s) ahora. Si hay pedido, revisa tu correo de prueba.";
+        res.data.procesados + " procesado(s) ahora. Si hay pedido, se ha mandado ya a Avitrans.";
     })
     .catch(e => {
       cont.style.color = "#D41F3A";
