@@ -2220,6 +2220,93 @@ exports.probarRevisarCorreoStockMinimoEnvases = functions.https.onCall(async (re
   }
 });
 
+// Pedido automatico diario (EN PRUEBA): sustituye al correo manual de "Stock
+// envases". Cada dia a las 11:30 se pide, de cada referencia con stock
+// minimo configurado, directamente el 40% de ese stock minimo (sin mirar
+// stock actual ni incremento). Si un dia hace falta pedir algo mas, se hace
+// a mano desde el resto de apartados de envases.
+function calcularPedidoAutomaticoStockMinimo(config) {
+  const lineas = [];
+  let normal = 0, europool = 0;
+  for (const ref in config) {
+    const cat = CATALOGO_ENVASES_AVITRANS[ref];
+    if (!cat) continue;
+    const stockMinimo = Number(config[ref].stockMinimo) || 0;
+    if (stockMinimo <= 0) continue;
+    const cantidad = Math.ceil(stockMinimo * 0.4);
+    if (cantidad <= 0) continue;
+    lineas.push({ ref, desc: cat.desc, cantidad });
+    if (cat.tipo === "europool") europool += cantidad; else normal += cantidad;
+  }
+  return { lineas, total: normal + Math.ceil(europool / 2) };
+}
+
+// forzar=true (boton "Probar ahora" del panel) se salta la comprobacion de
+// "ya enviado hoy", para poder probarlo sin esperar a las 11:30 ni depender
+// de si ya se disparo el cron.
+async function ejecutarPedidoAutomaticoStockMinimoEnvases(origen, forzar) {
+  const hoy = fechaHoyMadrid();
+
+  if (!forzar) {
+    let diaDoc;
+    try { diaDoc = await db.collection("envases_stock_minimo_auto_dia").doc(hoy).get(); }
+    catch (e) { console.error(origen + ": consulta dia:", e.message); return { ok: false, motivo: "error_consulta" }; }
+    if (diaDoc.exists && diaDoc.data().enviado) return { ok: false, motivo: "ya_enviado_hoy" };
+  }
+
+  const configSnap = await db.collection("envases_stock_minimo_config").get();
+  const config = {};
+  configSnap.forEach(d => { config[d.id] = d.data(); });
+  const resultado = calcularPedidoAutomaticoStockMinimo(config);
+
+  try {
+    const token = await obtenerTokenMS();
+    if (!resultado.lineas.length) {
+      await enviarConGraph(token, ENVASES_DESTINATARIO_PRUEBA,
+        "[PRUEBA] Pedido automático diario de envases — sin referencias configuradas", null,
+        "No hay ninguna referencia con stock mínimo configurado, asi que no se ha pedido nada hoy.", null);
+    } else {
+      const pt = "ENV-EST-" + Date.now().toString(36).toUpperCase();
+      const etiqueta = "<div style='background:#FEF3C7;color:#92400E;padding:10px 14px;border-radius:6px;margin-bottom:14px'>" +
+        "⚠️ PRUEBA: pedido automático diario (40% del stock mínimo de cada referencia configurada). " +
+        "No se ha enviado a Avitrans, es solo para revisar el formato.</div>";
+      const html = htmlPedidoEnvases(pt, resultado.lineas, etiqueta);
+      const cuerpo = "PRUEBA — Pedido automático diario nº " + pt + " (" + resultado.total + " huecos de camion)\n\n" +
+        resultado.lineas.map(l => l.ref + " - " + l.desc + ": " + l.cantidad).join("\n");
+      await enviarConGraph(token, ENVASES_DESTINATARIO_PRUEBA,
+        "[PRUEBA] Pedido automático diario de envases (" + resultado.total + " huecos)", html, cuerpo, null);
+    }
+  } catch (e) {
+    console.error(origen + ": envio de correo:", e.message);
+    return { ok: false, motivo: "error_envio" };
+  }
+
+  try {
+    await db.collection("envases_stock_minimo_auto_dia").doc(hoy).set(
+      { enviado: true, ts: admin.firestore.Timestamp.now() }, { merge: true });
+  } catch (e) { console.error(origen + ": marcar dia:", e.message); }
+
+  return { ok: true, total: resultado.total, lineas: resultado.lineas.length };
+}
+
+exports.pedidoAutomaticoStockMinimoEnvases = onSchedule(
+  { schedule: "30 11 * * *", timeZone: "Europe/Madrid" },
+  () => ejecutarPedidoAutomaticoStockMinimoEnvases("pedidoAutomaticoStockMinimoEnvases", false)
+);
+
+// Boton "Probar pedido automatico ahora" del panel.
+exports.probarPedidoAutomaticoStockMinimoEnvases = functions.https.onCall(async (request, context) => {
+  const esV2 = !!(request && typeof request === "object" && request.data !== undefined);
+  const ctx = esV2 ? request : (context || {});
+  if (!ctx.app) return { ok: false, error: "No autorizado" };
+  const email = (ctx.auth && ctx.auth.token && ctx.auth.token.email || "").toLowerCase();
+  if (!email || !ADMINS_APP.includes(email)) return { ok: false, error: "Sin permiso" };
+
+  const resultado = await ejecutarPedidoAutomaticoStockMinimoEnvases("probarPedidoAutomaticoStockMinimoEnvases", true);
+  if (!resultado.ok) return { ok: false, error: "No se pudo generar el pedido automático." };
+  return { ok: true, total: resultado.total, lineas: resultado.lineas };
+});
+
 // A veces el chofer se olvida de marcarlo al salir: se registra a mano desde
 // el panel, exactamente igual que si lo hubiera marcado el (misma coleccion
 // recogidas_palets), para que el pedido y el saldo del almacen queden

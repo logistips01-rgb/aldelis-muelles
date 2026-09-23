@@ -450,6 +450,13 @@ service cloud.firestore {
         && d.incremento is number && d.incremento >= 0;
     }
 
+    // Marca de "hoy ya se ha mandado el pedido automatico diario (11:30)",
+    // para no repetirlo si se prueba a mano el mismo dia. Solo el servidor.
+    match /envases_stock_minimo_auto_dia/{fecha} {
+      allow read: if esAdmin();
+      allow write: if false;
+    }
+
     // Carton: mismo maestro editable a mano; stock/consumo/transito/pedido
     // base son los MISMOS documentos que bandejas (misma recogida de datos,
     // los mismos almacenes), asi que no hace falta duplicar esas reglas.

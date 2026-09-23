@@ -1756,6 +1756,30 @@ function guardarConfigStockMinimoEnvases() {
     });
 }
 
+// Dispara el pedido automatico diario (40% del stock minimo) al momento, sin
+// esperar a las 11:30, para poder probarlo sin tener que esperar.
+function probarPedidoAutomaticoStockMinimoEnvases() {
+  const cont = document.getElementById("envases-stock-min-auto-resultado");
+  cont.style.display = "block";
+  cont.style.color = "";
+  cont.innerHTML = "Generando pedido automático...";
+  firebase.functions().httpsCallable("probarPedidoAutomaticoStockMinimoEnvases")({})
+    .then(res => {
+      if (!res.data || !res.data.ok) {
+        cont.style.color = "#D41F3A";
+        cont.innerHTML = (res.data && res.data.error) || "No se pudo generar el pedido automático.";
+        return;
+      }
+      cont.style.color = "";
+      cont.innerHTML = res.data.lineas + " referencia(s) con pedido, " + res.data.total +
+        " huecos de camión. Revisa tu correo de prueba.";
+    })
+    .catch(e => {
+      cont.style.color = "#D41F3A";
+      cont.innerHTML = "Error: " + e.message;
+    });
+}
+
 // Dispara la revision del buzon (correo "Stock envases") al momento, sin
 // esperar a la hora programada, para poder probar sin tener que esperar.
 function probarStockMinimoEnvasesCorreo() {
