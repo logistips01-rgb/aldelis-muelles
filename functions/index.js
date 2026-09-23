@@ -2151,6 +2151,7 @@ async function calcularPedidoEnvasesPorStockMinimo(buffer) {
     const ref = String(f.Referencia || "").trim();
     const cat = CATALOGO_ENVASES_AVITRANS[ref];
     if (!cat) return;
+    if (cat.desc.includes("LOGIFRUIT")) return; // las cuenta otra persona, se piden a mano; se ignoran aunque vengan en el excel
     const cfg = config[ref];
     if (!cfg) return; // sin stock minimo configurado, no se pide nada de esta referencia
     const stockMinimo = Number(cfg.stockMinimo) || 0;
@@ -2262,7 +2263,6 @@ function calcularPedidoAutomaticoStockMinimo(config) {
   for (const ref in config) {
     const cat = CATALOGO_ENVASES_AVITRANS[ref];
     if (!cat) continue;
-    if (cat.desc.includes("LOGIFRUIT")) continue; // logifruit se pide a mano (o via el correo), nunca en el 40% automatico
     const stockMinimo = Number(config[ref].stockMinimo) || 0;
     if (stockMinimo <= 0) continue;
     const cantidad = Math.ceil(stockMinimo * 0.4);
