@@ -2193,7 +2193,7 @@ function calcularPedidoEnvasesLogifruitPorStockMinimo(buffer) {
 exports.revisarCorreoStockMinimoEnvases = onSchedule(
   { schedule: "0 * * * *", timeZone: "Europe/Madrid" },
   () => revisarCorreoStockMinimoEnvasesInterno("revisarCorreoStockMinimoEnvases",
-    "Stock envases", "envases_stock_minimo_procesados", calcularPedidoEnvasesPorStockMinimo)
+    "Stock envases", "envases_stock_minimo_procesados", calcularPedidoEnvasesPorStockMinimo, false)
 );
 
 // Entre las 10:00 y las 11:30 (justo antes del automatico de las 11:30) se
@@ -2203,20 +2203,20 @@ exports.revisarCorreoStockMinimoEnvases = onSchedule(
 exports.revisarCorreoStockMinimoEnvasesAgil = onSchedule(
   { schedule: "*/15 10-11 * * *", timeZone: "Europe/Madrid" },
   () => revisarCorreoStockMinimoEnvasesInterno("revisarCorreoStockMinimoEnvasesAgil",
-    "Stock envases", "envases_stock_minimo_procesados", calcularPedidoEnvasesPorStockMinimo)
+    "Stock envases", "envases_stock_minimo_procesados", calcularPedidoEnvasesPorStockMinimo, false)
 );
 
 // Correo separado con el stock de Logifruit (lo manda otra persona distinta).
 exports.revisarCorreoStockMinimoLogifruitEnvases = onSchedule(
   { schedule: "0 * * * *", timeZone: "Europe/Madrid" },
   () => revisarCorreoStockMinimoEnvasesInterno("revisarCorreoStockMinimoLogifruitEnvases",
-    "Stock envases logifruit", "envases_stock_minimo_logifruit_procesados", calcularPedidoEnvasesLogifruitPorStockMinimo)
+    "Stock envases logifruit", "envases_stock_minimo_logifruit_procesados", calcularPedidoEnvasesLogifruitPorStockMinimo, true)
 );
 
 exports.revisarCorreoStockMinimoLogifruitEnvasesAgil = onSchedule(
   { schedule: "*/15 10-11 * * *", timeZone: "Europe/Madrid" },
   () => revisarCorreoStockMinimoEnvasesInterno("revisarCorreoStockMinimoLogifruitEnvasesAgil",
-    "Stock envases logifruit", "envases_stock_minimo_logifruit_procesados", calcularPedidoEnvasesLogifruitPorStockMinimo)
+    "Stock envases logifruit", "envases_stock_minimo_logifruit_procesados", calcularPedidoEnvasesLogifruitPorStockMinimo, true)
 );
 
 // Logica compartida entre el cron por horas y el boton "Probar ahora" del
@@ -2224,7 +2224,10 @@ exports.revisarCorreoStockMinimoLogifruitEnvasesAgil = onSchedule(
 // asunto: subject exacto del correo a buscar. coleccionProcesados: coleccion
 // de idempotencia propia (para no compartirla entre el correo principal y el
 // de Logifruit). calcularFn: cual de las dos funciones de calculo usar.
-async function revisarCorreoStockMinimoEnvasesInterno(origen, asunto, coleccionProcesados, calcularFn) {
+// esLogifruit: si es el correo de Logifruit, para que el pedido/correo
+// resultante quede marcado como tal (origen, pt y asunto) y se distinga a
+// simple vista del correo principal.
+async function revisarCorreoStockMinimoEnvasesInterno(origen, asunto, coleccionProcesados, calcularFn, esLogifruit) {
   const token = await obtenerTokenMS();
 
   const data = await graphGet(token,
@@ -2259,29 +2262,32 @@ async function revisarCorreoStockMinimoEnvasesInterno(origen, asunto, coleccionP
       const buffer = Buffer.from(excel.contentBytes, "base64");
       const resultado = await calcularFn(buffer);
       const fechaRecogida = fechaHoyMadrid(); // recogida hoy mismo (el automatico de las 11:30 es el de manana)
+      const marca = esLogifruit ? " (Logifruit)" : "";
+      const ptPrefijo = esLogifruit ? "ENV-LOGIFRUIT-" : "ENV-";
+      const origenPedido = esLogifruit ? "stock-minimo-logifruit-correo" : "stock-minimo-correo";
 
       if (!resultado.lineas.length) {
         await enviarConGraph(token, ENVASES_DESTINATARIO_PRUEBA,
-          (ENVASES_STOCK_MINIMO_MODO_PRUEBA ? "[PRUEBA] " : "") + "Pedido envases por stock mínimo — sin necesidad", null,
+          (ENVASES_STOCK_MINIMO_MODO_PRUEBA ? "[PRUEBA] " : "") + "Pedido envases por stock mínimo" + marca + " — sin necesidad", null,
           "No hace falta pedir nada: todas las referencias estan por encima de su stock minimo.", null);
       } else if (ENVASES_STOCK_MINIMO_MODO_PRUEBA) {
         const pt = "ENV-EST-" + Date.now().toString(36).toUpperCase();
         const etiqueta = "<div style='background:#FEF3C7;padding:10px;border-radius:6px;margin-bottom:12px'>" +
-          "⚠️ PRUEBA: pedido calculado por stock minimo, solo informativo (no se ha mandado a Avitrans ni sumado a pendientes).</div>";
+          "⚠️ PRUEBA: pedido calculado por stock minimo" + marca + ", solo informativo (no se ha mandado a Avitrans ni sumado a pendientes).</div>";
         const html = htmlPedidoEnvases(pt, resultado.lineas, etiqueta);
-        const cuerpo = "PRUEBA — Pedido nº " + pt + " (" + resultado.total + " huecos de camion)\n\n" +
+        const cuerpo = "PRUEBA — Pedido nº " + pt + marca + " (" + resultado.total + " huecos de camion)\n\n" +
           resultado.lineas.map(l => l.ref + " - " + l.desc + ": " + l.cantidad).join("\n");
         await enviarConGraph(token, ENVASES_DESTINATARIO_PRUEBA,
-          "[PRUEBA] Pedido envases por stock minimo (" + resultado.total + " huecos)", html, cuerpo, null);
+          "[PRUEBA] Pedido envases por stock mínimo" + marca + " (" + resultado.total + " huecos)", html, cuerpo, null);
       } else {
-        const pt = "ENV-" + Date.now().toString(36).toUpperCase();
+        const pt = ptPrefijo + Date.now().toString(36).toUpperCase();
         await crearPedidoTransferencia(pt, "avitrans", { palets: resultado.total, lineas: resultado.lineas },
-          "stock-minimo-correo", fechaRecogida);
+          origenPedido, fechaRecogida);
         const html = htmlPedidoEnvases(pt, resultado.lineas);
-        const cuerpo = "Pedido nº " + pt + " (" + resultado.total + " huecos de camion)\n\n" +
+        const cuerpo = "Pedido nº " + pt + marca + " (" + resultado.total + " huecos de camion)\n\n" +
           resultado.lineas.map(l => l.ref + " - " + l.desc + ": " + l.cantidad).join("\n");
         await enviarConGraph(token, ENVASES_STOCK_MINIMO_DESTINATARIOS,
-          "Recogida " + formatoFechaEs(fechaRecogida), html, cuerpo, null);
+          "Recogida " + formatoFechaEs(fechaRecogida) + marca, html, cuerpo, null);
       }
       await graphMarcarLeido(token, msg.id);
       procesados++;
@@ -2304,7 +2310,7 @@ exports.probarRevisarCorreoStockMinimoEnvases = functions.https.onCall(async (re
 
   try {
     const resultado = await revisarCorreoStockMinimoEnvasesInterno("probarRevisarCorreoStockMinimoEnvases",
-      "Stock envases", "envases_stock_minimo_procesados", calcularPedidoEnvasesPorStockMinimo);
+      "Stock envases", "envases_stock_minimo_procesados", calcularPedidoEnvasesPorStockMinimo, false);
     return { ok: true, candidatos: resultado.candidatos, procesados: resultado.procesados };
   } catch (e) {
     console.error("probarRevisarCorreoStockMinimoEnvases:", e.message);
@@ -2322,7 +2328,7 @@ exports.probarRevisarCorreoStockMinimoLogifruitEnvases = functions.https.onCall(
 
   try {
     const resultado = await revisarCorreoStockMinimoEnvasesInterno("probarRevisarCorreoStockMinimoLogifruitEnvases",
-      "Stock envases logifruit", "envases_stock_minimo_logifruit_procesados", calcularPedidoEnvasesLogifruitPorStockMinimo);
+      "Stock envases logifruit", "envases_stock_minimo_logifruit_procesados", calcularPedidoEnvasesLogifruitPorStockMinimo, true);
     return { ok: true, candidatos: resultado.candidatos, procesados: resultado.procesados };
   } catch (e) {
     console.error("probarRevisarCorreoStockMinimoLogifruitEnvases:", e.message);
