@@ -2168,7 +2168,10 @@ async function calcularPedidoEnvasesStockMinimoFiltrado(buffer, incluirRef) {
     const celdaVacia = f.StockActual === null || f.StockActual === undefined || String(f.StockActual).trim() === "";
     const stockActual = celdaVacia ? stockMinimo * 0.5 : (Number(f.StockActual) || 0);
     const yaPendiente = pendiente[ref] || 0;
-    const cantidad = Math.max(stockMinimo + incremento - stockActual - yaPendiente, 0);
+    // Redondeado hacia arriba: no se puede pedir "2.5 unidades" de un envase.
+    // Puede salir fraccionario si la celda de stock actual viene vacia (se
+    // asume el 50% del minimo) y el minimo configurado es impar.
+    const cantidad = Math.ceil(Math.max(stockMinimo + incremento - stockActual - yaPendiente, 0));
     if (cantidad <= 0) return;
     lineas.push({ ref, desc: cat.desc, cantidad });
     if (cat.tipo === "europool") europool += cantidad; else normal += cantidad;
