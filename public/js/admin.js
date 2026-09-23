@@ -573,10 +573,14 @@ function cerrarSesion() {
 }
 
 // ─── PERMISOS ────────────────────────────────────────────────────────────────
-// Administradores: acceso total y unicos que pueden cambiar permisos. Esta
-// lista se replica en firestore.rules, asi que si cambia hay que cambiarla
-// en los dos sitios.
-const ADMINS = ["mlorente@aldelis.com"];
+// Administradores: acceso total y unicos que pueden cambiar permisos, ademas
+// de ver Asistente y los apartados de envases (detallado / stock minimo).
+// Esta lista se replica en esAdmin() de firestore.rules (acceso total) y en
+// ADMINS_APP de functions/index.js (callables); un usuario que solo necesite
+// los apartados de envases sin el resto de permisos de admin puede añadirse
+// aqui y en esAdminEnvases() (firestore.rules) sin tocar esAdmin() ni
+// ADMINS_APP.
+const ADMINS = ["mlorente@aldelis.com", "hmanero@aldelis.com"];
 
 // Secciones que se pueden conceder. El id coincide con el de la vista
 // (btn-vista-X / vista-X) salvo "chat", que es el chat con las lanzaderas.

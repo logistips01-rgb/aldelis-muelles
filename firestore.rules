@@ -435,14 +435,22 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Quien puede configurar el stock minimo/pedido de envases, sin darle
+    // el resto de permisos de esAdmin() (gestionar usuarios, tareas
+    // programadas de Robin, etc.).
+    function esAdminEnvases() {
+      return request.auth != null
+        && request.auth.token.email in ['mlorente@aldelis.com', 'hmanero@aldelis.com'];
+    }
+
     // Stock minimo / incremento por referencia de envases, para el pedido
     // automatico por correo (revisarCorreoStockMinimoEnvases). Solo se
     // configura desde el panel por un admin, nunca desde la plantilla de
     // Excel que se manda por correo, para que nadie pueda manipularlo.
     match /envases_stock_minimo_config/{referencia} {
-      allow read: if esAdmin();
-      allow create, update: if esAdmin() && validEnvasesStockMinimoConfig();
-      allow delete: if esAdmin();
+      allow read: if esAdminEnvases();
+      allow create, update: if esAdminEnvases() && validEnvasesStockMinimoConfig();
+      allow delete: if esAdminEnvases();
     }
     function validEnvasesStockMinimoConfig() {
       let d = request.resource.data;

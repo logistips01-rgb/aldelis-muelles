@@ -182,6 +182,12 @@ function dentroDeLimite(v, max) {
 // en firestore.rules (esAdmin): si cambia, cambiarlo en los tres sitios.
 const ADMINS_APP = ["mlorente@aldelis.com"];
 
+// Igual que ADMINS_APP pero solo para los callables de envases (pedido
+// manual detallado, stock minimo...), sin dar el resto de permisos de
+// ADMINS_APP (resetear/recalcular pedidos, etc.). Duplicado en
+// esAdminEnvases() de firestore.rules.
+const ADMINS_ENVASES_APP = ["mlorente@aldelis.com", "hmanero@aldelis.com"];
+
 // Destinatarios de los avisos de nueva reserva. Se pueden pasar a
 // config/reservas.emails; si ese documento no existe se usan estos.
 const AVISO_RESERVAS_DEFECTO = ["mlorente@aldelis.com", "garita@aldelis.com"];
@@ -1859,7 +1865,7 @@ exports.registrarPedidoEnvasesAvitrans = functions.https.onCall(async (request, 
 
   if (!ctx.app) return { ok: false, error: "No autorizado" };
   const email = (ctx.auth && ctx.auth.token && ctx.auth.token.email || "").toLowerCase();
-  if (!ADMINS_APP.includes(email)) return { ok: false, error: "Sin permiso" };
+  if (!ADMINS_ENVASES_APP.includes(email)) return { ok: false, error: "Sin permiso" };
 
   const almacen = (data && data.almacen) === "txt" ? "txt" : "avitrans";
 
@@ -2093,7 +2099,7 @@ exports.probarEstimacionEnvasesTurno = functions.https.onCall(async (request, co
 
   if (!ctx.app) return { ok: false, error: "No autorizado" };
   const email = (ctx.auth && ctx.auth.token && ctx.auth.token.email || "").toLowerCase();
-  if (!ADMINS_APP.includes(email)) return { ok: false, error: "Sin permiso" };
+  if (!ADMINS_ENVASES_APP.includes(email)) return { ok: false, error: "Sin permiso" };
 
   const turno = data && data.turno;
   if (!["noche", "dia"].includes(turno)) return { ok: false, error: "Falta el turno (noche o dia)" };
@@ -2427,7 +2433,7 @@ exports.probarRevisarCorreoStockMinimoEnvases = functions.https.onCall(async (re
   const ctx = esV2 ? request : (context || {});
   if (!ctx.app) return { ok: false, error: "No autorizado" };
   const email = (ctx.auth && ctx.auth.token && ctx.auth.token.email || "").toLowerCase();
-  if (!email || !ADMINS_APP.includes(email)) return { ok: false, error: "Sin permiso" };
+  if (!email || !ADMINS_ENVASES_APP.includes(email)) return { ok: false, error: "Sin permiso" };
 
   try {
     const resultado = await revisarCorreoStockMinimoEnvasesInterno("probarRevisarCorreoStockMinimoEnvases",
@@ -2445,7 +2451,7 @@ exports.probarRevisarCorreoStockMinimoLogifruitEnvases = functions.https.onCall(
   const ctx = esV2 ? request : (context || {});
   if (!ctx.app) return { ok: false, error: "No autorizado" };
   const email = (ctx.auth && ctx.auth.token && ctx.auth.token.email || "").toLowerCase();
-  if (!email || !ADMINS_APP.includes(email)) return { ok: false, error: "Sin permiso" };
+  if (!email || !ADMINS_ENVASES_APP.includes(email)) return { ok: false, error: "Sin permiso" };
 
   try {
     const resultado = await revisarCorreoStockMinimoEnvasesInterno("probarRevisarCorreoStockMinimoLogifruitEnvases",
@@ -2540,7 +2546,7 @@ exports.probarPedidoAutomaticoStockMinimoEnvases = functions.https.onCall(async 
   const ctx = esV2 ? request : (context || {});
   if (!ctx.app) return { ok: false, error: "No autorizado" };
   const email = (ctx.auth && ctx.auth.token && ctx.auth.token.email || "").toLowerCase();
-  if (!email || !ADMINS_APP.includes(email)) return { ok: false, error: "Sin permiso" };
+  if (!email || !ADMINS_ENVASES_APP.includes(email)) return { ok: false, error: "Sin permiso" };
 
   const resultado = await ejecutarPedidoAutomaticoStockMinimoEnvases("probarPedidoAutomaticoStockMinimoEnvases", true);
   if (!resultado.ok) return { ok: false, error: "No se pudo calcular el pedido." };
