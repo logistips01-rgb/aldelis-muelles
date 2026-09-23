@@ -3949,6 +3949,133 @@ async function iaLeerCuerpoCorreo(input) {
   return { asunto: detalle.subject, cuerpo: iaHtmlATexto(detalle.body && detalle.body.content).slice(0, 6000) };
 }
 
+// ── Robin gestionando el correo PERSONAL del usuario (no el buzon de pedidos) ──
+// A diferencia de las herramientas de arriba (siempre sobre BUZON_PEDIDOS),
+// estas operan sobre el buzon de quien esta hablando con Robin en cada
+// conversacion (contexto.buzon, fijado por el servidor al arrancar la
+// conversacion, nunca elegido por el propio modelo). Solo se ofrecen en el
+// canal "Correo" del panel (ver HERRAMIENTAS_IA_CORREO_PERSONAL).
+
+// Sin filtro compuesto en el propio Graph (ya nos dio problemas de
+// "InefficientFilter" combinando eso con $orderby): se trae una pagina
+// razonable ordenada por fecha y se filtra aqui, con un tope para no
+// tirarse toda una bandeja de golpe.
+async function graphListarCorreosPersonalPaginado(token, buzon, maxTotal) {
+  let url = "https://graph.microsoft.com/v1.0/users/" + encodeURIComponent(buzon) +
+    "/mailFolders/inbox/messages?$top=200&$select=id,subject,from,receivedDateTime,isRead" +
+    "&$orderby=receivedDateTime desc";
+  const todos = [];
+  while (url && todos.length < maxTotal) {
+    const data = await graphGet(token, url);
+    todos.push(...(data.value || []));
+    url = data["@odata.nextLink"] || null;
+  }
+  return todos;
+}
+
+const IA_CORREO_PERSONAL_TOPE = 500;
+
+function iaFormatearCorreoPersonal(m) {
+  return {
+    id: m.id, asunto: m.subject,
+    de: m.from && m.from.emailAddress && m.from.emailAddress.address,
+    fecha: m.receivedDateTime, leido: m.isRead
+  };
+}
+
+async function iaListarCorreosPersonal(input, contexto) {
+  if (!contexto || !contexto.buzon) return { error: "No se pudo determinar el buzon" };
+  const top = Math.min(Number(input && input.top) || 20, 200);
+  const remitente = input && input.remitente ? String(input.remitente).trim().toLowerCase() : null;
+  const antesDe = input && input.antesDe ? String(input.antesDe) : null; // "YYYY-MM-DD"
+  const soloNoLeidos = !!(input && input.soloNoLeidos);
+
+  const token = await obtenerTokenMS();
+  const todos = await graphListarCorreosPersonalPaginado(token, contexto.buzon, IA_CORREO_PERSONAL_TOPE);
+
+  const filtrados = todos.filter(m => {
+    if (remitente) {
+      const de = (m.from && m.from.emailAddress && m.from.emailAddress.address || "").toLowerCase();
+      if (!de.includes(remitente)) return false;
+    }
+    if (antesDe && !(m.receivedDateTime < antesDe)) return false;
+    if (soloNoLeidos && m.isRead) return false;
+    return true;
+  });
+
+  return {
+    total: filtrados.length,
+    truncado: todos.length >= IA_CORREO_PERSONAL_TOPE,
+    correos: filtrados.slice(0, top).map(iaFormatearCorreoPersonal)
+  };
+}
+
+async function iaLeerCuerpoCorreoPersonal(input, contexto) {
+  if (!contexto || !contexto.buzon) return { error: "No se pudo determinar el buzon" };
+  const id = input && input.id;
+  if (!id) return { error: "Falta el id del correo" };
+  const token = await obtenerTokenMS();
+  const detalle = await graphGet(token,
+    "https://graph.microsoft.com/v1.0/users/" + encodeURIComponent(contexto.buzon) + "/messages/" + id + "?$select=subject,from,receivedDateTime,body");
+  return {
+    asunto: detalle.subject,
+    de: detalle.from && detalle.from.emailAddress && detalle.from.emailAddress.address,
+    fecha: detalle.receivedDateTime,
+    cuerpo: iaHtmlATexto(detalle.body && detalle.body.content).slice(0, 6000)
+  };
+}
+
+// IMPORTANTE (ver IA_CORREO_PERSONAL_SYSTEM_PROMPT): Robin nunca debe llamar
+// a esto sin haber listado antes (listar_correos_personal) exactamente esos
+// mismos correos en esta conversacion y haber recibido confirmacion
+// explicita del usuario - esta funcion en si no vuelve a preguntar, confia
+// en que esa conversacion ya se ha tenido. El borrado de Graph mueve el
+// correo a "Elementos eliminados" (no es un borrado permanente inmediato).
+async function iaBorrarCorreosPersonal(input, contexto) {
+  if (!contexto || !contexto.buzon) return { error: "No se pudo determinar el buzon" };
+  const ids = Array.isArray(input && input.ids) ? input.ids : [];
+  if (!ids.length) return { error: "Falta la lista de ids a borrar" };
+  if (ids.length > 300) return { error: "Demasiados de golpe (maximo 300), hazlo en varias tandas" };
+
+  const token = await obtenerTokenMS();
+  let borrados = 0;
+  const fallidos = [];
+  for (const id of ids) {
+    const res = await fetch(
+      "https://graph.microsoft.com/v1.0/users/" + encodeURIComponent(contexto.buzon) + "/messages/" + id,
+      { method: "DELETE", headers: { Authorization: "Bearer " + token } }
+    );
+    if (res.ok) borrados++; else fallidos.push(id);
+  }
+  return { ok: true, borrados, fallidos: fallidos.length };
+}
+
+async function iaEnviarCorreoPersonal(input, contexto) {
+  if (!contexto || !contexto.buzon) return { error: "No se pudo determinar el buzon" };
+  const destinatario = String((input && input.destinatario) || "").trim().toLowerCase();
+  if (!destinatarioValido(destinatario)) return { error: "Destinatario no valido" };
+  const asunto = String((input && input.asunto) || "(sin asunto)").slice(0, 200);
+  const cuerpo = String((input && input.cuerpo) || "").slice(0, 5000);
+
+  const token = await obtenerTokenMS();
+  const res = await fetch(
+    "https://graph.microsoft.com/v1.0/users/" + encodeURIComponent(contexto.buzon) + "/sendMail",
+    {
+      method: "POST",
+      headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: { subject: asunto, body: { contentType: "Text", content: cuerpo }, toRecipients: [{ emailAddress: { address: destinatario } }] },
+        saveToSentItems: true
+      })
+    }
+  );
+  if (!res.ok) {
+    const cuerpoError = await res.json().catch(() => ({}));
+    return { error: "Graph " + res.status + ": " + (cuerpoError.error && cuerpoError.error.message || JSON.stringify(cuerpoError)) };
+  }
+  return { ok: true };
+}
+
 async function iaEnviarMensajeChat(input) {
   const numero = Number(input && input.lanzadera);
   if (!(numero >= 1 && numero <= 4)) return { error: "Lanzadera no valida (debe ser 1, 2, 3 o 4)" };
@@ -4039,9 +4166,9 @@ async function iaEnviarCorreoConExcel(input) {
 // precision es de unos minutos, no exacta al segundo. Maximo una semana
 // vista para no dejar cosas "programadas" para siempre sin que nadie se
 // entere si algo va mal.
-const IA_ACCIONES_PROGRAMABLES = ["enviar_correo", "enviar_mensaje_chat"];
+const IA_ACCIONES_PROGRAMABLES = ["enviar_correo", "enviar_mensaje_chat", "enviar_correo_personal"];
 
-async function iaProgramarAccion(input) {
+async function iaProgramarAccion(input, contexto) {
   const tipo = String((input && input.tipo) || "");
   if (!IA_ACCIONES_PROGRAMABLES.includes(tipo)) {
     return { error: "Tipo de accion no valido, debe ser: " + IA_ACCIONES_PROGRAMABLES.join(" o ") };
@@ -4053,9 +4180,16 @@ async function iaProgramarAccion(input) {
   const parametros = (input && input.parametros) || {};
   // Misma validacion que la version inmediata, para no aceptar una accion
   // que sabemos de antemano que va a fallar dentro de un rato.
-  if (tipo === "enviar_correo") {
+  if (tipo === "enviar_correo" || tipo === "enviar_correo_personal") {
     if (!destinatarioValido(String(parametros.destinatario || "").trim().toLowerCase())) {
       return { error: "Destinatario no valido" };
+    }
+    // El buzon de origen se fija ahora (segun quien esta hablando con Robin
+    // en esta conversacion), no lo puede elegir el propio modelo, para que
+    // no se pueda programar un envio "de parte de" otro buzon.
+    if (tipo === "enviar_correo_personal") {
+      if (!contexto || !contexto.buzon) return { error: "No se pudo determinar el buzon de origen" };
+      parametros.buzon = contexto.buzon;
     }
   } else {
     const numero = Number(parametros.lanzadera);
@@ -4333,7 +4467,7 @@ const HERRAMIENTAS_IA = [
   { type: "web_search_20250305", name: "web_search", max_uses: 5 }
 ];
 
-async function iaEjecutarHerramienta(nombre, input) {
+async function iaEjecutarHerramienta(nombre, input, contexto) {
   switch (nombre) {
     case "listar_documentos": return iaListarDocumentos(input);
     case "buscar_documentos": return iaBuscarDocumentos(input);
@@ -4341,11 +4475,15 @@ async function iaEjecutarHerramienta(nombre, input) {
     case "leer_cuerpo_correo": return iaLeerCuerpoCorreo(input);
     case "enviar_mensaje_chat": return iaEnviarMensajeChat(input);
     case "enviar_correo": return iaEnviarCorreo(input);
-    case "programar_accion": return iaProgramarAccion(input);
+    case "programar_accion": return iaProgramarAccion(input, contexto);
     case "consultar_pedido": return iaConsultarPedido(input);
     case "consultar_referencia_envase": return iaConsultarReferenciaEnvase(input);
     case "marcar_recogida": return iaMarcarRecogida(input);
     case "enviar_correo_con_excel": return iaEnviarCorreoConExcel(input);
+    case "listar_correos_personal": return iaListarCorreosPersonal(input, contexto);
+    case "leer_cuerpo_correo_personal": return iaLeerCuerpoCorreoPersonal(input, contexto);
+    case "borrar_correos_personal": return iaBorrarCorreosPersonal(input, contexto);
+    case "enviar_correo_personal": return iaEnviarCorreoPersonal(input, contexto);
     default: return { error: "Herramienta desconocida: " + nombre };
   }
 }
@@ -4380,7 +4518,7 @@ const IA_SYSTEM_PROMPT =
 // (preguntarAsistente) y el que responde por correo (revisarCorreoAsistenteIA):
 // misma "cabeza" en los dos sitios, cambia solo que herramientas se le dejan
 // usar y el texto de sistema.
-async function ejecutarConversacionIA(mensajeUsuario, herramientas, systemPrompt) {
+async function ejecutarConversacionIA(mensajeUsuario, herramientas, systemPrompt, contexto) {
   let messages = [{ role: "user", content: mensajeUsuario }];
   let respuestaFinal = "";
 
@@ -4417,7 +4555,7 @@ async function ejecutarConversacionIA(mensajeUsuario, herramientas, systemPrompt
     const resultados = [];
     for (const uso of usosHerramienta) {
       let resultado;
-      try { resultado = await iaEjecutarHerramienta(uso.name, uso.input || {}); }
+      try { resultado = await iaEjecutarHerramienta(uso.name, uso.input || {}, contexto); }
       catch (e) { resultado = { error: e.message }; }
       resultados.push({ type: "tool_result", tool_use_id: uso.id, content: JSON.stringify(resultado).slice(0, 8000) });
     }
