@@ -5128,13 +5128,18 @@ exports.probarRevisarCorreoComprasBandejas = functions.https.onCall(async (reque
 //     si CDM<=0 o Situacion=='BAJA'.
 //   - Ajuste = Pedido - Box_base (pedido estandar de esa referencia).
 //   - Variante "por prevision" si hay planificacion cargada para la ref.
-async function calcularTodoPedidoBandejas() {
+// familia: 'bandejas' o 'carton' - solo cambia de que maestro se lee (lead
+// time, stock de seguridad...); el stock/transito/pedido base/consumos son
+// los MISMOS documentos compartidos para las dos familias (mismos almacenes,
+// mismo fichero del ERP), asi que esas colecciones no se parametrizan.
+async function calcularTodoPedidoBandejas(familia) {
+  const fam = familia === "carton" ? "carton" : "bandejas";
   const hoy = new Date();
   const hace30dias = new Date(hoy.getTime() - 30 * 24 * 60 * 60 * 1000);
   const fechaCorte = hace30dias.toISOString().slice(0, 10);
 
   const [maestroSnap, stockSnap, transitoSnap, pedidoBaseSnap, planifSnap, consumosSnap] = await Promise.all([
-    db.collection("compras_bandejas_maestro").get(),
+    db.collection("compras_" + fam + "_maestro").get(),
     db.collection("compras_bandejas_stock").get(),
     db.collection("compras_bandejas_transito").get(),
     db.collection("compras_bandejas_pedido_base").get(),
@@ -5250,13 +5255,15 @@ async function calcularTodoPedidoBandejas() {
 
 exports.calcularPedidoBandejas = functions.https.onCall(async (request, context) => {
   const esV2 = !!(request && typeof request === "object" && request.data !== undefined);
-  const ctx = esV2 ? request : (context || {});
+  const data = esV2 ? request.data : request;
+  const ctx  = esV2 ? request : (context || {});
   if (!ctx.app) return { ok: false, error: "No autorizado" };
   const email = (ctx.auth && ctx.auth.token && ctx.auth.token.email || "").toLowerCase();
   if (!email || !(await puedeSeccionEstricto(email, "compras"))) return { ok: false, error: "Sin permiso" };
 
+  const familia = (data && data.familia === "carton") ? "carton" : "bandejas";
   try {
-    const resultados = await calcularTodoPedidoBandejas();
+    const resultados = await calcularTodoPedidoBandejas(familia);
     return { ok: true, resultados };
   } catch (e) {
     console.error("calcularPedidoBandejas:", e.message);

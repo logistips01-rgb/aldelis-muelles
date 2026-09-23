@@ -5259,7 +5259,7 @@ function toggleMicAsistente() {
 // El calculo (CDM, pedido, ajuste) lo hace siempre el servidor
 // (calcularPedidoBandejas), nunca el cliente: aqui solo se pinta lo que
 // devuelve y se gestiona el maestro (unica parte editable desde el panel).
-let _comprasResultados = [];
+const _comprasResultados = { bandejas: [], carton: [] };
 // El stock/consumo/transito/pedido base se recoge igual para todas las
 // familias (mismos almacenes, mismo formato de fichero) - solo el maestro
 // es propio de cada una (lead time, stock de seguridad... distintos para
@@ -5273,7 +5273,10 @@ function switchComprasFamilia(f) {
   document.getElementById("compras-familia-carton").style.display = f === "carton" ? "" : "none";
   document.getElementById("btn-compras-familia-bandejas").classList.toggle("active", f === "bandejas");
   document.getElementById("btn-compras-familia-carton").classList.toggle("active", f === "carton");
-  if (f === "carton") cargarComprasMaestroListener("carton");
+  if (f === "carton") {
+    cargarComprasMaestroListener("carton");
+    if (!_comprasResultados.carton.length) cargarCompras("carton");
+  }
 }
 
 function cargarComprasMaestroListener(familia) {
@@ -5296,17 +5299,27 @@ function switchComprasVista(v) {
   document.getElementById("btn-compras-maestro").classList.toggle("active", v === "maestro");
 }
 
-function cargarCompras() {
-  cargarComprasMaestroListener("bandejas");
+function switchComprasVistaCarton(v) {
+  document.getElementById("compras-dashboard-carton").style.display = v === "dashboard" ? "" : "none";
+  document.getElementById("compras-maestro-carton").style.display = v === "maestro" ? "" : "none";
+  document.getElementById("btn-compras-dashboard-carton").classList.toggle("active", v === "dashboard");
+  document.getElementById("btn-compras-maestro-carton").classList.toggle("active", v === "maestro");
+}
 
-  const estado = document.getElementById("compras-dashboard-estado");
+// familia: 'bandejas' (por defecto) o 'carton' - mismo calculo en el
+// servidor, solo cambia el maestro que se usa (ver calcularTodoPedidoBandejas).
+function cargarCompras(familia) {
+  const fam = familia === "carton" ? "carton" : "bandejas";
+  cargarComprasMaestroListener(fam);
+
+  const estado = document.getElementById(fam === "carton" ? "compras-dashboard-estado-carton" : "compras-dashboard-estado");
   if (estado) estado.textContent = "Calculando...";
-  firebase.functions().httpsCallable("calcularPedidoBandejas")({})
+  firebase.functions().httpsCallable("calcularPedidoBandejas")({ familia: fam })
     .then(res => {
       if (res.data && res.data.ok) {
-        _comprasResultados = res.data.resultados || [];
-        renderComprasDashboard();
-        if (estado) estado.textContent = _comprasResultados.length + " referencia(s). Actualizado " + new Date().toLocaleTimeString("es-ES");
+        _comprasResultados[fam] = res.data.resultados || [];
+        renderComprasDashboard(fam);
+        if (estado) estado.textContent = _comprasResultados[fam].length + " referencia(s). Actualizado " + new Date().toLocaleTimeString("es-ES");
       } else {
         if (estado) estado.textContent = "";
         alert((res.data && res.data.error) || "No se pudo calcular el pedido.");
@@ -5322,11 +5335,13 @@ function cargarCompras() {
 const COMPRAS_SEMAFORO_COLOR = { rojo: "#D41F3A", amarillo: "#F59E0B", verde: "#1D9E75" };
 const COMPRAS_SEMAFORO_EMOJI = { rojo: "🔴", amarillo: "🟡", verde: "🟢" };
 
-function renderComprasDashboard() {
-  const tbody = document.querySelector("#compras-dashboard-tabla tbody");
+function renderComprasDashboard(familia) {
+  const fam = familia === "carton" ? "carton" : "bandejas";
+  const sufijo = fam === "carton" ? "-carton" : "";
+  const tbody = document.querySelector("#compras-dashboard-tabla" + sufijo + " tbody");
   if (!tbody) return;
-  const mostrarBajas = document.getElementById("compras-mostrar-bajas").checked;
-  const filas = _comprasResultados.filter(r => mostrarBajas || r.situacion !== "BAJA");
+  const mostrarBajas = document.getElementById("compras-mostrar-bajas" + sufijo).checked;
+  const filas = _comprasResultados[fam].filter(r => mostrarBajas || r.situacion !== "BAJA");
   if (!filas.length) { tbody.innerHTML = "<tr><td colspan='16' style='padding:16px;text-align:center;color:#9CA3AF'>Sin datos — revisa que el maestro tenga referencias y que hayan llegado los ficheros de stock/consumos.</td></tr>"; return; }
 
   tbody.innerHTML = filas.map(r => {
@@ -5360,9 +5375,11 @@ function renderComprasDashboard() {
   }).join("");
 }
 
-function exportarComprasExcel() {
-  if (!_comprasResultados.length) { alert("Primero calcula el pedido (botón Recalcular)."); return; }
-  const filas = _comprasResultados.map(r => ({
+function exportarComprasExcel(familia) {
+  const fam = familia === "carton" ? "carton" : "bandejas";
+  const resultados = _comprasResultados[fam];
+  if (!resultados.length) { alert("Primero calcula el pedido (botón Recalcular)."); return; }
+  const filas = resultados.map(r => ({
     "Referencia": r.ref, "Descripcion": r.descripcion, "Situacion": r.situacion,
     "CDM (pal/dia)": r.cdm, "Var %": r.varCdm,
     "Stock Plaza": r.stockPlazaPalets, "Stock Merca": r.stockMercaPalets,
@@ -5377,7 +5394,7 @@ function exportarComprasExcel() {
   // Colorea cada fila (roja/amarilla/verde) segun el semaforo, encima del
   // estilo base de cabecera que ya pone estilizarHojaExcel.
   filas.forEach((f, i) => {
-    const r = _comprasResultados[i];
+    const r = resultados[i];
     const bg = r.bloqueado ? "F3F4F6" : (r.semaforo === "rojo" ? "FCE4E6" : r.semaforo === "amarillo" ? "FEF4CC" : "D6F0E0");
     for (let c = 0; c < Object.keys(f).length; c++) {
       const addr = XLSX.utils.encode_cell({ r: i + 1, c });
@@ -5385,15 +5402,15 @@ function exportarComprasExcel() {
     }
   });
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Pedido bandejas");
-  XLSX.writeFile(wb, "Aldelis_Compras_Bandejas_" + new Date().toLocaleDateString("sv-SE") + ".xlsx");
+  XLSX.utils.book_append_sheet(wb, ws, fam === "carton" ? "Pedido carton" : "Pedido bandejas");
+  XLSX.writeFile(wb, "Aldelis_Compras_" + (fam === "carton" ? "Carton" : "Bandejas") + "_" + new Date().toLocaleDateString("sv-SE") + ".xlsx");
 }
 
 // Dispara la revision del buzon (los 5 tipos de fichero) al momento, sin
 // esperar a la hora programada, y muestra el resultado en pantalla en vez
 // de tener que mirar logs por consola.
-function probarComprasCorreo() {
-  const cont = document.getElementById("compras-correo-resultado");
+function probarComprasCorreo(divId) {
+  const cont = document.getElementById(divId || "compras-correo-resultado");
   cont.style.display = "block";
   cont.style.color = "";
   cont.innerHTML = "Revisando el buzón...";

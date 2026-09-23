@@ -579,15 +579,38 @@
       </div>
 
       <div id="compras-familia-carton" style="display:none">
-        <div class="informe-card" style="margin:16px 0">
-          <p style="font-size:13px;color:#6B7280">
-            El dashboard de cartón (cálculo del pedido) está pendiente de definir. Mientras tanto,
-            ya se puede ir cargando el maestro — el stock y consumo se recogen igual que en
-            bandejas (mismos almacenes, mismo fichero), así que en cuanto la fórmula esté lista
-            no faltará histórico.
-          </p>
-        </div>
+      <div class="lanz-subtabs" style="margin-top:12px">
+        <button class="lanz-subtab active" id="btn-compras-dashboard-carton" onclick="switchComprasVistaCarton('dashboard')">Dashboard</button>
+        <button class="lanz-subtab" id="btn-compras-maestro-carton" onclick="switchComprasVistaCarton('maestro')">Maestro</button>
+      </div>
 
+      <div id="compras-dashboard-carton" class="lanz-sub">
+        <div style="display:flex;gap:8px;align-items:center;margin:14px 0;flex-wrap:wrap">
+          <button class="btn-informe" onclick="cargarCompras('carton')">🔄 Recalcular</button>
+          <button class="btn-excel" onclick="exportarComprasExcel('carton')">Exportar Excel</button>
+          <button class="btn-ghost" style="width:auto;padding:6px 14px" onclick="probarComprasCorreo('compras-correo-resultado-carton')">🧪 Probar correo ahora</button>
+          <label style="font-weight:400;display:flex;align-items:center;gap:6px;margin-left:8px">
+            <input type="checkbox" id="compras-mostrar-bajas-carton" style="width:auto" onchange="renderComprasDashboard('carton')"> Mostrar referencias de baja</label>
+          <span id="compras-dashboard-estado-carton" style="font-size:12px;color:#9CA3AF"></span>
+        </div>
+        <div id="compras-correo-resultado-carton" style="font-size:13px;margin-bottom:14px;display:none"></div>
+        <p style="font-size:12.5px;color:#6B7280;margin-bottom:10px">
+          Mismo cálculo que bandejas (CDM, pedido, ajuste): el stock, tránsito y consumo se recogen del
+          mismo fichero del ERP y los mismos almacenes, solo cambia el maestro (lead time, stock de
+          seguridad, unidades por palet propios de cartón).
+        </p>
+        <div class="tabla-scroll"><table class="tabla-inf" id="compras-dashboard-tabla-carton">
+          <thead><tr>
+            <th>Ref.</th><th>Descripción</th><th>Situación</th><th>CDM (pal/día)</th><th>Var. %</th>
+            <th>Plaza</th><th>Merca</th><th>Txt</th><th>Avitrans</th><th>Stock operativo</th>
+            <th>Tránsito (pal)</th><th>Días cobertura</th><th>Pedido</th>
+            <th>Base</th><th>Ajuste</th><th>Estado</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table></div>
+      </div>
+
+      <div id="compras-maestro-carton" class="lanz-sub" style="display:none">
         <div class="informe-card" style="margin-bottom:16px">
           <div class="informe-card-title">Importar maestro desde Excel</div>
           <p style="font-size:12.5px;color:#6B7280;margin-bottom:10px">
@@ -623,6 +646,7 @@
           </tr></thead>
           <tbody></tbody>
         </table></div>
+      </div>
       </div>
     </div>
 
