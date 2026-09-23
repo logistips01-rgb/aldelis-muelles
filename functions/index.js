@@ -2230,19 +2230,20 @@ exports.revisarCorreoStockMinimoLogifruitEnvasesAgil = onSchedule(
 async function revisarCorreoStockMinimoEnvasesInterno(origen, asunto, coleccionProcesados, calcularFn, esLogifruit) {
   const token = await obtenerTokenMS();
 
-  // Filtro amplio en el servidor (no leidos, con adjunto) y comparacion del
-  // asunto en el propio codigo (sin distinguir mayusculas/minusculas ni
-  // espacios de mas) - mas tolerante que un "eq" exacto en Graph. Se ordena
-  // por fecha de recepcion descendente y se pide un buen numero de
-  // resultados para que el correo de hoy no se quede fuera de la pagina si
-  // el buzon compartido tiene mucho trafico sin leer (albaranes, ACOPAL...).
+  // Filtro simple en el servidor (solo no leidos, unica condicion - Graph
+  // rechaza combinar un filtro compuesto con $orderby por "demasiado
+  // complejo") y el resto (adjunto, asunto sin distinguir mayusculas) se
+  // comprueba en el propio codigo. Se ordena por fecha de recepcion
+  // descendente y se pide un buen numero de resultados para que el correo de
+  // hoy no se quede fuera de la pagina si el buzon compartido tiene mucho
+  // trafico sin leer (albaranes, ACOPAL...).
   const data = await graphGet(token,
     "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS +
-    "/mailFolders/inbox/messages?$filter=" + encodeURIComponent("isRead eq false and hasAttachments eq true") +
+    "/mailFolders/inbox/messages?$filter=" + encodeURIComponent("isRead eq false") +
     "&$orderby=receivedDateTime desc&$top=100&$select=id,subject,hasAttachments,receivedDateTime");
 
   const asuntoNorm = asunto.trim().toLowerCase();
-  const todos = data.value || [];
+  const todos = (data.value || []).filter(m => m.hasAttachments);
   const mensajes = todos.filter(m => (m.subject || "").trim().toLowerCase() === asuntoNorm);
 
   const candidatos = mensajes.length;
