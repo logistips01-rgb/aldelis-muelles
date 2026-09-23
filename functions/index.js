@@ -1989,15 +1989,18 @@ const ENVASES_DESTINATARIO_PRUEBA = "mlorente@aldelis.com";
 
 // Destinatarios reales del pedido de envases por stock minimo (correo
 // procesado y automatico diario): el propio Avitrans mas mlorente/hmanero en
-// copia, para poder verificar que se ha mandado.
-const ENVASES_STOCK_MINIMO_DESTINATARIOS = ["almacen@avitrans.com", "mlorente@aldelis.com", "hmanero@aldelis.com"];
+// copia. DE MOMENTO restringido solo a mlorente mientras se verifica que
+// todo funciona bien (mlorente lo reenvia a mano a Avitrans tras revisarlo).
+// Cuando se confirme, descomentar la lista completa de abajo.
+const ENVASES_STOCK_MINIMO_DESTINATARIOS = ["mlorente@aldelis.com"];
+// const ENVASES_STOCK_MINIMO_DESTINATARIOS = ["almacen@avitrans.com", "mlorente@aldelis.com", "hmanero@aldelis.com"];
 
-// Vuelta a modo prueba (a peticion expresa): mientras sea true, ninguno de
-// los dos flujos de stock minimo crea pedido real ni escribe a Avitrans -
-// todo se manda solo a ENVASES_DESTINATARIO_PRUEBA con aviso de que es
-// prueba, aunque el calculo (pendientes, Logifruit, fechas...) es el mismo
-// que en produccion. Cambiar a false para volver a mandarlo de verdad.
-const ENVASES_STOCK_MINIMO_MODO_PRUEBA = true;
+// false: los dos flujos de stock minimo crean el pedido real (sube a
+// pendientes) y mandan el correo a ENVASES_STOCK_MINIMO_DESTINATARIOS de
+// arriba (hoy restringido a mlorente, ver comentario de arriba). true: no
+// crean ningun pedido, solo calculan y avisan a ENVASES_DESTINATARIO_PRUEBA
+// con aviso de que es prueba.
+const ENVASES_STOCK_MINIMO_MODO_PRUEBA = false;
 
 // forzar=true (boton "probar ahora" del panel) se salta la comprobacion de
 // "ya enviado hoy", para poder ver el correo de prueba sin esperar a la
