@@ -2114,16 +2114,14 @@ async function calcularPedidoEnvasesPorStockMinimo(buffer) {
   configSnap.forEach(d => { config[d.id] = d.data(); });
 
   const lineas = [];
-  const stocksActuales = {}; // para poder estimar mas adelante si un dia no llega el correo
   let normal = 0, europool = 0;
   filas.forEach(f => {
     const ref = String(f.Referencia || "").trim();
     const cat = CATALOGO_ENVASES_AVITRANS[ref];
     if (!cat) return;
-    const stockActual = Number(f.StockActual) || 0;
-    stocksActuales[ref] = stockActual;
     const cfg = config[ref];
     if (!cfg) return; // sin stock minimo configurado, no se pide nada de esta referencia
+    const stockActual = Number(f.StockActual) || 0;
     const stockMinimo = Number(cfg.stockMinimo) || 0;
     const incremento = Number(cfg.incremento) || 0;
     const cantidad = Math.max(stockMinimo + incremento - stockActual, 0);
@@ -2131,40 +2129,7 @@ async function calcularPedidoEnvasesPorStockMinimo(buffer) {
     lineas.push({ ref, desc: cat.desc, cantidad });
     if (cat.tipo === "europool") europool += cantidad; else normal += cantidad;
   });
-  return { lineas, total: normal + Math.ceil(europool / 2), stocksActuales };
-}
-
-// Si un dia no llega el correo "Stock envases" antes de la hora limite
-// configurada, se estima el pedido con el ultimo stock actual conocido de
-// cada referencia (el del ultimo correo real procesado con exito), en vez de
-// no pedir nada. Solo se usan referencias con stock minimo configurado.
-async function estimarPedidoEnvasesPorStockMinimo() {
-  const [configSnap, ultimoSnap] = await Promise.all([
-    db.collection("envases_stock_minimo_config").get(),
-    db.collection("envases_stock_minimo_ultimo").get()
-  ]);
-  const config = {};
-  configSnap.forEach(d => { config[d.id] = d.data(); });
-  const ultimo = {};
-  ultimoSnap.forEach(d => { ultimo[d.id] = d.data(); });
-
-  const lineas = [];
-  let normal = 0, europool = 0, masAntigua = null;
-  for (const ref in config) {
-    const cat = CATALOGO_ENVASES_AVITRANS[ref];
-    const u = ultimo[ref];
-    if (!cat || !u) continue; // sin ningun stock conocido todavia para esta referencia
-    const stockActual = Number(u.stockActual) || 0;
-    const stockMinimo = Number(config[ref].stockMinimo) || 0;
-    const incremento = Number(config[ref].incremento) || 0;
-    const cantidad = Math.max(stockMinimo + incremento - stockActual, 0);
-    if (u.fecha && (!masAntigua || u.fecha < masAntigua)) masAntigua = u.fecha;
-    if (cantidad <= 0) continue;
-    lineas.push({ ref, desc: cat.desc, cantidad });
-    if (cat.tipo === "europool") europool += cantidad; else normal += cantidad;
-  }
-  if (!Object.keys(ultimo).length) return null; // nunca ha llegado ningun correo real, nada que estimar
-  return { lineas, total: normal + Math.ceil(europool / 2), masAntigua };
+  return { lineas, total: normal + Math.ceil(europool / 2) };
 }
 
 exports.revisarCorreoStockMinimoEnvases = onSchedule(
@@ -2208,21 +2173,6 @@ async function revisarCorreoStockMinimoEnvasesInterno(origen) {
 
       const buffer = Buffer.from(excel.contentBytes, "base64");
       const resultado = await calcularPedidoEnvasesPorStockMinimo(buffer);
-      const hoy = fechaHoyMadrid();
-
-      // Guarda el ultimo stock conocido de cada referencia (para poder
-      // estimar si un dia no llega el correo) y marca el dia como "ya
-      // llego el correo real", para que no se dispare la estimacion.
-      try {
-        const batch = db.batch();
-        for (const ref in resultado.stocksActuales) {
-          batch.set(db.collection("envases_stock_minimo_ultimo").doc(ref),
-            { stockActual: resultado.stocksActuales[ref], fecha: hoy, ts: admin.firestore.Timestamp.now() });
-        }
-        batch.set(db.collection("envases_stock_minimo_dia").doc(hoy),
-          { procesadoReal: true, ts: admin.firestore.Timestamp.now() }, { merge: true });
-        await batch.commit();
-      } catch (e) { console.error(origen + ": guardar ultimo stock conocido:", e.message); }
 
       if (!resultado.lineas.length) {
         await enviarConGraph(token, ENVASES_DESTINATARIO_PRUEBA,
@@ -2264,96 +2214,6 @@ exports.probarRevisarCorreoStockMinimoEnvases = functions.https.onCall(async (re
     console.error("probarRevisarCorreoStockMinimoEnvases:", e.message);
     return { ok: false, error: e.message };
   }
-});
-
-// Si no llega el correo "Stock envases" antes de la hora limite configurada
-// (config/envases_stock_minimo.horaLimite, "HH:MM"), se manda un pedido
-// estimado de prueba basado en el ultimo stock conocido de cada referencia.
-// forzar=true (boton "Probar ahora" del panel) se salta la comprobacion de
-// hora limite y de "ya se ha hecho algo hoy".
-const ENVASES_STOCK_MINIMO_HORA_LIMITE_DEFECTO = "11:00";
-
-async function revisarEstimacionStockMinimoEnvases(forzar) {
-  const hoy = fechaHoyMadrid();
-
-  if (!forzar) {
-    let diaDoc;
-    try { diaDoc = await db.collection("envases_stock_minimo_dia").doc(hoy).get(); }
-    catch (e) { console.error("revisarEstimacionStockMinimoEnvases: consulta dia:", e.message); return { ok: false, motivo: "error_consulta" }; }
-    if (diaDoc.exists && (diaDoc.data().procesadoReal || diaDoc.data().procesadoEstimado)) {
-      return { ok: false, motivo: "ya_resuelto_hoy" };
-    }
-
-    let configDoc;
-    try { configDoc = await db.collection("config").doc("envases_stock_minimo").get(); }
-    catch (e) { console.error("revisarEstimacionStockMinimoEnvases: consulta config:", e.message); return { ok: false, motivo: "error_consulta" }; }
-    const horaLimite = (configDoc.exists && configDoc.data().horaLimite) || ENVASES_STOCK_MINIMO_HORA_LIMITE_DEFECTO;
-    const horaActual = new Date().toLocaleTimeString("sv-SE", { timeZone: "Europe/Madrid", hour: "2-digit", minute: "2-digit" });
-    if (horaActual < horaLimite) return { ok: false, motivo: "aun_no_es_la_hora" };
-  }
-
-  const estimado = await estimarPedidoEnvasesPorStockMinimo();
-  if (!estimado) {
-    console.log("revisarEstimacionStockMinimoEnvases: sin ningun stock conocido todavia, no se puede estimar.");
-    return { ok: false, motivo: "sin_historico" };
-  }
-
-  try {
-    const token = await obtenerTokenMS();
-    if (!estimado.lineas.length) {
-      await enviarConGraph(token, ENVASES_DESTINATARIO_PRUEBA,
-        "[PRUEBA] Pedido envases por stock minimo — estimado, sin necesidad", null,
-        "No ha llegado el correo de \"Stock envases\" hoy, pero segun el ultimo stock conocido de cada " +
-        "referencia no hace falta pedir nada.", null);
-    } else {
-      const pt = "ENV-EST-" + Date.now().toString(36).toUpperCase();
-      const etiqueta = "<div style='background:#FEF3C7;color:#92400E;padding:10px 14px;border-radius:6px;margin-bottom:14px'>" +
-        "⚠️ ESTIMADO AUTOMÁTICO (PRUEBA) — no ha llegado hoy el correo de \"Stock envases\". Calculado con el " +
-        "último stock conocido de cada referencia" + (estimado.masAntigua ? " (el más antiguo es del " + formatoFechaEs(estimado.masAntigua) + ")" : "") +
-        ". No se ha enviado a Avitrans, es solo para revisar el formato.</div>";
-      const html = htmlPedidoEnvases(pt, estimado.lineas, etiqueta);
-      const cuerpo = "ESTIMADO AUTOMATICO (PRUEBA) - no llego el correo de Stock envases hoy\n\n" +
-        "Pedido nº " + pt + " (" + estimado.total + " huecos de camion)\n\n" +
-        estimado.lineas.map(l => l.ref + " - " + l.desc + ": " + l.cantidad).join("\n");
-      await enviarConGraph(token, ENVASES_DESTINATARIO_PRUEBA,
-        "[PRUEBA] Pedido envases por stock minimo estimado (" + estimado.total + " huecos)", html, cuerpo, null);
-    }
-  } catch (e) {
-    console.error("revisarEstimacionStockMinimoEnvases: envio de correo:", e.message);
-    return { ok: false, motivo: "error_envio" };
-  }
-
-  try {
-    await db.collection("envases_stock_minimo_dia").doc(hoy).set(
-      { procesadoEstimado: true, ts: admin.firestore.Timestamp.now() }, { merge: true });
-  } catch (e) { console.error("revisarEstimacionStockMinimoEnvases: marcar dia:", e.message); }
-
-  return { ok: true, total: estimado.total, lineas: estimado.lineas.length };
-}
-
-// Se revisa cada 15 minutos: en cuanto pasa la hora limite configurada, y si
-// no ha llegado ya el correo real hoy, se dispara la estimacion una sola vez.
-exports.revisarEstimacionStockMinimoEnvases = onSchedule(
-  { schedule: "*/15 * * * *", timeZone: "Europe/Madrid" },
-  () => revisarEstimacionStockMinimoEnvases(false)
-);
-
-// Boton "Probar estimacion ahora" del panel: salta la comprobacion de hora
-// limite y de si ya se ha resuelto hoy, para poder ver el correo sin esperar.
-exports.probarEstimacionStockMinimoEnvases = functions.https.onCall(async (request, context) => {
-  const esV2 = !!(request && typeof request === "object" && request.data !== undefined);
-  const ctx = esV2 ? request : (context || {});
-  if (!ctx.app) return { ok: false, error: "No autorizado" };
-  const email = (ctx.auth && ctx.auth.token && ctx.auth.token.email || "").toLowerCase();
-  if (!email || !ADMINS_APP.includes(email)) return { ok: false, error: "Sin permiso" };
-
-  const motivos = {
-    sin_historico: "Todavia no ha llegado ningun correo real de \"Stock envases\", asi que no hay ningun stock conocido con el que estimar.",
-    error_envio: "No se pudo mandar el correo de la estimacion."
-  };
-  const resultado = await revisarEstimacionStockMinimoEnvases(true);
-  if (!resultado.ok) return { ok: false, error: motivos[resultado.motivo] || "No se pudo generar la estimacion." };
-  return { ok: true, total: resultado.total, lineas: resultado.lineas };
 });
 
 // A veces el chofer se olvida de marcarlo al salir: se registra a mano desde

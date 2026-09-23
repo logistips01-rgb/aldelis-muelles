@@ -704,7 +704,7 @@ function aplicarRol() {
   const envasesStockMin = document.getElementById("envases-stock-minimo-admin");
   if (envasesStockMin) {
     envasesStockMin.style.display = esAdminIA ? "" : "none";
-    if (esAdminIA) { cargarConfigStockMinimoEnvases(); cargarHoraLimiteStockMinimoEnvases(); }
+    if (esAdminIA) cargarConfigStockMinimoEnvases();
   }
 
   // Abrir la primera vista disponible
@@ -1753,46 +1753,6 @@ function guardarConfigStockMinimoEnvases() {
     .catch(e => {
       errEl.textContent = "Error al guardar: " + e.message;
       errEl.style.display = "block";
-    });
-}
-
-function cargarHoraLimiteStockMinimoEnvases() {
-  const input = document.getElementById("cfg-envases-stockmin-hora");
-  if (!input) return;
-  db.collection("config").doc("envases_stock_minimo").get().then(doc => {
-    input.value = (doc.exists && doc.data().horaLimite) || "11:00";
-  }).catch(e => console.error("cargarHoraLimiteStockMinimoEnvases:", e));
-}
-
-function guardarHoraLimiteStockMinimoEnvases() {
-  const input = document.getElementById("cfg-envases-stockmin-hora");
-  const okEl = document.getElementById("envases-stock-min-hora-guardado");
-  const horaLimite = input.value;
-  if (!horaLimite) { okEl.style.color = "#D41F3A"; okEl.textContent = "Pon una hora."; return; }
-  db.collection("config").doc("envases_stock_minimo").set({ horaLimite }, { merge: true })
-    .then(() => { okEl.style.color = "#1D9E75"; okEl.textContent = "Guardado."; })
-    .catch(e => { okEl.style.color = "#D41F3A"; okEl.textContent = "Error: " + e.message; });
-}
-
-function probarEstimacionStockMinimoEnvases() {
-  const cont = document.getElementById("envases-stock-min-estimacion-resultado");
-  cont.style.display = "block";
-  cont.style.color = "";
-  cont.innerHTML = "Generando estimación...";
-  firebase.functions().httpsCallable("probarEstimacionStockMinimoEnvases")({})
-    .then(res => {
-      if (!res.data || !res.data.ok) {
-        cont.style.color = "#D41F3A";
-        cont.innerHTML = (res.data && res.data.error) || "No se pudo generar la estimación.";
-        return;
-      }
-      cont.style.color = "";
-      cont.innerHTML = res.data.lineas + " referencia(s) con pedido estimado, " + res.data.total +
-        " huecos de camión. Revisa tu correo de prueba.";
-    })
-    .catch(e => {
-      cont.style.color = "#D41F3A";
-      cont.innerHTML = "Error: " + e.message;
     });
 }
 
