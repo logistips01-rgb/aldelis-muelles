@@ -1807,21 +1807,39 @@ function formatoFechaEs(fechaStr) {
   return fechaStr.slice(8, 10) + "/" + fechaStr.slice(5, 7) + "/" + fechaStr.slice(0, 4);
 }
 
-function htmlPedidoEnvases(pt, filas, etiquetaExtra) {
+// fecha (opcional, "YYYY-MM-DD"): si se pasa, añade el saludo "Buenos días,
+// paso pedido de envases para recogida el DD/MM/AAAA" y la despedida con
+// firma. Sin fecha, se queda solo con la tabla (compatibilidad con quien no
+// la pase).
+function htmlPedidoEnvases(pt, filas, etiquetaExtra, fecha) {
   const filasHtml = filas.map(f =>
     "<tr><td style='padding:5px 10px;border-bottom:1px solid #eee'>" + esc(f.ref) + "</td>" +
     "<td style='padding:5px 10px;border-bottom:1px solid #eee'>" + esc(f.desc) + "</td>" +
     "<td style='padding:5px 10px;border-bottom:1px solid #eee;text-align:center'>" + f.cantidad + "</td></tr>"
   ).join("");
+  const saludo = fecha
+    ? "<p>Buenos días,</p><p>Paso pedido de envases para recogida el " + esc(formatoFechaEs(fecha)) + ":</p>"
+    : "";
+  const despedida = fecha ? "<p>Muchas gracias.</p><p>Robin - IA Almacén</p>" : "";
   return "<html><body style='font-family:Arial,sans-serif;font-size:13px;color:#1A1A1A'>" +
-    (etiquetaExtra || "") +
+    (etiquetaExtra || "") + saludo +
     "<p>Pedido nº " + esc(pt) + "</p>" +
     "<table style='border-collapse:collapse;width:100%;max-width:480px'>" +
     "<thead><tr style='background:#F5F5F5;text-align:left'>" +
     "<th style='padding:5px 10px'>Referencia</th><th style='padding:5px 10px'>Descripcion envase</th>" +
     "<th style='padding:5px 10px'>Cantidad</th></tr></thead>" +
     "<tbody>" + filasHtml + "</tbody></table>" +
+    despedida +
     "</body></html>";
+}
+
+// Version en texto plano del mismo saludo/despedida, para el cuerpo
+// alternativo del correo (por si el cliente de correo no muestra el HTML).
+function textoPedidoEnvases(pt, filas, fecha, prefijo) {
+  const cabecera = (prefijo || "") + "Buenos días,\nPaso pedido de envases para recogida el " +
+    formatoFechaEs(fecha) + ":\n\nPedido nº " + pt + "\n\n";
+  const cuerpo = filas.map(f => f.ref + " - " + f.desc + ": " + f.cantidad).join("\n");
+  return cabecera + cuerpo + "\n\nMuchas gracias.\nRobin - IA Almacén";
 }
 
 // Destinatarios del correo de recogida segun el almacen elegido en el
@@ -1910,8 +1928,8 @@ exports.registrarPedidoEnvasesAvitrans = functions.https.onCall(async (request, 
   // guardado igualmente (lo importante es que cuente en los pendientes), asi
   // que no se hace fallar la peticion completa por un problema de envio.
   try {
-    const html = htmlPedidoEnvases(pt, filas);
-    const cuerpo = "Pedido nº " + pt + "\n\n" + filas.map(f => f.ref + " - " + f.desc + ": " + f.cantidad).join("\n");
+    const html = htmlPedidoEnvases(pt, filas, null, fecha);
+    const cuerpo = textoPedidoEnvases(pt, filas, fecha);
     const token = await obtenerTokenMS();
     const asunto = "Recogida " + formatoFechaEs(fecha);
     // Un solo correo con todos los destinatarios reales en el "Para" (antes
@@ -2290,18 +2308,16 @@ async function revisarCorreoStockMinimoEnvasesInterno(origen, asunto, coleccionP
         const pt = "ENV-EST-" + Date.now().toString(36).toUpperCase();
         const etiqueta = "<div style='background:#FEF3C7;padding:10px;border-radius:6px;margin-bottom:12px'>" +
           "⚠️ PRUEBA: pedido calculado por stock minimo" + marca + ", solo informativo (no se ha mandado a Avitrans ni sumado a pendientes).</div>";
-        const html = htmlPedidoEnvases(pt, resultado.lineas, etiqueta);
-        const cuerpo = "PRUEBA — Pedido nº " + pt + marca + " (" + resultado.total + " huecos de camion)\n\n" +
-          resultado.lineas.map(l => l.ref + " - " + l.desc + ": " + l.cantidad).join("\n");
+        const html = htmlPedidoEnvases(pt, resultado.lineas, etiqueta, fechaRecogida);
+        const cuerpo = textoPedidoEnvases(pt, resultado.lineas, fechaRecogida, "PRUEBA" + marca + "\n\n");
         await enviarConGraph(token, ENVASES_DESTINATARIO_PRUEBA,
           "[PRUEBA] Pedido envases por stock mínimo" + marca + " (" + resultado.total + " huecos)", html, cuerpo, null);
       } else {
         const pt = ptPrefijo + Date.now().toString(36).toUpperCase();
         await crearPedidoTransferencia(pt, "avitrans", { palets: resultado.total, lineas: resultado.lineas },
           origenPedido, fechaRecogida);
-        const html = htmlPedidoEnvases(pt, resultado.lineas);
-        const cuerpo = "Pedido nº " + pt + marca + " (" + resultado.total + " huecos de camion)\n\n" +
-          resultado.lineas.map(l => l.ref + " - " + l.desc + ": " + l.cantidad).join("\n");
+        const html = htmlPedidoEnvases(pt, resultado.lineas, null, fechaRecogida);
+        const cuerpo = textoPedidoEnvases(pt, resultado.lineas, fechaRecogida, marca ? marca.trim() + "\n\n" : "");
         await enviarConGraph(token, ENVASES_STOCK_MINIMO_DESTINATARIOS,
           "Recogida " + formatoFechaEs(fechaRecogida) + marca, html, cuerpo, null);
       }
@@ -2409,18 +2425,16 @@ async function ejecutarPedidoAutomaticoStockMinimoEnvases(origen, soloVista) {
       const etiqueta = "<div style='background:#FEF3C7;color:#92400E;padding:10px 14px;border-radius:6px;margin-bottom:14px'>" +
         "⚠️ PRUEBA: pedido automático diario (40% del stock mínimo de cada referencia configurada). " +
         "No se ha enviado a Avitrans, es solo para revisar el formato.</div>";
-      const html = htmlPedidoEnvases(pt, resultado.lineas, etiqueta);
-      const cuerpo = "PRUEBA — Pedido automático diario nº " + pt + " (" + resultado.total + " huecos de camion)\n\n" +
-        resultado.lineas.map(l => l.ref + " - " + l.desc + ": " + l.cantidad).join("\n");
+      const html = htmlPedidoEnvases(pt, resultado.lineas, etiqueta, fechaRecogida);
+      const cuerpo = textoPedidoEnvases(pt, resultado.lineas, fechaRecogida, "PRUEBA (automático diario)\n\n");
       await enviarConGraph(token, ENVASES_DESTINATARIO_PRUEBA,
         "[PRUEBA] Pedido automático diario de envases (" + resultado.total + " huecos)", html, cuerpo, null);
     } else {
       const pt = "ENV-" + Date.now().toString(36).toUpperCase();
       await crearPedidoTransferencia(pt, "avitrans", { palets: resultado.total, lineas: resultado.lineas },
         "stock-minimo-auto", fechaRecogida);
-      const html = htmlPedidoEnvases(pt, resultado.lineas);
-      const cuerpo = "Pedido nº " + pt + " (" + resultado.total + " huecos de camion)\n\n" +
-        resultado.lineas.map(l => l.ref + " - " + l.desc + ": " + l.cantidad).join("\n");
+      const html = htmlPedidoEnvases(pt, resultado.lineas, null, fechaRecogida);
+      const cuerpo = textoPedidoEnvases(pt, resultado.lineas, fechaRecogida);
       await enviarConGraph(token, ENVASES_STOCK_MINIMO_DESTINATARIOS,
         "Recogida " + formatoFechaEs(fechaRecogida), html, cuerpo, null);
     }
