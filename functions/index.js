@@ -4547,6 +4547,99 @@ exports.robinRespondeChat = onDocumentCreated("mensajes/{msgId}", async (event) 
   } catch (e) { console.error("robinRespondeChat:", e.message); }
 });
 
+// ── Robin por WhatsApp ───────────────────────────────────────────────────
+// Canal abierto (cualquier numero puede escribir al WhatsApp Business de la
+// empresa), asi que se restringe a una lista de numeros permitidos
+// (config/robin.whatsappNumerosPermitidos, formato internacional sin "+",
+// ej. "34600111222") y tiene el mismo limite tipo "chat de lanzaderas" para
+// no disparar el coste si algo falla. Fuera de eso, mismas herramientas que
+// el panel (puede tambien ejecutar acciones, no solo consultar).
+const WHATSAPP_ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN;
+const WHATSAPP_PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
+const WHATSAPP_VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN;
+const ROBIN_WHATSAPP_LIMITE_DEFECTO = 30;
+
+async function enviarWhatsapp(telefono, texto) {
+  const res = await fetch("https://graph.facebook.com/v20.0/" + WHATSAPP_PHONE_NUMBER_ID + "/messages", {
+    method: "POST",
+    headers: { Authorization: "Bearer " + WHATSAPP_ACCESS_TOKEN, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      messaging_product: "whatsapp", to: telefono, type: "text", text: { body: texto.slice(0, 4000) }
+    })
+  });
+  if (!res.ok) console.error("enviarWhatsapp: fallo al mandar a", telefono, res.status, await res.text());
+}
+
+const IA_WHATSAPP_SYSTEM_PROMPT = IA_SYSTEM_PROMPT +
+  " Te estan hablando por WhatsApp, no desde el panel. Responde breve, como un mensaje de WhatsApp normal, sin " +
+  "firmas ni encabezados.";
+
+// Meta exige verificar el webhook (GET, con hub.challenge) antes de mandar
+// ningun mensaje real (POST).
+exports.robinWhatsappWebhook = functions.https.onRequest(async (req, res) => {
+  if (req.method === "GET") {
+    if (req.query["hub.mode"] === "subscribe" && req.query["hub.verify_token"] === WHATSAPP_VERIFY_TOKEN) {
+      res.status(200).send(req.query["hub.challenge"]);
+    } else {
+      res.sendStatus(403);
+    }
+    return;
+  }
+
+  // Confirmar recepcion siempre, aunque no se pueda procesar el mensaje: si
+  // Meta no recibe un 200 reintenta el mismo webhook varias veces.
+  res.sendStatus(200);
+
+  try {
+    const value = req.body && req.body.entry && req.body.entry[0] &&
+      req.body.entry[0].changes && req.body.entry[0].changes[0] && req.body.entry[0].changes[0].value;
+    const msg = value && value.messages && value.messages[0];
+    if (!msg || msg.type !== "text" || !msg.text || !msg.text.body) return; // solo texto, de momento
+
+    // Idempotencia por id de mensaje: Meta puede reenviar el mismo webhook.
+    const procesadoRef = db.collection("robin_whatsapp_procesados").doc(msg.id);
+    try {
+      await procesadoRef.create({ ts: admin.firestore.Timestamp.now() });
+    } catch (e) {
+      if (e.code === 6) return; // ya atendido
+      console.error("robinWhatsappWebhook: guarda de idempotencia:", e.message);
+      return;
+    }
+
+    const telefono = msg.from; // formato internacional sin "+", tal cual lo manda Meta
+    const configDoc = await db.collection("config").doc("robin").get();
+    const numerosPermitidos = (configDoc.exists && configDoc.data().whatsappNumerosPermitidos) || [];
+    if (!numerosPermitidos.includes(telefono)) {
+      console.log("robinWhatsappWebhook: numero no autorizado:", telefono);
+      return; // no se contesta, para no confirmar a un desconocido que el bot existe
+    }
+
+    const hoy = fechaHoyMadrid();
+    const usoRef = db.collection("robin_whatsapp_uso").doc(hoy);
+    const usoDoc = await usoRef.get();
+    const limite = (configDoc.exists && Number(configDoc.data().limiteWhatsappDiario)) || ROBIN_WHATSAPP_LIMITE_DEFECTO;
+    const contadorActual = usoDoc.exists ? (usoDoc.data().contador || 0) : 0;
+    if (contadorActual >= limite) {
+      if (!(usoDoc.exists && usoDoc.data().avisoEnviado)) {
+        await usoRef.set({ contador: contadorActual, avisoEnviado: true, fecha: hoy }, { merge: true });
+        try {
+          const token = await obtenerTokenMS();
+          await enviarConGraph(token, "mlorente@aldelis.com", "Robin: limite diario de WhatsApp alcanzado", null,
+            "Robin ha llegado al limite de " + limite + " mensajes de hoy por WhatsApp y ha dejado de responder " +
+            "ahi hasta mañana. Puedes subir el limite en Config si hace falta.", null);
+        } catch (e) { console.error("robinWhatsappWebhook: aviso limite:", e.message); }
+      }
+      return;
+    }
+    await usoRef.set({ contador: admin.firestore.FieldValue.increment(1), fecha: hoy }, { merge: true });
+
+    const respuesta = await ejecutarConversacionIA(msg.text.body, HERRAMIENTAS_IA, IA_WHATSAPP_SYSTEM_PROMPT);
+    await enviarWhatsapp(telefono, respuesta);
+  } catch (e) {
+    console.error("robinWhatsappWebhook:", e.message);
+  }
+});
+
 async function graphResponderCorreo(token, msgId, textoRespuesta) {
   await fetch("https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS + "/messages/" + msgId + "/reply", {
     method: "POST",

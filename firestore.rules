@@ -435,6 +435,16 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Igual que robin_chat_uso pero para el canal de WhatsApp. Solo el
+    // servidor escribe/lee estas dos.
+    match /robin_whatsapp_uso/{fecha} {
+      allow read: if esAdmin();
+      allow write: if false;
+    }
+    match /robin_whatsapp_procesados/{id} {
+      allow read, write: if false;
+    }
+
     // Quien puede configurar el stock minimo/pedido de envases, sin darle
     // el resto de permisos de esAdmin() (gestionar usuarios, tareas
     // programadas de Robin, etc.).

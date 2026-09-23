@@ -4403,6 +4403,7 @@ function cargarConfig() {
   });
   cargarPermisosUsuarios();
   cargarRobinLimite();
+  cargarRobinWhatsapp();
 }
 
 async function cargarRobinLimite() {
@@ -4428,6 +4429,38 @@ async function guardarRobinLimite() {
     const ok = document.getElementById("cfg-robin-limite-ok");
     if (ok) { ok.style.display = ""; setTimeout(() => { ok.style.display = "none"; }, 2500); }
     cargarRobinLimite();
+  } catch (e) { alert("Error al guardar: " + e.message); }
+}
+
+async function cargarRobinWhatsapp() {
+  const elNumeros = document.getElementById("cfg-robin-whatsapp-numeros");
+  const elLimite = document.getElementById("cfg-robin-whatsapp-limite");
+  const elUso = document.getElementById("cfg-robin-whatsapp-uso-hoy");
+  if (!elNumeros) return;
+  try {
+    const doc = await db.collection("config").doc("robin").get();
+    const numeros = (doc.exists && doc.data().whatsappNumerosPermitidos) || [];
+    elNumeros.value = numeros.join("\n");
+    const limite = (doc.exists && Number(doc.data().limiteWhatsappDiario)) || 30;
+    elLimite.value = limite;
+    const hoy = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Madrid" });
+    const usoDoc = await db.collection("robin_whatsapp_uso").doc(hoy).get();
+    const usadas = usoDoc.exists ? (usoDoc.data().contador || 0) : 0;
+    if (elUso) elUso.textContent = "Hoy se han usado " + usadas + " de " + limite + " mensajes por WhatsApp.";
+  } catch (e) { console.error("cargarRobinWhatsapp:", e.message); }
+}
+
+async function guardarRobinWhatsapp() {
+  const numeros = document.getElementById("cfg-robin-whatsapp-numeros").value
+    .split("\n").map(n => n.replace(/[^\d]/g, "").trim()).filter(Boolean);
+  const limite = parseInt(document.getElementById("cfg-robin-whatsapp-limite").value, 10);
+  if (isNaN(limite) || limite < 1 || limite > 500) { alert("Introduce un límite entre 1 y 500."); return; }
+  try {
+    await db.collection("config").doc("robin").set(
+      { whatsappNumerosPermitidos: numeros, limiteWhatsappDiario: limite }, { merge: true });
+    const ok = document.getElementById("cfg-robin-whatsapp-ok");
+    if (ok) { ok.style.display = ""; setTimeout(() => { ok.style.display = "none"; }, 2500); }
+    cargarRobinWhatsapp();
   } catch (e) { alert("Error al guardar: " + e.message); }
 }
 
