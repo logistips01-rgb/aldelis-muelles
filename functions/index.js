@@ -2199,12 +2199,11 @@ async function calcularPedidoEnvasesStockMinimoFiltrado(buffer, incluirRef) {
     const yaPendiente = pendiente[ref] || 0;
     const necesidad = Math.ceil(Math.max(stockMinimo + incremento - stockActual - yaPendiente, 0));
     if (necesidad <= 0) return;
-    // Europool va remontado (dos unidades reales por hueco de camion): se
-    // pide el doble de la necesidad para que lleguen los huecos que hacen
-    // falta, igual que en el resto de pedidos de envases.
-    const cantidad = cat.tipo === "europool" ? necesidad * 2 : necesidad;
-    lineas.push({ ref, desc: cat.desc, cantidad });
-    if (cat.tipo === "europool") europool += cantidad; else normal += cantidad;
+    // La cantidad es la necesidad real (sin doblar); el ajuste de Europool
+    // (remontado, dos unidades por hueco de camion) solo afecta al TOTAL de
+    // huecos, igual que en el resto de pedidos de envases.
+    lineas.push({ ref, desc: cat.desc, cantidad: necesidad });
+    if (cat.tipo === "europool") europool += necesidad; else normal += necesidad;
   });
   return { lineas, total: normal + Math.ceil(europool / 2), avisosStockCero };
 }
@@ -2409,11 +2408,11 @@ function calcularPedidoAutomaticoStockMinimo(config) {
     if (stockMinimo <= 0) continue;
     const necesidad = Math.ceil(stockMinimo * 0.4);
     if (necesidad <= 0) continue;
-    // Europool va remontado (dos unidades reales por hueco de camion): se
-    // pide el doble de la necesidad, igual que en el resto de pedidos.
-    const cantidad = cat.tipo === "europool" ? necesidad * 2 : necesidad;
-    lineas.push({ ref, desc: cat.desc, cantidad });
-    if (cat.tipo === "europool") europool += cantidad; else normal += cantidad;
+    // La cantidad es la necesidad real (sin doblar); el ajuste de Europool
+    // solo afecta al TOTAL de huecos de camion, igual que en el resto de
+    // pedidos de envases.
+    lineas.push({ ref, desc: cat.desc, cantidad: necesidad });
+    if (cat.tipo === "europool") europool += necesidad; else normal += necesidad;
   }
   return { lineas, total: normal + Math.ceil(europool / 2) };
 }
