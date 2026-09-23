@@ -1800,7 +1800,7 @@ function probarStockMinimoEnvasesCorreo() {
       }
       cont.style.color = "";
       cont.innerHTML = res.data.candidatos + " correo(s) candidato(s) encontrado(s), " +
-        res.data.procesados + " procesado(s) ahora. Si hay pedido, se ha mandado ya a Avitrans.";
+        res.data.procesados + " procesado(s) ahora. Si hay pedido, revisa tu correo de prueba.";
     })
     .catch(e => {
       cont.style.color = "#D41F3A";

@@ -1988,9 +1988,16 @@ async function estimarPedidoEnvasesTurno(turno, hoy) {
 const ENVASES_DESTINATARIO_PRUEBA = "mlorente@aldelis.com";
 
 // Destinatarios reales del pedido de envases por stock minimo (correo
-// procesado y automatico diario, ya en produccion): el propio Avitrans mas
-// mlorente/hmanero en copia, para poder verificar que se ha mandado.
+// procesado y automatico diario): el propio Avitrans mas mlorente/hmanero en
+// copia, para poder verificar que se ha mandado.
 const ENVASES_STOCK_MINIMO_DESTINATARIOS = ["almacen@avitrans.com", "mlorente@aldelis.com", "hmanero@aldelis.com"];
+
+// Vuelta a modo prueba (a peticion expresa): mientras sea true, ninguno de
+// los dos flujos de stock minimo crea pedido real ni escribe a Avitrans -
+// todo se manda solo a ENVASES_DESTINATARIO_PRUEBA con aviso de que es
+// prueba, aunque el calculo (pendientes, Logifruit, fechas...) es el mismo
+// que en produccion. Cambiar a false para volver a mandarlo de verdad.
+const ENVASES_STOCK_MINIMO_MODO_PRUEBA = true;
 
 // forzar=true (boton "probar ahora" del panel) se salta la comprobacion de
 // "ya enviado hoy", para poder ver el correo de prueba sin esperar a la
@@ -2211,9 +2218,18 @@ async function revisarCorreoStockMinimoEnvasesInterno(origen) {
       const fechaRecogida = fechaHoyMadrid(); // recogida hoy mismo (el automatico de las 11:30 es el de manana)
 
       if (!resultado.lineas.length) {
-        await enviarConGraph(token, [ENVASES_DESTINATARIO_PRUEBA, "hmanero@aldelis.com"],
-          "Pedido envases por stock mínimo — sin necesidad", null,
+        await enviarConGraph(token, ENVASES_DESTINATARIO_PRUEBA,
+          (ENVASES_STOCK_MINIMO_MODO_PRUEBA ? "[PRUEBA] " : "") + "Pedido envases por stock mínimo — sin necesidad", null,
           "No hace falta pedir nada: todas las referencias estan por encima de su stock minimo.", null);
+      } else if (ENVASES_STOCK_MINIMO_MODO_PRUEBA) {
+        const pt = "ENV-EST-" + Date.now().toString(36).toUpperCase();
+        const etiqueta = "<div style='background:#FEF3C7;padding:10px;border-radius:6px;margin-bottom:12px'>" +
+          "⚠️ PRUEBA: pedido calculado por stock minimo, solo informativo (no se ha mandado a Avitrans ni sumado a pendientes).</div>";
+        const html = htmlPedidoEnvases(pt, resultado.lineas, etiqueta);
+        const cuerpo = "PRUEBA — Pedido nº " + pt + " (" + resultado.total + " huecos de camion)\n\n" +
+          resultado.lineas.map(l => l.ref + " - " + l.desc + ": " + l.cantidad).join("\n");
+        await enviarConGraph(token, ENVASES_DESTINATARIO_PRUEBA,
+          "[PRUEBA] Pedido envases por stock minimo (" + resultado.total + " huecos)", html, cuerpo, null);
       } else {
         const pt = "ENV-" + Date.now().toString(36).toUpperCase();
         await crearPedidoTransferencia(pt, "avitrans", { palets: resultado.total, lineas: resultado.lineas },
@@ -2298,9 +2314,19 @@ async function ejecutarPedidoAutomaticoStockMinimoEnvases(origen, soloVista) {
   try {
     const token = await obtenerTokenMS();
     if (!resultado.lineas.length) {
-      await enviarConGraph(token, [ENVASES_DESTINATARIO_PRUEBA, "hmanero@aldelis.com"],
-        "Pedido automático diario de envases — sin referencias configuradas", null,
+      await enviarConGraph(token, ENVASES_DESTINATARIO_PRUEBA,
+        (ENVASES_STOCK_MINIMO_MODO_PRUEBA ? "[PRUEBA] " : "") + "Pedido automático diario de envases — sin referencias configuradas", null,
         "No hay ninguna referencia con stock mínimo configurado, asi que no se ha pedido nada hoy.", null);
+    } else if (ENVASES_STOCK_MINIMO_MODO_PRUEBA) {
+      const pt = "ENV-EST-" + Date.now().toString(36).toUpperCase();
+      const etiqueta = "<div style='background:#FEF3C7;color:#92400E;padding:10px 14px;border-radius:6px;margin-bottom:14px'>" +
+        "⚠️ PRUEBA: pedido automático diario (40% del stock mínimo de cada referencia configurada). " +
+        "No se ha enviado a Avitrans, es solo para revisar el formato.</div>";
+      const html = htmlPedidoEnvases(pt, resultado.lineas, etiqueta);
+      const cuerpo = "PRUEBA — Pedido automático diario nº " + pt + " (" + resultado.total + " huecos de camion)\n\n" +
+        resultado.lineas.map(l => l.ref + " - " + l.desc + ": " + l.cantidad).join("\n");
+      await enviarConGraph(token, ENVASES_DESTINATARIO_PRUEBA,
+        "[PRUEBA] Pedido automático diario de envases (" + resultado.total + " huecos)", html, cuerpo, null);
     } else {
       const pt = "ENV-" + Date.now().toString(36).toUpperCase();
       await crearPedidoTransferencia(pt, "avitrans", { palets: resultado.total, lineas: resultado.lineas },
