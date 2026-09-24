@@ -349,18 +349,17 @@
       </div>
 
       <div id="envases-stock-minimo-admin" style="display:none;margin-top:28px;border-top:1px solid #e5e5e7;padding-top:20px">
-        <div class="sitio-elegir">5. Pedido automático por stock mínimo <span class="opt">(verificando)</span></div>
+        <div class="sitio-elegir">5. Pedido automático por stock mínimo</div>
         <p class="card-desc" style="margin-bottom:12px">
           Configura aquí el stock mínimo que quieres mantener por referencia. Todos los días a las 11:30 se pide
           el <strong>40% de ese stock mínimo</strong> de cada referencia configurada (con la misma lógica de
           Europool: doble cantidad, mitad de hueco de camión), incluidas las referencias Logifruit, para recoger al
           día siguiente. PALET LPR ROJO y CHEP PLASTICO quedan fuera de todos los automáticos (correo y este de las
           11:30): se piden siempre a mano — si el correo reporta su stock a 0, te llega un aviso aparte, no un
-          pedido. El pedido ya se crea de verdad y suma a los pendientes, pero <strong>de momento el correo solo te
-          llega a ti</strong> (mientras se termina de verificar) — eres tú quien lo reenvía a Avitrans tras
-          revisarlo. La columna <strong>Almacén</strong> decide a dónde se pide cada referencia (Avitrans o Txt);
-          si hay referencias en los dos almacenes el mismo día, se generan pedidos y correos separados, uno por
-          almacén. Puedes cambiarlo cuando quieras.
+          pedido. El pedido se crea de verdad, suma a los pendientes, y el correo va directo al almacén
+          correspondiente (Avitrans o Txt), con copia a hmanero y a ti. La columna <strong>Almacén</strong> decide
+          a dónde se pide cada referencia; si hay referencias en los dos almacenes el mismo día, se generan
+          pedidos y correos separados, uno por almacén. Puedes cambiarlo cuando quieras.
         </p>
         <div class="tabla-scroll">
           <table class="tabla-inf" id="envases-stock-min-tabla">
@@ -383,9 +382,8 @@
             automático de las 11:30, que es para mañana). Antes de calcular, resta lo que ya tengas pedido y
             pendiente de recoger de Avitrans (de cualquier pedido activo, no solo de este flujo), para no pedir de
             más. Las referencias Logifruit no se tienen en cuenta aquí (aunque vengan en el excel): las cuenta otra
-            persona distinta, que manda su propio correo aparte (ver más abajo). El pedido ya se crea de verdad y
-            suma a los pendientes, pero de momento el correo solo te llega a ti — lo reenvías tú a Avitrans tras
-            revisarlo.
+            persona distinta, que manda su propio correo aparte (ver más abajo). El pedido se crea de verdad, suma
+            a los pendientes, y el correo va directo al almacén correspondiente, con copia a hmanero y a ti.
           </p>
           <button class="btn-informe" onclick="descargarPlantillaStockEnvases()">⬇️ Descargar plantilla Excel (solo stock actual)</button>
           <button class="btn-ghost" style="margin-left:8px" onclick="probarStockMinimoEnvasesCorreo()">🧪 Probar correo ahora</button>
@@ -398,8 +396,8 @@
             Como el stock de Logifruit lo cuenta otra persona, va en un correo aparte: descarga esta plantilla
             (solo las 3 referencias Logifruit), que la rellene y la mande a reservas@aldelis.com con asunto
             <strong>"Stock envases logifruit"</strong>. Recogida hoy mismo, igual que el correo principal. El
-            pedido ya se crea de verdad, pero de momento el correo solo te llega a ti — lo reenvías tú a Avitrans
-            tras revisarlo.
+            pedido se crea de verdad, suma a los pendientes, y el correo va directo al almacén correspondiente,
+            con copia a hmanero y a ti.
           </p>
           <button class="btn-informe" onclick="descargarPlantillaStockEnvasesLogifruit()">⬇️ Descargar plantilla Logifruit</button>
           <button class="btn-ghost" style="margin-left:8px" onclick="probarStockMinimoEnvasesLogifruitCorreo()">🧪 Probar correo ahora</button>

@@ -2012,18 +2012,17 @@ async function estimarPedidoEnvasesTurno(turno, hoy) {
 const ENVASES_DESTINATARIO_PRUEBA = "mlorente@aldelis.com";
 
 // Destinatarios reales del pedido de envases por stock minimo (correo
-// procesado y automatico diario): el propio Avitrans mas mlorente/hmanero en
-// copia. DE MOMENTO restringido solo a mlorente mientras se verifica que
-// todo funciona bien (mlorente lo reenvia a mano a Avitrans tras revisarlo).
-// Cuando se confirme, descomentar la lista completa de abajo.
-const ENVASES_STOCK_MINIMO_DESTINATARIOS = ["mlorente@aldelis.com"];
-// const ENVASES_STOCK_MINIMO_DESTINATARIOS = ["almacen@avitrans.com", "mlorente@aldelis.com", "hmanero@aldelis.com"];
+// procesado y automatico diario): el propio almacen (Avitrans o Txt segun
+// donde vaya el pedido) mas mlorente/hmanero en copia siempre.
+const ENVASES_STOCK_MINIMO_DESTINATARIOS_POR_ALMACEN = {
+  avitrans: ["almacen@avitrans.com", "hmanero@aldelis.com", "mlorente@aldelis.com"],
+  txt: ["mariola.arcos@txt.es", "almacenplaza.logistica@txt.es", "hmanero@aldelis.com", "mlorente@aldelis.com"]
+};
 
 // false: los dos flujos de stock minimo crean el pedido real (sube a
-// pendientes) y mandan el correo a ENVASES_STOCK_MINIMO_DESTINATARIOS de
-// arriba (hoy restringido a mlorente, ver comentario de arriba). true: no
-// crean ningun pedido, solo calculan y avisan a ENVASES_DESTINATARIO_PRUEBA
-// con aviso de que es prueba.
+// pendientes) y mandan el correo a los destinatarios reales de arriba.
+// true: no crean ningun pedido, solo calculan y avisan a
+// ENVASES_DESTINATARIO_PRUEBA con aviso de que es prueba.
 const ENVASES_STOCK_MINIMO_MODO_PRUEBA = false;
 
 // forzar=true (boton "probar ahora" del panel) se salta la comprobacion de
@@ -2375,7 +2374,7 @@ async function enviarPedidosStockMinimoPorAlmacen(token, porAlmacen, marca, ptPr
         origenPedido, fechaRecogida);
       const html = htmlPedidoEnvases(pt, resultado.lineas, null, fechaRecogida);
       const cuerpo = textoPedidoEnvases(pt, resultado.lineas, fechaRecogida, etiquetaAlmacen.trim() + "\n\n");
-      await enviarConGraph(token, ENVASES_STOCK_MINIMO_DESTINATARIOS,
+      await enviarConGraph(token, ENVASES_STOCK_MINIMO_DESTINATARIOS_POR_ALMACEN[almacen],
         "Recogida " + formatoFechaEs(fechaRecogida) + etiquetaAlmacen, html, cuerpo, null);
     }
   }
