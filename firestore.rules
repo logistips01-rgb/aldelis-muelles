@@ -477,6 +477,14 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Traza de por que cada referencia entro o no en el pedido calculado al
+    // procesar un correo (para poder auditar desde el panel sin logs de
+    // Firebase). Un documento por correo procesado. Solo lectura.
+    match /envases_stock_minimo_diagnostico/{id} {
+      allow read: if esAdminEnvases();
+      allow write: if false;
+    }
+
     // Carton: mismo maestro editable a mano; stock/consumo/transito/pedido
     // base son los MISMOS documentos que bandejas (misma recogida de datos,
     // los mismos almacenes), asi que no hace falta duplicar esas reglas.

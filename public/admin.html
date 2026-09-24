@@ -405,6 +405,17 @@
           <button class="btn-ghost" style="margin-left:8px" onclick="probarStockMinimoEnvasesLogifruitCorreo()">🧪 Probar correo ahora</button>
           <div id="envases-stock-min-logifruit-resultado" style="font-size:13px;margin-top:8px;display:none"></div>
         </div>
+
+        <div style="margin-top:24px;border-top:1px solid #e5e5e7;padding-top:16px">
+          <div class="sitio-elegir" style="font-size:14px">Auditoría: por qué se pidió (o no) cada referencia</div>
+          <p class="card-desc" style="margin-bottom:12px">
+            Cada vez que se procesa un correo real, se guarda el detalle de cada referencia vista: si generó
+            pedido o no, y por qué (sin stock mínimo configurado, celda vacía, ya cubierto con lo pendiente de
+            recoger, etc.). Solo queda registro de los correos procesados a partir de que se activó esto.
+          </p>
+          <button class="btn-ghost" onclick="cargarDiagnosticoStockMinimo()">🔍 Ver últimos correos procesados</button>
+          <div id="envases-stock-min-diagnostico" style="font-size:13px;margin-top:12px"></div>
+        </div>
       </div>
     </div>
 

@@ -1879,6 +1879,55 @@ function formatearDetallePorAlmacen(porAlmacen, sinNada) {
 
 // Igual que probarStockMinimoEnvasesCorreo pero para el correo separado de
 // Logifruit ("Stock envases logifruit").
+const ENVASES_DIAGNOSTICO_MOTIVO = {
+  incluido: "Pedido generado",
+  cubierto_con_pendiente: "Ya cubierto (con lo pendiente de recoger)",
+  siempre_manual: "Se pide siempre a mano",
+  sin_stock_minimo_configurado: "Sin stock mínimo configurado",
+  celda_stock_actual_vacia: "Celda de stock actual vacía"
+};
+
+function cargarDiagnosticoStockMinimo() {
+  const cont = document.getElementById("envases-stock-min-diagnostico");
+  cont.innerHTML = "Cargando...";
+  db.collection("envases_stock_minimo_diagnostico").orderBy("ts", "desc").limit(10).get()
+    .then(snap => {
+      if (snap.empty) {
+        cont.innerHTML = "<span style='color:#9CA3AF'>Todavía no hay ningún correo procesado con este registro (se guarda a partir de ahora).</span>";
+        return;
+      }
+      cont.innerHTML = snap.docs.map(d => {
+        const data = d.data();
+        const filas = (data.diagnostico || []).map(l => {
+          const incluidoTxt = l.incluido ? "✅" : "—";
+          const detalle = l.stockMinimo != null
+            ? ("min " + l.stockMinimo + " + inc " + l.incremento + " − actual " + l.stockActual +
+               " − pendiente " + l.yaPendiente + " = " + l.necesidad + (l.cantidad != null ? " → pide " + l.cantidad : ""))
+            : "";
+          return "<tr>" +
+            "<td>" + incluidoTxt + "</td>" +
+            "<td>" + esc(l.ref) + "</td>" +
+            "<td>" + esc(l.desc || "") + "</td>" +
+            "<td>" + esc(l.almacen || "") + "</td>" +
+            "<td>" + esc(ENVASES_DIAGNOSTICO_MOTIVO[l.motivo] || l.motivo) + "</td>" +
+            "<td style='color:#6B7280'>" + esc(detalle) + "</td>" +
+            "</tr>";
+        }).join("");
+        const fechaHora = data.ts && data.ts.toDate ? data.ts.toDate().toLocaleString("es-ES", { timeZone: "Europe/Madrid" }) : "";
+        return "<details style='margin-bottom:10px'>" +
+          "<summary style='cursor:pointer;font-weight:600'>" + esc(fechaHora) + " — " +
+          (data.flujo === "logifruit" ? "Logifruit" : "Principal") + " (recogida " + esc(data.fecha || "") + ")</summary>" +
+          "<div class='tabla-scroll' style='margin-top:8px'><table class='tabla-inf'>" +
+          "<thead><tr><th></th><th>Ref.</th><th>Descripción</th><th>Almacén</th><th>Motivo</th><th>Detalle del cálculo</th></tr></thead>" +
+          "<tbody>" + filas + "</tbody></table></div></details>";
+      }).join("");
+    })
+    .catch(e => {
+      cont.style.color = "#D41F3A";
+      cont.textContent = "Error: " + e.message;
+    });
+}
+
 function probarStockMinimoEnvasesLogifruitCorreo() {
   const cont = document.getElementById("envases-stock-min-logifruit-resultado");
   cont.style.display = "block";

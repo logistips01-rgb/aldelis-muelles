@@ -2225,6 +2225,9 @@ async function calcularPedidoEnvasesStockMinimoFiltrado(buffer, incluirRef) {
   // calcular mas adelante un consumo real por referencia (como CDM en
   // bandejas), sin depender de porcentajes fijos.
   const stocksActuales = [];
+  // Traza de por que cada referencia entro o no en el pedido (para poder
+  // auditar sin mirar logs de Firebase): un motivo por referencia vista.
+  const diagnostico = [];
   filas.forEach(f => {
     const ref = String(f.Referencia || "").trim();
     const cat = CATALOGO_ENVASES_AVITRANS[ref];
@@ -2233,29 +2236,45 @@ async function calcularPedidoEnvasesStockMinimoFiltrado(buffer, incluirRef) {
     if (!celdaVacia) stocksActuales.push({ ref, desc: cat.desc, stockActual: Number(f.StockActual) || 0 });
     if (ENVASES_PEDIDO_SIEMPRE_MANUAL.includes(ref)) {
       if (!celdaVacia && Number(f.StockActual) === 0) avisosStockCero.push({ ref, desc: cat.desc });
+      diagnostico.push({ ref, desc: cat.desc, motivo: "siempre_manual", incluido: false });
       return; // nunca se pide por aqui, siempre a mano
     }
     const cfg = config[ref];
-    if (!cfg) return; // sin stock minimo configurado, no se pide nada de esta referencia
-    if (celdaVacia) return; // sin stock actual no se pide nada de esta referencia, para no adivinar
+    if (!cfg) {
+      diagnostico.push({ ref, desc: cat.desc, motivo: "sin_stock_minimo_configurado", incluido: false });
+      return; // sin stock minimo configurado, no se pide nada de esta referencia
+    }
+    if (celdaVacia) {
+      diagnostico.push({ ref, desc: cat.desc, motivo: "celda_stock_actual_vacia", incluido: false });
+      return; // sin stock actual no se pide nada de esta referencia, para no adivinar
+    }
     const stockMinimo = Number(cfg.stockMinimo) || 0;
     const incremento = Number(cfg.incremento) || 0;
     const stockActual = Number(f.StockActual) || 0;
     const yaPendiente = pendiente[ref] || 0;
+    const almacen = cfg.almacen === "txt" ? "txt" : "avitrans";
     // Redondeo por aproximacion (no siempre hacia arriba): para Europool
     // esto ya deja la cantidad en multiplos de 2 automaticamente, al
     // doblarla despues.
     const necesidad = Math.round(Math.max(stockMinimo + incremento - stockActual - yaPendiente, 0));
-    if (necesidad <= 0) return;
+    if (necesidad <= 0) {
+      diagnostico.push({
+        ref, desc: cat.desc, motivo: "cubierto_con_pendiente", incluido: false, almacen,
+        stockMinimo, incremento, stockActual, yaPendiente, necesidad
+      });
+      return;
+    }
     // Europool: se pide el doble de la necesidad (remontado), y el total de
     // huecos de camion se calcula dividiendo esa cantidad ya doblada entre 2.
     const cantidad = cat.tipo === "europool" ? necesidad * 2 : necesidad;
-    // Almacen configurado a mano por referencia (panel), avitrans por defecto.
-    const almacen = cfg.almacen === "txt" ? "txt" : "avitrans";
     porAlmacen[almacen].lineas.push({ ref, desc: cat.desc, cantidad });
     if (cat.tipo === "europool") porAlmacen[almacen].europool += cantidad; else porAlmacen[almacen].normal += cantidad;
+    diagnostico.push({
+      ref, desc: cat.desc, motivo: "incluido", incluido: true, almacen,
+      stockMinimo, incremento, stockActual, yaPendiente, necesidad, cantidad
+    });
   });
-  return { porAlmacen: cerrarAcumuladorPorAlmacen(porAlmacen), avisosStockCero, stocksActuales };
+  return { porAlmacen: cerrarAcumuladorPorAlmacen(porAlmacen), avisosStockCero, stocksActuales, diagnostico };
 }
 
 // Correo principal "Stock envases": todas las referencias salvo Logifruit
@@ -2425,6 +2444,13 @@ async function revisarCorreoStockMinimoEnvasesInterno(origen, asunto, coleccionP
       try {
         await guardarHistoricoStockEnvases(resultado.stocksActuales, esLogifruit ? "logifruit" : "principal", fechaRecogida);
       } catch (e) { console.error(origen + ": guardar historico stock:", e.message); }
+
+      try {
+        await db.collection("envases_stock_minimo_diagnostico").doc(msg.id).set({
+          fecha: fechaRecogida, flujo: esLogifruit ? "logifruit" : "principal",
+          diagnostico: resultado.diagnostico || [], ts: admin.firestore.Timestamp.now()
+        });
+      } catch (e) { console.error(origen + ": guardar diagnostico:", e.message); }
 
       const totalLineas = await enviarPedidosStockMinimoPorAlmacen(
         token, resultado.porAlmacen, marca, ptPrefijo, origenPedido, fechaRecogida);
