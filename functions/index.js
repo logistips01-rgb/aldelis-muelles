@@ -2866,6 +2866,15 @@ exports.revisarCorreoPedidos = onSchedule(
           console.log("revisarCorreoPedidos: es de Usieto, se deja para revisarCorreoIncidencias:", msg.subject);
           continue;
         }
+        // Los ficheros de Compras (stock, consumos, transito, pedido base,
+        // planificacion) llegan a este mismo buzon con adjunto Excel: sin
+        // esta exclusion, este flujo generico los "contaba" como si fueran
+        // un pedido de transferencia (visto en produccion con el informe
+        // de stock de ManoloAPP).
+        if (esAsuntoDeCompras(msg.subject)) {
+          console.log("revisarCorreoPedidos: es un fichero de Compras, se deja para ese flujo:", msg.subject);
+          continue;
+        }
         if (!msg.hasAttachments) {
           console.log("revisarCorreoPedidos: sin adjuntos, descartado:", msg.subject);
           await graphMarcarLeido(token, msg.id);
@@ -5347,7 +5356,8 @@ function normalizarFilaCompras(fila, alias) {
 }
 
 const COMPRAS_ALIAS_STOCK = {
-  "referencia": "Referencia", "almacen": "Almacen", "ubicacion": "Almacen", "cantidad": "Cantidad"
+  "referencia": "Referencia", "almacen": "Almacen", "ubicacion": "Almacen", "camara": "Almacen",
+  "cantidad": "Cantidad"
 };
 const COMPRAS_ALIAS_CONSUMOS = {
   "referencia": "Referencia", "fecha": "Fecha", "cantidad": "Cantidad",
@@ -5532,7 +5542,11 @@ async function procesarComprasConsumos(buffer) {
 }
 
 const COMPRAS_TIPOS_CORREO = [
-  { regex: /^stock bandejas$/i, tipo: "stock", procesar: procesarComprasStock },
+  // El stock llegaba como "Stock bandejas" (fijo); ahora llega como
+  // "Informe Stock ManoloAPP <fecha/hora> - <n> palet(s)" (por camara/SSCC,
+  // se suma por referencia dentro de cada camara). Se aceptan los dos
+  // asuntos por si acaso durante la transicion.
+  { regex: /^(stock bandejas|informe stock manoloapp\b.*)$/i, tipo: "stock", procesar: procesarComprasStock },
   // El ERP lo manda como "Informe Movimientos Bandejas <fecha>" (la fecha
   // cambia cada dia), no con un asunto fijo como el resto.
   { regex: /^informe movimientos bandejas\b/i, tipo: "consumos", procesar: procesarComprasConsumos },
@@ -5541,6 +5555,13 @@ const COMPRAS_TIPOS_CORREO = [
   { regex: /^planificacion bandejas$/i, tipo: "planificacion", procesar: procesarComprasPlanificacion }
 ];
 
+// Usado por revisarCorreoPedidos para no "robarle" a Compras sus propios
+// correos (mismo buzon, asunto variable con fecha/hora en varios de ellos).
+function esAsuntoDeCompras(subject) {
+  const asunto = (subject || "").trim();
+  return COMPRAS_TIPOS_CORREO.some(c => c.regex.test(asunto));
+}
+
 // Logica compartida por las dos revisiones (consumos aparte del resto, ver
 // mas abajo): cada una solo mira los tipos de fichero de "tiposPermitidos".
 // Filtro OData de asunto para cada tipo de fichero (subject exacto para los
@@ -5548,7 +5569,8 @@ const COMPRAS_TIPOS_CORREO = [
 function comprasFiltroAsunto(tipo) {
   if (tipo === "transito") return "startswith(subject,'Transito bandejas')";
   if (tipo === "consumos") return "startswith(subject,'Informe Movimientos Bandejas')";
-  const asuntoExacto = { stock: "Stock bandejas", pedido_base: "Pedido base bandejas", planificacion: "Planificacion bandejas" }[tipo];
+  if (tipo === "stock") return "(subject eq 'Stock bandejas' or startswith(subject,'Informe Stock ManoloAPP'))";
+  const asuntoExacto = { pedido_base: "Pedido base bandejas", planificacion: "Planificacion bandejas" }[tipo];
   return "subject eq '" + asuntoExacto + "'";
 }
 
