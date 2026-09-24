@@ -1144,6 +1144,13 @@
         <div class="field" id="cm-fecha-wrap">
           <label>Fecha de arranque <span class="opt">(si se conoce)</span></label>
           <input type="date" id="cm-fecha-arranque">
+          <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+            <span style="font-size:12.5px;color:#6B7280">o calcularla según el stock actual, con</span>
+            <input type="number" id="cm-cobertura-margen" value="3" min="0" max="15" style="width:55px;padding:6px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px">
+            <span style="font-size:12.5px;color:#6B7280">día(s) de margen</span>
+            <button type="button" class="btn-ghost" style="width:auto;padding:6px 12px;font-size:13px" onclick="calcularFechaCambioSegunStock()">Calcular</button>
+          </div>
+          <div id="cm-cobertura-resultado" style="font-size:12.5px;margin-top:6px"></div>
         </div>
         <div class="field" id="cm-pdf-wrap">
           <label>Documento del cambio (PDF) <span class="opt">(opcional)</span></label>

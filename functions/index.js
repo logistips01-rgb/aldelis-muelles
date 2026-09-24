@@ -5849,6 +5849,48 @@ exports.calcularPedidoBandejas = functions.https.onCall(async (request, context)
   }
 });
 
+// Usado por "Cambios de material" (agotar stock primero): dado el codigo
+// que se ha tecleado a mano en Referencia actual, busca esa referencia en
+// el maestro de Compras (primero bandejas, luego carton) y devuelve el
+// mismo stock/CDM/dias de cobertura que ya calcula el dashboard, para que
+// el panel pueda proponer una fecha de arranque (agotamiento - margen de
+// seguridad) en vez de tener que calcularlo a mano.
+async function calcularCoberturaReferenciaCompras(referencia) {
+  const ref = String(referencia || "").trim().toUpperCase();
+  if (!ref) return { error: "Falta la referencia" };
+  for (const familia of ["bandejas", "carton"]) {
+    const resultados = await calcularTodoPedidoBandejas(familia);
+    const fila = resultados.find(r => r.ref.toUpperCase() === ref);
+    if (fila) {
+      return {
+        familia, referencia: fila.ref, descripcion: fila.descripcion,
+        cdm: fila.cdm, stockOpPalets: fila.stockOpPalets, diasCobertura: fila.diasCobertura
+      };
+    }
+  }
+  return { error: "No se encontro esa referencia en el maestro de Compras (ni bandejas ni carton)" };
+}
+
+exports.calcularDiasCoberturaReferencia = functions.https.onCall(async (request, context) => {
+  const esV2 = !!(request && typeof request === "object" && request.data !== undefined);
+  const data = esV2 ? request.data : request;
+  const ctx  = esV2 ? request : (context || {});
+  if (!ctx.app) return { ok: false, error: "No autorizado" };
+  const email = (ctx.auth && ctx.auth.token && ctx.auth.token.email || "").toLowerCase();
+  if (!email || !(await puedeSeccionEstricto(email, "cambios"))) return { ok: false, error: "Sin permiso" };
+
+  const referencia = data && data.referencia;
+  if (!referencia) return { ok: false, error: "Falta la referencia" };
+  try {
+    const resultado = await calcularCoberturaReferenciaCompras(referencia);
+    if (resultado.error) return { ok: false, error: resultado.error };
+    return { ok: true, ...resultado };
+  } catch (e) {
+    console.error("calcularDiasCoberturaReferencia:", e.message);
+    return { ok: false, error: "No se pudo calcular: " + e.message };
+  }
+});
+
 // Revisa cada 5 minutos las acciones que Robin haya dejado programadas
 // (herramienta programar_accion) y ejecuta las que ya les toque. La
 // precision es de estos 5 minutos, no exacta al segundo. Reutiliza las

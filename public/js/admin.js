@@ -5132,6 +5132,40 @@ function renderCambiosLista() {
   }).join("");
 }
 
+function calcularFechaCambioSegunStock() {
+  const referencia = document.getElementById("cm-ref-actual").value.trim();
+  const margen = Math.max(Number(document.getElementById("cm-cobertura-margen").value) || 0, 0);
+  const cont = document.getElementById("cm-cobertura-resultado");
+  if (!referencia) {
+    cont.style.color = "#D41F3A";
+    cont.textContent = "Pon primero la referencia actual.";
+    return;
+  }
+  cont.style.color = "";
+  cont.textContent = "Calculando...";
+  firebase.functions().httpsCallable("calcularDiasCoberturaReferencia")({ referencia })
+    .then(res => {
+      if (!res.data || !res.data.ok) {
+        cont.style.color = "#D41F3A";
+        cont.textContent = (res.data && res.data.error) || "No se pudo calcular.";
+        return;
+      }
+      const d = res.data;
+      const diasHastaCambio = Math.max(d.diasCobertura - margen, 0);
+      const fecha = new Date();
+      fecha.setDate(fecha.getDate() + diasHastaCambio);
+      const fechaStr = fecha.toLocaleDateString("sv-SE");
+      document.getElementById("cm-fecha-arranque").value = fechaStr;
+      cont.style.color = "#1D9E75";
+      cont.textContent = "Stock actual: " + d.stockOpPalets + " pal. · CDM: " + d.cdm + " pal/día · " +
+        "Cobertura: " + d.diasCobertura + " día(s) → fecha propuesta con " + margen + " día(s) de margen: " + fechaStr + ".";
+    })
+    .catch(e => {
+      cont.style.color = "#D41F3A";
+      cont.textContent = "Error: " + e.message;
+    });
+}
+
 function toggleFechaArranqueCambio() {
   const chk = document.getElementById("cm-agotar-stock");
   const wrap = document.getElementById("cm-fecha-wrap");
@@ -5145,6 +5179,8 @@ function abrirModalCambio() {
   document.getElementById("cm-motivo").value = "alergenos";
   document.getElementById("cm-agotar-stock").checked = false;
   document.getElementById("cm-fecha-arranque").value = "";
+  document.getElementById("cm-cobertura-margen").value = "3";
+  document.getElementById("cm-cobertura-resultado").textContent = "";
   document.getElementById("cm-descripcion").value = "";
   document.getElementById("cm-observaciones").value = "";
   document.getElementById("cm-pdf").value = "";
