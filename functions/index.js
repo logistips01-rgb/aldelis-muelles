@@ -5727,9 +5727,17 @@ exports.revisarCorreoComprasBandejasConsumos = onSchedule(
 );
 
 // Stock, transito, pedido base y planificacion: cada hora en punto.
+// El informe de stock (ManoloAPP) es un fichero denso que solo se manda 3
+// veces al dia (6:15, 9:15, 12:15): revisarlo cada hora como el resto no
+// aporta nada, asi que va aparte con su propio horario.
+exports.revisarCorreoComprasBandejasStock = onSchedule(
+  { schedule: "15 6,9,12 * * *", timeZone: "Europe/Madrid" },
+  () => revisarCorreoComprasBandejasTipos("revisarCorreoComprasBandejasStock", ["stock"])
+);
+
 exports.revisarCorreoComprasBandejas = onSchedule(
   { schedule: "0 * * * *", timeZone: "Europe/Madrid" },
-  () => revisarCorreoComprasBandejasTipos("revisarCorreoComprasBandejas", ["stock", "transito", "pedido_base", "planificacion"])
+  () => revisarCorreoComprasBandejasTipos("revisarCorreoComprasBandejas", ["transito", "pedido_base", "planificacion"])
 );
 
 // Boton "Probar ahora" del panel: dispara la revision de los 5 tipos al
