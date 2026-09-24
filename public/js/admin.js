@@ -573,14 +573,19 @@ function cerrarSesion() {
 }
 
 // ─── PERMISOS ────────────────────────────────────────────────────────────────
-// Administradores: acceso total y unicos que pueden cambiar permisos, ademas
-// de ver Asistente y los apartados de envases (detallado / stock minimo).
-// Esta lista se replica en esAdmin() de firestore.rules (acceso total) y en
-// ADMINS_APP de functions/index.js (callables); un usuario que solo necesite
-// los apartados de envases sin el resto de permisos de admin puede añadirse
-// aqui y en esAdminEnvases() (firestore.rules) sin tocar esAdmin() ni
-// ADMINS_APP.
-const ADMINS = ["mlorente@aldelis.com", "hmanero@aldelis.com"];
+// Administradores: acceso total y unicos que pueden cambiar permisos. Esta
+// lista se replica en esAdmin() de firestore.rules y en ADMINS_APP de
+// functions/index.js. Asistente (que ahora incluye la gestion de correo
+// personal) ya NO depende de esta lista: es una seccion mas del sistema de
+// permisos normal (ver SECCIONES), para poder concederla solo a quien se
+// quiera sin que dependa de ser "admin" de ningun otro apartado.
+const ADMINS = ["mlorente@aldelis.com"];
+
+// Acceso a los apartados de envases (detallado / stock minimo), aparte del
+// resto de permisos de admin: un usuario que solo necesite esto puede
+// añadirse aqui y en esAdminEnvases() (firestore.rules) / ADMINS_ENVASES_APP
+// (functions/index.js), sin ser administrador general ni tener Asistente.
+const ADMINS_ENVASES = ["mlorente@aldelis.com", "hmanero@aldelis.com"];
 
 // Secciones que se pueden conceder. El id coincide con el de la vista
 // (btn-vista-X / vista-X) salvo "chat", que es el chat con las lanzaderas.
@@ -598,7 +603,8 @@ const SECCIONES = [
   { id: "config",     label: "Configuracion" },
   { id: "cambios",    label: "Cambios de material" },
   { id: "furgoneta",  label: "Furgoneta" },
-  { id: "compras",    label: "Compras (bandejas)" }
+  { id: "compras",    label: "Compras (bandejas)" },
+  { id: "asistente",  label: "Asistente (IA, incluye gestionar su propio correo)" }
 ];
 
 // Listas antiguas: se usan como valor por defecto mientras el usuario no
@@ -660,7 +666,8 @@ function calcularPermisos(emailRaw, secciones) {
       config:     s("config"),
       cambios:    s("cambios"),
       furgoneta:  s("furgoneta"),
-      compras:    s("compras")
+      compras:    s("compras"),
+      asistente:  s("asistente")
     },
     // Colecciones a las que hay que suscribirse
     reservas:    s("rejilla") || s("lista") || s("informes"),
@@ -693,24 +700,21 @@ function aplicarRol() {
   const fab = document.getElementById("chat-fab");
   if (fab && !_perms.mensajes) fab.style.display = "none";
 
-  // Asistente de IA: solo para el admin, no depende del sistema de permisos
-  // por secciones (acceso de lectura total, restringido a un unico email).
-  const esAdminIA = auth.currentUser && ADMINS.includes((auth.currentUser.email || "").toLowerCase());
-  const btnAsistente = document.getElementById("btn-vista-asistente");
-  if (btnAsistente) btnAsistente.style.display = esAdminIA ? "" : "none";
-  const btnCorreo = document.getElementById("btn-vista-correo");
-  if (btnCorreo) btnCorreo.style.display = esAdminIA ? "" : "none";
+  // Asistente ya se muestra/oculta con el bucle generico de arriba
+  // (_perms.ver.asistente), como cualquier otra seccion concedible.
 
-  // Pedido de envases detallado a Avitrans: de momento, solo admin.
+  // Pedido de envases detallado a Avitrans y stock minimo: aparte del
+  // sistema de permisos por secciones, restringido a ADMINS_ENVASES.
+  const esAdminEnvasesUI = auth.currentUser && ADMINS_ENVASES.includes((auth.currentUser.email || "").toLowerCase());
   const envasesDet = document.getElementById("envases-detallado-admin");
   if (envasesDet) {
-    envasesDet.style.display = esAdminIA ? "" : "none";
-    if (esAdminIA) renderEnvasesDetalladoAdmin();
+    envasesDet.style.display = esAdminEnvasesUI ? "" : "none";
+    if (esAdminEnvasesUI) renderEnvasesDetalladoAdmin();
   }
   const envasesStockMin = document.getElementById("envases-stock-minimo-admin");
   if (envasesStockMin) {
-    envasesStockMin.style.display = esAdminIA ? "" : "none";
-    if (esAdminIA) cargarConfigStockMinimoEnvases();
+    envasesStockMin.style.display = esAdminEnvasesUI ? "" : "none";
+    if (esAdminEnvasesUI) cargarConfigStockMinimoEnvases();
   }
 
   // Abrir la primera vista disponible
@@ -738,7 +742,7 @@ document.addEventListener("click", (ev) => {
 function switchVista(vista) {
   // No permitir entrar en una vista sin permiso
   if (_perms.ver && _perms.ver[vista] === false) return;
-  ["rejilla", "lista", "informes", "lanzaderas", "pedidos", "cargas", "merca", "arento", "bizerba", "config", "costes", "cambios", "furgoneta", "compras", "asistente", "correo"].forEach(v => {
+  ["rejilla", "lista", "informes", "lanzaderas", "pedidos", "cargas", "merca", "arento", "bizerba", "config", "costes", "cambios", "furgoneta", "compras", "asistente"].forEach(v => {
     document.getElementById("vista-" + v).style.display = vista === v ? "block" : "none";
     document.getElementById("btn-vista-" + v).classList.toggle("active", vista === v);
   });
@@ -5321,44 +5325,6 @@ function hablarAsistente(texto) {
   } catch (e) { console.warn("hablarAsistente:", e.message); }
 }
 
-// ─── ROBIN GESTIONANDO EL CORREO PERSONAL (pestaña "Correo") ────────────────
-// Mismo patron que el Asistente, pero llamando a preguntarRobinCorreo (que
-// usa herramientas propias sobre el correo personal del usuario, no el
-// buzon de pedidos).
-function agregarMensajeCorreo(rol, texto) {
-  const cont = document.getElementById("correo-conversacion");
-  if (!cont) return;
-  const esUsuario = rol === "usuario";
-  const burbuja = document.createElement("div");
-  burbuja.style.cssText = "align-self:" + (esUsuario ? "flex-end" : "flex-start") +
-    ";max-width:80%;padding:10px 14px;border-radius:12px;font-size:14px;white-space:pre-wrap;" +
-    (esUsuario ? "background:#1A1A1A;color:#fff" : "background:#F1F2F5;color:#1A1A1A");
-  burbuja.textContent = texto;
-  cont.appendChild(burbuja);
-  cont.scrollTop = cont.scrollHeight;
-}
-
-async function preguntarRobinCorreoUI() {
-  const input = document.getElementById("correo-input");
-  const mensaje = (input.value || "").trim();
-  if (!mensaje) return;
-  const estado = document.getElementById("correo-estado");
-  agregarMensajeCorreo("usuario", mensaje);
-  input.value = "";
-  estado.textContent = "Pensando...";
-  try {
-    const res = await firebase.functions().httpsCallable("preguntarRobinCorreo")({ mensaje });
-    if (res.data && res.data.ok) {
-      agregarMensajeCorreo("asistente", res.data.respuesta);
-      estado.textContent = "";
-    } else {
-      estado.textContent = (res.data && res.data.error) || "No se pudo obtener respuesta.";
-    }
-  } catch (e) {
-    console.error("preguntarRobinCorreoUI:", e);
-    estado.textContent = "Error al preguntar.";
-  }
-}
 
 let _asistenteReconocimiento = null;
 let _asistenteEscuchando = false;

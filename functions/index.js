@@ -4399,15 +4399,15 @@ const HERRAMIENTAS_IA = [
   },
   {
     name: "programar_accion",
-    description: "Programa el envio de un correo o un mensaje de chat para dentro de un rato (en vez de mandarlo ya). Usar cuando el usuario pida algo tipo \"manda esto dentro de X minutos\" o \"mañana a tal hora\". La precision es de unos minutos, no exacta. Maximo 7 dias vista.",
+    description: "Programa el envio de un correo, un mensaje de chat, o un correo desde el buzon personal del usuario, para dentro de un rato (en vez de mandarlo ya). Usar cuando el usuario pida algo tipo \"manda esto dentro de X minutos\" o \"mañana a tal hora\". La precision es de unos minutos, no exacta. Maximo 7 dias vista.",
     input_schema: {
       type: "object",
       properties: {
-        tipo: { type: "string", enum: ["enviar_correo", "enviar_mensaje_chat"] },
+        tipo: { type: "string", enum: ["enviar_correo", "enviar_mensaje_chat", "enviar_correo_personal"] },
         minutosDesdeAhora: { type: "number", description: "Dentro de cuantos minutos a partir de ahora hay que ejecutarlo" },
         parametros: {
           type: "object",
-          description: "Para enviar_correo: {destinatario, asunto, cuerpo}. Para enviar_mensaje_chat: {lanzadera, texto}."
+          description: "Para enviar_correo o enviar_correo_personal: {destinatario, asunto, cuerpo}. Para enviar_mensaje_chat: {lanzadera, texto}."
         }
       },
       required: ["tipo", "minutosDesdeAhora", "parametros"]
@@ -4520,21 +4520,10 @@ const HERRAMIENTAS_IA_CORREO_PERSONAL = [
       },
       required: ["destinatario", "asunto", "cuerpo"]
     }
-  },
-  {
-    name: "programar_accion",
-    description: "Programa el envio de un correo (tipo enviar_correo_personal) para dentro de un rato en vez de ahora. " +
-      "Maximo 7 dias vista, precision de unos minutos.",
-    input_schema: {
-      type: "object",
-      properties: {
-        tipo: { type: "string", enum: ["enviar_correo_personal"] },
-        minutosDesdeAhora: { type: "number" },
-        parametros: { type: "object", description: "{destinatario, asunto, cuerpo}" }
-      },
-      required: ["tipo", "minutosDesdeAhora", "parametros"]
-    }
   }
+  // El envio programado reutiliza la herramienta "programar_accion" ya
+  // definida en HERRAMIENTAS_IA (tipo "enviar_correo_personal" incluido en
+  // su enum), para no declarar la misma herramienta dos veces.
 ];
 
 async function iaEjecutarHerramienta(nombre, input, contexto) {
@@ -4642,7 +4631,7 @@ exports.preguntarAsistente = functions.https.onCall(async (request, context) => 
 
   if (!ctx.app) return { ok: false, error: "No autorizado" };
   const email = (ctx.auth && ctx.auth.token && ctx.auth.token.email || "").toLowerCase();
-  if (!ADMINS_APP.includes(email)) return { ok: false, error: "Sin permiso" };
+  if (!(await puedeSeccionEstricto(email, "asistente"))) return { ok: false, error: "Sin permiso" };
   if (!ANTHROPIC_API_KEY) return { ok: false, error: "Falta configurar ANTHROPIC_API_KEY en el servidor" };
 
   const mensaje = data && String(data.mensaje || "").trim();
@@ -4651,62 +4640,31 @@ exports.preguntarAsistente = functions.https.onCall(async (request, context) => 
 
   // El usuario que habla con Robin aqui SIEMPRE es este email (es el unico
   // que puede llegar a esta funcion), asi no tiene que preguntar "¿a que
-  // correo?" cuando le piden mandarle algo "a mi" sin mas.
+  // correo?" cuando le piden mandarle algo "a mi" sin mas. Tambien es el
+  // buzon sobre el que actuan las herramientas de correo personal (Robin
+  // nunca puede elegir gestionar el de otra persona).
   const systemPromptConUsuario = IA_SYSTEM_PROMPT +
     " El usuario con el que hablas ahora mismo, en esta conversacion, es " + email + ". Si te pide mandarle " +
     "algo \"a mi\", \"a mi correo\" o simplemente no dice a quien, usa ese email como destinatario sin " +
-    "preguntar mas.";
+    "preguntar mas. Ademas, puedes gestionar SU PROPIO correo personal de trabajo (no el buzon de pedidos) con " +
+    "listar_correos_personal (listar/filtrar por remitente, fecha o no leidos), leer_cuerpo_correo_personal " +
+    "(leer uno entero), borrar_correos_personal, enviar_correo_personal, y programar_accion con tipo " +
+    "enviar_correo_personal para mandarlo mas tarde en vez de ahora. NUNCA borres correos sin haber llamado " +
+    "antes a listar_correos_personal con esos mismos filtros EN ESTA CONVERSACION, enseñado al usuario " +
+    "cuantos/cuales son (asunto y remitente, al menos de los primeros), y haber recibido su confirmacion " +
+    "explicita de que quiere borrar justo esos. Si pide borrar \"los correos de tal remitente\" o \"anteriores " +
+    "a tal fecha\", es una orden de borrado masivo: sigue el mismo proceso (listar, enseñar cuantos hay y de " +
+    "que tipo, confirmar, solo entonces borrar), no asumas que quiere borrar sin verlo antes. El borrado mueve " +
+    "el correo a Elementos eliminados, no es un borrado permanente inmediato, pero aun asi hay que confirmar " +
+    "antes.";
 
   try {
-    const respuesta = await ejecutarConversacionIA(mensaje, HERRAMIENTAS_IA, systemPromptConUsuario);
+    const respuesta = await ejecutarConversacionIA(
+      mensaje, HERRAMIENTAS_IA.concat(HERRAMIENTAS_IA_CORREO_PERSONAL), systemPromptConUsuario, { buzon: email });
     console.log("preguntarAsistente:", email, "->", mensaje.slice(0, 100));
     return { ok: true, respuesta };
   } catch (e) {
     console.error("preguntarAsistente:", e.message);
-    return { ok: false, error: e.message };
-  }
-});
-
-// ── Robin en la pestaña "Correo": gestiona el correo PERSONAL del usuario ──
-// (no el buzon de pedidos). Buzon = el email de quien pregunta, fijado por
-// el servidor (nunca elegido por el modelo), asi que Robin solo puede
-// gestionar el correo de quien esta hablando con el, nunca el de otra
-// persona.
-const IA_CORREO_PERSONAL_SYSTEM_PROMPT =
-  "Te llamas Robin y aqui estas ayudando a gestionar el correo personal de trabajo del usuario (no el buzon de " +
-  "pedidos de Aldelis). Tienes listar_correos_personal (listar/filtrar por remitente, fecha o no leidos), " +
-  "leer_cuerpo_correo_personal (leer uno entero), borrar_correos_personal, enviar_correo_personal y " +
-  "programar_accion (para enviar_correo_personal en el futuro en vez de ahora). NUNCA borres correos sin haber " +
-  "llamado antes a listar_correos_personal con esos mismos filtros EN ESTA CONVERSACION, enseñado al usuario " +
-  "cuantos/cuales son (asunto y remitente, al menos de los primeros), y haber recibido su confirmacion explicita " +
-  "de que quiere borrar justo esos. Si pide borrar \"los correos de tal remitente\" o \"anteriores a tal fecha\", " +
-  "es una orden de borrado masivo: sigue el mismo proceso (listar, enseñar cuantos hay y de que tipo, confirmar, " +
-  "solo entonces borrar), no asumas que quiere borrar sin verlo antes. El borrado mueve el correo a Elementos " +
-  "eliminados, no es un borrado permanente inmediato, pero aun asi hay que confirmar antes. Nunca envies ni " +
-  "programes un correo por iniciativa propia, solo si el usuario lo pide explicitamente en esta conversacion. " +
-  "Responde en español, breve y concreto.";
-
-exports.preguntarRobinCorreo = functions.https.onCall(async (request, context) => {
-  const esV2 = !!(request && typeof request === "object" && request.data !== undefined);
-  const data = esV2 ? request.data : request;
-  const ctx  = esV2 ? request : (context || {});
-
-  if (!ctx.app) return { ok: false, error: "No autorizado" };
-  const email = (ctx.auth && ctx.auth.token && ctx.auth.token.email || "").toLowerCase();
-  if (!ADMINS_APP.includes(email)) return { ok: false, error: "Sin permiso" };
-  if (!ANTHROPIC_API_KEY) return { ok: false, error: "Falta configurar ANTHROPIC_API_KEY en el servidor" };
-
-  const mensaje = data && String(data.mensaje || "").trim();
-  if (!mensaje) return { ok: false, error: "Falta el mensaje" };
-  if (mensaje.length > 4000) return { ok: false, error: "Mensaje demasiado largo" };
-
-  try {
-    const respuesta = await ejecutarConversacionIA(
-      mensaje, HERRAMIENTAS_IA_CORREO_PERSONAL, IA_CORREO_PERSONAL_SYSTEM_PROMPT, { buzon: email });
-    console.log("preguntarRobinCorreo:", email, "->", mensaje.slice(0, 100));
-    return { ok: true, respuesta };
-  } catch (e) {
-    console.error("preguntarRobinCorreo:", e.message);
     return { ok: false, error: e.message };
   }
 });
