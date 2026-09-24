@@ -471,6 +471,27 @@
         siempre enseñando cuáles antes de borrar y esperando tu confirmación — o enviar/programar una
         respuesta). Nunca accede al correo de otra persona, ni puede tocar pedidos, permisos o configuración.
       </p>
+      <div class="informe-card" style="max-width:720px;margin-bottom:20px">
+        <div class="informe-card-title">Tarea rápida: borrar correos antiguos (sin gastar tokens)</div>
+        <p style="font-size:13px;color:#6B7280;margin-bottom:12px">
+          Esto no pasa por la IA, es directo: busca en tu bandeja (o en una subcarpeta) por remitente y/o
+          fecha, te enseña cuántos y cuáles son, y solo borra cuando confirmas.
+        </p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <select id="tarea-borrar-carpeta" style="padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
+            <option value="">Bandeja de entrada</option>
+          </select>
+          <input type="text" id="tarea-borrar-remitente" placeholder="Remitente (opcional)"
+            style="flex:1;min-width:180px;padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
+          <input type="date" id="tarea-borrar-antesde" placeholder="Anteriores a"
+            style="padding:10px;border:1px solid #D1D5DB;border-radius:8px;font-size:14px;font-family:inherit">
+          <label style="font-weight:400;display:flex;align-items:center;gap:6px">
+            <input type="checkbox" id="tarea-borrar-noleidos" style="width:auto"> Solo no leídos</label>
+          <button class="btn-informe" onclick="buscarCorreosParaBorrar()">Buscar</button>
+        </div>
+        <div id="tarea-borrar-resultado" style="font-size:13px;margin-top:12px"></div>
+      </div>
+
       <div id="asistente-conversacion" style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px;max-width:720px"></div>
       <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;max-width:720px">
         <textarea id="asistente-input" rows="2" placeholder="Escribe o dicta tu pregunta..."

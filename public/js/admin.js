@@ -777,6 +777,7 @@ function switchVista(vista) {
   if (vista === "costes")     cargarCostes();
   if (vista === "cambios")    cargarCambios();
   if (vista === "compras")    cargarCompras();
+  if (vista === "asistente")  cargarCarpetasTareaBorrar();
 }
 
 const MUELLES_CARGA = ["M1", "M2", "M3", "M4", "M5"];
@@ -5339,6 +5340,93 @@ function agregarMensajeAsistente(rol, texto) {
   burbuja.textContent = texto;
   cont.appendChild(burbuja);
   cont.scrollTop = cont.scrollHeight;
+}
+
+let _tareaBorrarIds = [];
+
+function cargarCarpetasTareaBorrar() {
+  const sel = document.getElementById("tarea-borrar-carpeta");
+  if (!sel) return;
+  firebase.functions().httpsCallable("listarCarpetasCorreoPersonal")({})
+    .then(res => {
+      if (!res.data || !res.data.ok) return;
+      const actual = sel.value;
+      sel.innerHTML = '<option value="">Bandeja de entrada</option>' +
+        res.data.carpetas
+          .filter(c => c.nombre !== "Bandeja de entrada" && c.nombre !== "Inbox")
+          .map(c => '<option value="' + esc(c.id) + '">' + esc(c.nombre) + " (" + c.total + ")</option>")
+          .join("");
+      if (actual) sel.value = actual;
+    })
+    .catch(e => console.error("cargarCarpetasTareaBorrar:", e));
+}
+
+function buscarCorreosParaBorrar() {
+  const carpetaId = document.getElementById("tarea-borrar-carpeta").value || null;
+  const remitente = document.getElementById("tarea-borrar-remitente").value.trim() || null;
+  const antesDeInput = document.getElementById("tarea-borrar-antesde").value || null;
+  const soloNoLeidos = document.getElementById("tarea-borrar-noleidos").checked;
+  const cont = document.getElementById("tarea-borrar-resultado");
+  if (!remitente && !antesDeInput) {
+    cont.style.color = "#D41F3A";
+    cont.textContent = "Pon al menos un remitente o una fecha.";
+    return;
+  }
+  cont.style.color = "";
+  cont.textContent = "Buscando...";
+  _tareaBorrarIds = [];
+  firebase.functions().httpsCallable("previsualizarBorradoCorreoPersonal")({
+    remitente, antesDe: antesDeInput, soloNoLeidos, carpetaId
+  }).then(res => {
+    if (!res.data || !res.data.ok) {
+      cont.style.color = "#D41F3A";
+      cont.textContent = (res.data && res.data.error) || "No se pudo buscar.";
+      return;
+    }
+    cont.style.color = "";
+    if (res.data.total === 0) {
+      cont.textContent = "No hay correos que cumplan ese filtro.";
+      return;
+    }
+    _tareaBorrarIds = res.data.ids;
+    const muestra = res.data.muestra.map(m =>
+      "<li>" + esc(m.asunto || "(sin asunto)") + " — " + esc(m.de || "") + " — " + esc((m.fecha || "").slice(0, 10)) + "</li>"
+    ).join("");
+    cont.innerHTML =
+      "Encontrados <strong>" + res.data.total + "</strong> correo(s)" +
+      (res.data.truncado ? " (se ha parado en las primeras 500 revisadas, puede haber más)" : "") + ":" +
+      "<ul style='margin:8px 0 12px 20px;padding:0'>" + muestra + "</ul>" +
+      (res.data.total > res.data.muestra.length ? "<span style='color:#6B7280'>...y " + (res.data.total - res.data.muestra.length) + " más.</span><br>" : "") +
+      "<button class='btn-reject' style='width:auto;margin-top:8px' onclick=\"confirmarBorradoTareaRapida()\">🗑️ Confirmar borrado de " + res.data.total + " correo(s)</button>";
+  }).catch(e => {
+    cont.style.color = "#D41F3A";
+    cont.textContent = "Error: " + e.message;
+  });
+}
+
+function confirmarBorradoTareaRapida() {
+  if (!_tareaBorrarIds.length) return;
+  if (!confirm("¿Seguro que quieres borrar " + _tareaBorrarIds.length + " correo(s)? Se moverán a Elementos eliminados.")) return;
+  const cont = document.getElementById("tarea-borrar-resultado");
+  cont.style.color = "";
+  cont.textContent = "Borrando...";
+  firebase.functions().httpsCallable("borrarCorreoPersonalDirecto")({ ids: _tareaBorrarIds })
+    .then(res => {
+      _tareaBorrarIds = [];
+      if (!res.data || !res.data.ok) {
+        cont.style.color = "#D41F3A";
+        cont.textContent = (res.data && res.data.error) || "No se pudo borrar.";
+        return;
+      }
+      cont.style.color = "#1D9E75";
+      cont.textContent = "Borrados " + res.data.borrados + " correo(s)" +
+        (res.data.fallidos ? " (" + res.data.fallidos + " fallidos)" : "") + ".";
+      cargarCarpetasTareaBorrar();
+    })
+    .catch(e => {
+      cont.style.color = "#D41F3A";
+      cont.textContent = "Error: " + e.message;
+    });
 }
 
 async function preguntarAsistenteIA() {

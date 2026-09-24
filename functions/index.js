@@ -3985,9 +3985,9 @@ async function iaLeerCuerpoCorreo(input) {
 // "InefficientFilter" combinando eso con $orderby): se trae una pagina
 // razonable ordenada por fecha y se filtra aqui, con un tope para no
 // tirarse toda una bandeja de golpe.
-async function graphListarCorreosPersonalPaginado(token, buzon, maxTotal) {
+async function graphListarCorreosPersonalPaginado(token, buzon, maxTotal, carpetaId) {
   let url = "https://graph.microsoft.com/v1.0/users/" + encodeURIComponent(buzon) +
-    "/mailFolders/inbox/messages?$top=200&$select=id,subject,from,receivedDateTime,isRead" +
+    "/mailFolders/" + encodeURIComponent(carpetaId || "inbox") + "/messages?$top=200&$select=id,subject,from,receivedDateTime,isRead" +
     "&$orderby=receivedDateTime desc";
   const todos = [];
   while (url && todos.length < maxTotal) {
@@ -4008,15 +4008,33 @@ function iaFormatearCorreoPersonal(m) {
   };
 }
 
+// Devuelve las carpetas de primer nivel del buzon (Entrada, Enviados,
+// Elementos eliminados y cualquier subcarpeta creada por el usuario), con
+// su id de Graph para poder listar/borrar dentro de ellas.
+async function iaListarCarpetasPersonal(input, contexto) {
+  if (!contexto || !contexto.buzon) return { error: "No se pudo determinar el buzon" };
+  const token = await obtenerTokenMS();
+  const data = await graphGet(token,
+    "https://graph.microsoft.com/v1.0/users/" + encodeURIComponent(contexto.buzon) +
+    "/mailFolders?$top=100&$select=id,displayName,totalItemCount,unreadItemCount,childFolderCount");
+  return {
+    carpetas: (data.value || []).map(c => ({
+      id: c.id, nombre: c.displayName, total: c.totalItemCount,
+      noLeidos: c.unreadItemCount, subcarpetas: c.childFolderCount
+    }))
+  };
+}
+
 async function iaListarCorreosPersonal(input, contexto) {
   if (!contexto || !contexto.buzon) return { error: "No se pudo determinar el buzon" };
-  const top = Math.min(Number(input && input.top) || 20, 200);
+  const top = Math.min(Number(input && input.top) || 20, 300);
   const remitente = input && input.remitente ? String(input.remitente).trim().toLowerCase() : null;
   const antesDe = input && input.antesDe ? String(input.antesDe) : null; // "YYYY-MM-DD"
   const soloNoLeidos = !!(input && input.soloNoLeidos);
+  const carpetaId = input && input.carpetaId ? String(input.carpetaId) : null;
 
   const token = await obtenerTokenMS();
-  const todos = await graphListarCorreosPersonalPaginado(token, contexto.buzon, IA_CORREO_PERSONAL_TOPE);
+  const todos = await graphListarCorreosPersonalPaginado(token, contexto.buzon, IA_CORREO_PERSONAL_TOPE, carpetaId);
 
   const filtrados = todos.filter(m => {
     if (remitente) {
@@ -4498,16 +4516,26 @@ const HERRAMIENTAS_IA = [
 // ese canal.
 const HERRAMIENTAS_IA_CORREO_PERSONAL = [
   {
+    name: "listar_carpetas_personal",
+    description: "Lista las carpetas y subcarpetas del buzon del usuario (Entrada, Enviados, Elementos eliminados, " +
+      "y cualquier subcarpeta que se haya creado), con cuantos correos tiene cada una. Usar esto ANTES de listar o " +
+      "borrar si el usuario habla de 'una subcarpeta' o de organizar carpetas, para saber que carpetaId pasar.",
+    input_schema: { type: "object", properties: {} }
+  },
+  {
     name: "listar_correos_personal",
-    description: "Lista/filtra los correos de la bandeja de entrada del usuario. Sirve tanto para consultar como " +
-      "para ver PREVIO a un borrado (usar los mismos filtros que se van a borrar, para confirmar antes con el usuario).",
+    description: "Lista/filtra los correos de una carpeta del buzon del usuario (por defecto la bandeja de entrada; " +
+      "usar listar_carpetas_personal primero para obtener el carpetaId de una subcarpeta concreta). Sirve tanto " +
+      "para consultar como para ver PREVIO a un borrado (usar los mismos filtros que se van a borrar, para " +
+      "confirmar antes con el usuario).",
     input_schema: {
       type: "object",
       properties: {
-        top: { type: "number", description: "Cuantos traer como maximo (por defecto 20, maximo 200)" },
+        top: { type: "number", description: "Cuantos traer como maximo (por defecto 20, maximo 300)" },
         remitente: { type: "string", description: "Filtra por remitente (email o parte de el, no distingue mayusculas)" },
         antesDe: { type: "string", description: "Fecha 'YYYY-MM-DD': solo correos recibidos antes de ese dia" },
-        soloNoLeidos: { type: "boolean" }
+        soloNoLeidos: { type: "boolean" },
+        carpetaId: { type: "string", description: "Id de la carpeta (de listar_carpetas_personal). Si se omite, usa la bandeja de entrada." }
       }
     }
   },
@@ -4564,6 +4592,7 @@ async function iaEjecutarHerramienta(nombre, input, contexto) {
     case "consultar_referencia_envase": return iaConsultarReferenciaEnvase(input);
     case "marcar_recogida": return iaMarcarRecogida(input);
     case "enviar_correo_con_excel": return iaEnviarCorreoConExcel(input);
+    case "listar_carpetas_personal": return iaListarCarpetasPersonal(input, contexto);
     case "listar_correos_personal": return iaListarCorreosPersonal(input, contexto);
     case "leer_cuerpo_correo_personal": return iaLeerCuerpoCorreoPersonal(input, contexto);
     case "borrar_correos_personal": return iaBorrarCorreosPersonal(input, contexto);
@@ -4672,9 +4701,14 @@ exports.preguntarAsistente = functions.https.onCall(async (request, context) => 
     " El usuario con el que hablas ahora mismo, en esta conversacion, es " + email + ". Si te pide mandarle " +
     "algo \"a mi\", \"a mi correo\" o simplemente no dice a quien, usa ese email como destinatario sin " +
     "preguntar mas. Ademas, puedes gestionar SU PROPIO correo personal de trabajo (no el buzon de pedidos) con " +
-    "listar_correos_personal (listar/filtrar por remitente, fecha o no leidos), leer_cuerpo_correo_personal " +
-    "(leer uno entero), borrar_correos_personal, enviar_correo_personal, y programar_accion con tipo " +
-    "enviar_correo_personal para mandarlo mas tarde en vez de ahora. NUNCA borres correos sin haber llamado " +
+    "listar_carpetas_personal (ver que carpetas y subcarpetas tiene y cuantos correos hay en cada una), " +
+    "listar_correos_personal (listar/filtrar por remitente, fecha o no leidos, dentro de una carpeta concreta " +
+    "usando el carpetaId de listar_carpetas_personal, o de la bandeja de entrada si no se indica), " +
+    "leer_cuerpo_correo_personal (leer uno entero), borrar_correos_personal, enviar_correo_personal, y " +
+    "programar_accion con tipo enviar_correo_personal para mandarlo mas tarde en vez de ahora. Si el usuario " +
+    "menciona subcarpetas o quiere organizar/borrar dentro de una carpeta concreta, usa primero " +
+    "listar_carpetas_personal para saber cuales existen y su carpetaId, enseñaselas, y luego opera con " +
+    "listar_correos_personal/borrar_correos_personal pasando ese carpetaId. NUNCA borres correos sin haber llamado " +
     "antes a listar_correos_personal con esos mismos filtros EN ESTA CONVERSACION, enseñado al usuario " +
     "cuantos/cuales son (asunto y remitente, al menos de los primeros), y haber recibido su confirmacion " +
     "explicita de que quiere borrar justo esos. Si pide borrar \"los correos de tal remitente\" o \"anteriores " +
@@ -4690,6 +4724,82 @@ exports.preguntarAsistente = functions.https.onCall(async (request, context) => 
     return { ok: true, respuesta };
   } catch (e) {
     console.error("preguntarAsistente:", e.message);
+    return { ok: false, error: e.message };
+  }
+});
+
+// ── Tareas rapidas de correo personal, SIN pasar por la IA ──────────────────
+// Mismo permiso y mismas funciones de gestion de correo que usa Robin
+// (iaListarCorreosPersonal/iaBorrarCorreosPersonal), pero llamadas
+// directamente desde un formulario del panel en vez de por conversacion:
+// no gastan ni un token, para tareas repetitivas y bien definidas (ej.
+// "borrar correos de tal remitente anteriores a tal fecha").
+exports.previsualizarBorradoCorreoPersonal = functions.https.onCall(async (request, context) => {
+  const esV2 = !!(request && typeof request === "object" && request.data !== undefined);
+  const data = esV2 ? request.data : request;
+  const ctx  = esV2 ? request : (context || {});
+
+  if (!ctx.app) return { ok: false, error: "No autorizado" };
+  const email = (ctx.auth && ctx.auth.token && ctx.auth.token.email || "").toLowerCase();
+  if (!(await puedeSeccionEstricto(email, "asistente"))) return { ok: false, error: "Sin permiso" };
+
+  const remitente = data && data.remitente;
+  const antesDe = data && data.antesDe;
+  const soloNoLeidos = !!(data && data.soloNoLeidos);
+  const carpetaId = data && data.carpetaId;
+  if (!remitente && !antesDe) return { ok: false, error: "Pon al menos un remitente o una fecha" };
+
+  try {
+    const resultado = await iaListarCorreosPersonal(
+      { remitente, antesDe, soloNoLeidos, carpetaId, top: 300 }, { buzon: email });
+    if (resultado.error) return { ok: false, error: resultado.error };
+    return {
+      ok: true, total: resultado.total, truncado: resultado.truncado,
+      muestra: resultado.correos.slice(0, 20),
+      ids: resultado.correos.map(c => c.id)
+    };
+  } catch (e) {
+    console.error("previsualizarBorradoCorreoPersonal:", e.message);
+    return { ok: false, error: e.message };
+  }
+});
+
+exports.listarCarpetasCorreoPersonal = functions.https.onCall(async (request, context) => {
+  const esV2 = !!(request && typeof request === "object" && request.data !== undefined);
+  const ctx  = esV2 ? request : (context || {});
+
+  if (!ctx.app) return { ok: false, error: "No autorizado" };
+  const email = (ctx.auth && ctx.auth.token && ctx.auth.token.email || "").toLowerCase();
+  if (!(await puedeSeccionEstricto(email, "asistente"))) return { ok: false, error: "Sin permiso" };
+
+  try {
+    const resultado = await iaListarCarpetasPersonal({}, { buzon: email });
+    if (resultado.error) return { ok: false, error: resultado.error };
+    return { ok: true, carpetas: resultado.carpetas };
+  } catch (e) {
+    console.error("listarCarpetasCorreoPersonal:", e.message);
+    return { ok: false, error: e.message };
+  }
+});
+
+exports.borrarCorreoPersonalDirecto = functions.https.onCall(async (request, context) => {
+  const esV2 = !!(request && typeof request === "object" && request.data !== undefined);
+  const data = esV2 ? request.data : request;
+  const ctx  = esV2 ? request : (context || {});
+
+  if (!ctx.app) return { ok: false, error: "No autorizado" };
+  const email = (ctx.auth && ctx.auth.token && ctx.auth.token.email || "").toLowerCase();
+  if (!(await puedeSeccionEstricto(email, "asistente"))) return { ok: false, error: "Sin permiso" };
+
+  const ids = Array.isArray(data && data.ids) ? data.ids : [];
+  if (!ids.length) return { ok: false, error: "No hay nada que borrar" };
+
+  try {
+    const resultado = await iaBorrarCorreosPersonal({ ids }, { buzon: email });
+    if (resultado.error) return { ok: false, error: resultado.error };
+    return { ok: true, borrados: resultado.borrados, fallidos: resultado.fallidos };
+  } catch (e) {
+    console.error("borrarCorreoPersonalDirecto:", e.message);
     return { ok: false, error: e.message };
   }
 });
