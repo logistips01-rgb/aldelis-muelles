@@ -5546,7 +5546,10 @@ const COMPRAS_TIPOS_CORREO = [
   // "Informe Stock ManoloAPP <fecha/hora> - <n> palet(s)" (por camara/SSCC,
   // se suma por referencia dentro de cada camara). Se aceptan los dos
   // asuntos por si acaso durante la transicion.
-  { regex: /^(stock bandejas|informe stock manoloapp\b.*)$/i, tipo: "stock", procesar: procesarComprasStock },
+  // Sin anclar al principio del asunto: en pruebas ha llegado con un
+  // prefijo delante ("[PRUEBA] Informe Stock ManoloAPP ..."), y es mas
+  // fiable buscarlo en cualquier parte que asumir que siempre empieza asi.
+  { regex: /^stock bandejas$|informe stock manoloapp/i, tipo: "stock", procesar: procesarComprasStock },
   // El ERP lo manda como "Informe Movimientos Bandejas <fecha>" (la fecha
   // cambia cada dia), no con un asunto fijo como el resto.
   { regex: /^informe movimientos bandejas\b/i, tipo: "consumos", procesar: procesarComprasConsumos },
@@ -5569,7 +5572,7 @@ function esAsuntoDeCompras(subject) {
 function comprasFiltroAsunto(tipo) {
   if (tipo === "transito") return "startswith(subject,'Transito bandejas')";
   if (tipo === "consumos") return "startswith(subject,'Informe Movimientos Bandejas')";
-  if (tipo === "stock") return "(subject eq 'Stock bandejas' or startswith(subject,'Informe Stock ManoloAPP'))";
+  if (tipo === "stock") return "(subject eq 'Stock bandejas' or contains(subject,'Informe Stock ManoloAPP'))";
   const asuntoExacto = { pedido_base: "Pedido base bandejas", planificacion: "Planificacion bandejas" }[tipo];
   return "subject eq '" + asuntoExacto + "'";
 }
