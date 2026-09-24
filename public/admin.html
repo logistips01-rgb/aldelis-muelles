@@ -543,6 +543,7 @@
       <div class="lanz-subtabs">
         <button class="lanz-subtab active" id="btn-compras-familia-bandejas" onclick="switchComprasFamilia('bandejas')">Bandejas</button>
         <button class="lanz-subtab" id="btn-compras-familia-carton" onclick="switchComprasFamilia('carton')">Cartón</button>
+        <button class="lanz-subtab" id="btn-compras-familia-etiquetas" onclick="switchComprasFamilia('etiquetas')">Etiquetas</button>
       </div>
 
       <div id="compras-familia-bandejas">
@@ -677,6 +678,79 @@
         <div class="tabla-scroll"><table class="tabla-inf" id="compras-maestro-tabla-carton">
           <thead><tr>
             <th>Ref.</th><th>Descripción</th><th>Lead time</th><th>Stock seg.</th><th>Ud/palet</th>
+            <th>Incremento</th><th>Situación</th><th></th>
+          </tr></thead>
+          <tbody></tbody>
+        </table></div>
+      </div>
+      </div>
+
+      <div id="compras-familia-etiquetas" style="display:none">
+      <div class="lanz-subtabs" style="margin-top:12px">
+        <button class="lanz-subtab active" id="btn-compras-dashboard-etiquetas" onclick="switchComprasVistaEtiquetas('dashboard')">Dashboard</button>
+        <button class="lanz-subtab" id="btn-compras-maestro-etiquetas" onclick="switchComprasVistaEtiquetas('maestro')">Maestro</button>
+      </div>
+
+      <div id="compras-dashboard-etiquetas" class="lanz-sub">
+        <div style="display:flex;gap:8px;align-items:center;margin:14px 0;flex-wrap:wrap">
+          <button class="btn-informe" onclick="cargarCompras('etiquetas')">🔄 Recalcular</button>
+          <button class="btn-excel" onclick="exportarComprasExcel('etiquetas')">Exportar Excel</button>
+          <button class="btn-ghost" style="width:auto;padding:6px 14px" onclick="probarComprasEtiquetasCorreo()">🧪 Probar correo ahora</button>
+          <label style="font-weight:400;display:flex;align-items:center;gap:6px;margin-left:8px">
+            <input type="checkbox" id="compras-mostrar-bajas-etiquetas" style="width:auto" onchange="renderComprasDashboard('etiquetas')"> Mostrar referencias de baja</label>
+          <span id="compras-dashboard-estado-etiquetas" style="font-size:12px;color:#9CA3AF"></span>
+        </div>
+        <div id="compras-correo-resultado-etiquetas" style="font-size:13px;margin-bottom:14px;display:none"></div>
+        <p style="font-size:12.5px;color:#6B7280;margin-bottom:10px">
+          Etiquetas se calcula en unidades (no en palets): su stock, tránsito, pedido base y consumo llegan
+          por correo aparte (Stock etiquetas / Informe Movimientos Etiquetas / Transito etiquetas N / Pedido
+          base etiquetas / Planificacion etiquetas), sin compartir fichero ni almacenes con bandejas o cartón.
+        </p>
+        <div class="tabla-scroll"><table class="tabla-inf" id="compras-dashboard-tabla-etiquetas">
+          <thead><tr>
+            <th>Ref.</th><th>Descripción</th><th>Situación</th><th>CDM (ud/día)</th><th>Var. %</th>
+            <th>Plaza</th><th>Merca</th><th>Txt</th><th>Avitrans</th><th>Stock operativo</th>
+            <th>Tránsito (ud)</th><th>Días cobertura</th><th>Pedido</th>
+            <th>Base</th><th>Ajuste</th><th>Estado</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table></div>
+      </div>
+
+      <div id="compras-maestro-etiquetas" class="lanz-sub" style="display:none">
+        <p style="font-size:13px;color:#6B7280;margin:12px 0">
+          Referencias de etiquetas: lead time (días), stock de seguridad (en unidades), incremento (unidades
+          extra, ej. por una oferta puntual) y situación (ACTIVA / BAJA / MERCA). Sin unidades por palet:
+          aquí todo se calcula directamente en unidades.
+        </p>
+        <div class="informe-card" style="margin-bottom:16px">
+          <div class="informe-card-title">Importar maestro desde Excel</div>
+          <p style="font-size:12.5px;color:#6B7280;margin-bottom:10px">
+            Columnas esperadas: Referencia, Descripcion, Lead_time, Stock_Seguridad (opcional, 0 si no
+            viene), Incremento (opcional), Situacion (opcional, ACTIVA por defecto). Reemplaza por completo
+            los datos de cada referencia que aparezca en el archivo; las que no estén en el archivo no se tocan.
+          </p>
+          <input type="file" id="compras-m-import-file-etiquetas" accept=".xlsx,.xls" onchange="importarComprasMaestroExcel('etiquetas', this)">
+          <div id="compras-m-import-estado-etiquetas" style="font-size:13px;margin-top:8px"></div>
+        </div>
+        <div class="informe-card" style="margin-bottom:16px">
+          <div class="informe-card-title">Añadir / editar referencia</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+            <input type="text" id="compras-m-ref-etiquetas" placeholder="Referencia" style="width:110px;padding:8px;border:1px solid #D1D5DB;border-radius:6px">
+            <input type="text" id="compras-m-desc-etiquetas" placeholder="Descripción" style="flex:1;min-width:180px;padding:8px;border:1px solid #D1D5DB;border-radius:6px">
+            <input type="number" id="compras-m-lead-etiquetas" placeholder="Lead time" min="0" style="width:100px;padding:8px;border:1px solid #D1D5DB;border-radius:6px">
+            <input type="number" id="compras-m-ss-etiquetas" placeholder="Stock seg. (uds)" min="0" style="width:130px;padding:8px;border:1px solid #D1D5DB;border-radius:6px">
+            <input type="number" id="compras-m-inc-etiquetas" placeholder="Incremento" min="0" value="0" style="width:100px;padding:8px;border:1px solid #D1D5DB;border-radius:6px">
+            <select id="compras-m-situacion-etiquetas" style="padding:8px;border:1px solid #D1D5DB;border-radius:6px">
+              <option value="ACTIVA">ACTIVA</option><option value="MERCA">MERCA</option><option value="BAJA">BAJA</option>
+            </select>
+            <button class="btn-primary" style="width:auto;padding:8px 18px" onclick="guardarComprasMaestro('etiquetas')">Guardar</button>
+          </div>
+          <div id="compras-m-error-etiquetas" style="color:#D41F3A;font-size:13px;margin-top:8px;display:none"></div>
+        </div>
+        <div class="tabla-scroll"><table class="tabla-inf" id="compras-maestro-tabla-etiquetas">
+          <thead><tr>
+            <th>Ref.</th><th>Descripción</th><th>Lead time</th><th>Stock seg. (uds)</th>
             <th>Incremento</th><th>Situación</th><th></th>
           </tr></thead>
           <tbody></tbody>

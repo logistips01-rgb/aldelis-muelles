@@ -5151,13 +5151,14 @@ function calcularFechaCambioSegunStock() {
         return;
       }
       const d = res.data;
+      const unidad = d.familia === "etiquetas" ? "ud" : "pal";
       const diasHastaCambio = Math.max(d.diasCobertura - margen, 0);
       const fecha = new Date();
       fecha.setDate(fecha.getDate() + diasHastaCambio);
       const fechaStr = fecha.toLocaleDateString("sv-SE");
       document.getElementById("cm-fecha-arranque").value = fechaStr;
       cont.style.color = "#1D9E75";
-      cont.textContent = "Stock actual: " + d.stockOpPalets + " pal. · CDM: " + d.cdm + " pal/día · " +
+      cont.textContent = "Stock actual: " + d.stockOpPalets + " " + unidad + ". · CDM: " + d.cdm + " " + unidad + "/día · " +
         "Cobertura: " + d.diasCobertura + " día(s) → fecha propuesta con " + margen + " día(s) de margen: " + fechaStr + ".";
     })
     .catch(e => {
@@ -5538,23 +5539,27 @@ function toggleMicAsistente() {
 // El calculo (CDM, pedido, ajuste) lo hace siempre el servidor
 // (calcularPedidoBandejas), nunca el cliente: aqui solo se pinta lo que
 // devuelve y se gestiona el maestro (unica parte editable desde el panel).
-const _comprasResultados = { bandejas: [], carton: [] };
-// El stock/consumo/transito/pedido base se recoge igual para todas las
-// familias (mismos almacenes, mismo formato de fichero) - solo el maestro
-// es propio de cada una (lead time, stock de seguridad... distintos para
-// bandejas y carton), asi que es lo unico separado por familia aqui.
-const _comprasMaestroCache = { bandejas: [], carton: [] };
-const _comprasMaestroListenerActivo = { bandejas: false, carton: false };
-const _comprasEditando = { bandejas: null, carton: null };
+const _comprasResultados = { bandejas: [], carton: [], etiquetas: [] };
+// El stock/consumo/transito/pedido base se recoge igual para bandejas y
+// carton (mismos almacenes, mismo fichero del ERP); etiquetas tiene sus
+// propias colecciones y se maneja en unidades, no en palets (sin
+// unidadesPalet en su maestro). Solo el maestro es propio de cada familia,
+// asi que es lo unico separado por familia aqui.
+const _comprasMaestroCache = { bandejas: [], carton: [], etiquetas: [] };
+const _comprasMaestroListenerActivo = { bandejas: false, carton: false, etiquetas: false };
+const _comprasEditando = { bandejas: null, carton: null, etiquetas: null };
+const COMPRAS_FAMILIAS_SIN_PALET = ["etiquetas"];
 
 function switchComprasFamilia(f) {
   document.getElementById("compras-familia-bandejas").style.display = f === "bandejas" ? "" : "none";
   document.getElementById("compras-familia-carton").style.display = f === "carton" ? "" : "none";
+  document.getElementById("compras-familia-etiquetas").style.display = f === "etiquetas" ? "" : "none";
   document.getElementById("btn-compras-familia-bandejas").classList.toggle("active", f === "bandejas");
   document.getElementById("btn-compras-familia-carton").classList.toggle("active", f === "carton");
-  if (f === "carton") {
-    cargarComprasMaestroListener("carton");
-    if (!_comprasResultados.carton.length) cargarCompras("carton");
+  document.getElementById("btn-compras-familia-etiquetas").classList.toggle("active", f === "etiquetas");
+  if (f === "carton" || f === "etiquetas") {
+    cargarComprasMaestroListener(f);
+    if (!_comprasResultados[f].length) cargarCompras(f);
   }
 }
 
@@ -5585,13 +5590,20 @@ function switchComprasVistaCarton(v) {
   document.getElementById("btn-compras-maestro-carton").classList.toggle("active", v === "maestro");
 }
 
-// familia: 'bandejas' (por defecto) o 'carton' - mismo calculo en el
-// servidor, solo cambia el maestro que se usa (ver calcularTodoPedidoBandejas).
+function switchComprasVistaEtiquetas(v) {
+  document.getElementById("compras-dashboard-etiquetas").style.display = v === "dashboard" ? "" : "none";
+  document.getElementById("compras-maestro-etiquetas").style.display = v === "maestro" ? "" : "none";
+  document.getElementById("btn-compras-dashboard-etiquetas").classList.toggle("active", v === "dashboard");
+  document.getElementById("btn-compras-maestro-etiquetas").classList.toggle("active", v === "maestro");
+}
+
+// familia: 'bandejas' (por defecto), 'carton' o 'etiquetas' - mismo calculo
+// en el servidor, solo cambia el maestro que se usa (ver calcularTodoPedidoBandejas).
 function cargarCompras(familia) {
-  const fam = familia === "carton" ? "carton" : "bandejas";
+  const fam = ["carton", "etiquetas"].includes(familia) ? familia : "bandejas";
   cargarComprasMaestroListener(fam);
 
-  const estado = document.getElementById(fam === "carton" ? "compras-dashboard-estado-carton" : "compras-dashboard-estado");
+  const estado = document.getElementById(fam === "bandejas" ? "compras-dashboard-estado" : "compras-dashboard-estado-" + fam);
   if (estado) estado.textContent = "Calculando...";
   firebase.functions().httpsCallable("calcularPedidoBandejas")({ familia: fam })
     .then(res => {
@@ -5615,8 +5627,8 @@ const COMPRAS_SEMAFORO_COLOR = { rojo: "#D41F3A", amarillo: "#F59E0B", verde: "#
 const COMPRAS_SEMAFORO_EMOJI = { rojo: "🔴", amarillo: "🟡", verde: "🟢" };
 
 function renderComprasDashboard(familia) {
-  const fam = familia === "carton" ? "carton" : "bandejas";
-  const sufijo = fam === "carton" ? "-carton" : "";
+  const fam = ["carton", "etiquetas"].includes(familia) ? familia : "bandejas";
+  const sufijo = fam === "bandejas" ? "" : "-" + fam;
   const tbody = document.querySelector("#compras-dashboard-tabla" + sufijo + " tbody");
   if (!tbody) return;
   const mostrarBajas = document.getElementById("compras-mostrar-bajas" + sufijo).checked;
@@ -5654,8 +5666,10 @@ function renderComprasDashboard(familia) {
   }).join("");
 }
 
+const COMPRAS_FAMILIA_NOMBRE = { bandejas: "Bandejas", carton: "Carton", etiquetas: "Etiquetas" };
+
 function exportarComprasExcel(familia) {
-  const fam = familia === "carton" ? "carton" : "bandejas";
+  const fam = ["carton", "etiquetas"].includes(familia) ? familia : "bandejas";
   const resultados = _comprasResultados[fam];
   if (!resultados.length) { alert("Primero calcula el pedido (botón Recalcular)."); return; }
   const filas = resultados.map(r => ({
@@ -5681,19 +5695,19 @@ function exportarComprasExcel(familia) {
     }
   });
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, fam === "carton" ? "Pedido carton" : "Pedido bandejas");
-  XLSX.writeFile(wb, "Aldelis_Compras_" + (fam === "carton" ? "Carton" : "Bandejas") + "_" + new Date().toLocaleDateString("sv-SE") + ".xlsx");
+  XLSX.utils.book_append_sheet(wb, ws, "Pedido " + COMPRAS_FAMILIA_NOMBRE[fam].toLowerCase());
+  XLSX.writeFile(wb, "Aldelis_Compras_" + COMPRAS_FAMILIA_NOMBRE[fam] + "_" + new Date().toLocaleDateString("sv-SE") + ".xlsx");
 }
 
 // Dispara la revision del buzon (los 5 tipos de fichero) al momento, sin
 // esperar a la hora programada, y muestra el resultado en pantalla en vez
 // de tener que mirar logs por consola.
-function probarComprasCorreo(divId) {
+function probarComprasCorreo(divId, nombreCallable, asuntosEsperados) {
   const cont = document.getElementById(divId || "compras-correo-resultado");
   cont.style.display = "block";
   cont.style.color = "";
   cont.innerHTML = "Revisando el buzón...";
-  firebase.functions().httpsCallable("probarRevisarCorreoComprasBandejas")({})
+  firebase.functions().httpsCallable(nombreCallable || "probarRevisarCorreoComprasBandejas")({})
     .then(res => {
       if (!res.data || !res.data.ok) {
         cont.style.color = "#D41F3A";
@@ -5709,7 +5723,8 @@ function probarComprasCorreo(divId) {
           procesados.map(p => "<li>" + esc(p.asunto) + " → " + esc(p.resultado) + "</li>").join("") +
           "</ul>";
       } else {
-        html += "No hay ningún correo sin leer con esos asuntos (Stock bandejas, Informe Movimientos Bandejas, Transito bandejas N, Pedido base bandejas, Planificacion bandejas).";
+        html += "No hay ningún correo sin leer con esos asuntos (" +
+          (asuntosEsperados || "Stock bandejas, Informe Movimientos Bandejas, Transito bandejas N, Pedido base bandejas, Planificacion bandejas") + ").";
       }
       cont.innerHTML = html;
     })
@@ -5719,12 +5734,18 @@ function probarComprasCorreo(divId) {
     });
 }
 
+function probarComprasEtiquetasCorreo() {
+  probarComprasCorreo("compras-correo-resultado-etiquetas", "probarRevisarCorreoComprasEtiquetas",
+    "Stock etiquetas, Informe Movimientos Etiquetas, Transito etiquetas N, Pedido base etiquetas, Planificacion etiquetas");
+}
+
 function renderComprasMaestro(familia) {
   const tbody = document.querySelector("#compras-maestro-tabla-" + familia + " tbody");
   if (!tbody) return;
+  const sinPalet = COMPRAS_FAMILIAS_SIN_PALET.includes(familia);
   const cache = _comprasMaestroCache[familia];
   if (!cache.length) {
-    tbody.innerHTML = "<tr><td colspan='8' style='padding:16px;text-align:center;color:#9CA3AF'>Sin referencias todavia.</td></tr>";
+    tbody.innerHTML = "<tr><td colspan='" + (sinPalet ? 7 : 8) + "' style='padding:16px;text-align:center;color:#9CA3AF'>Sin referencias todavia.</td></tr>";
     return;
   }
   tbody.innerHTML = cache.map(m =>
@@ -5733,7 +5754,7 @@ function renderComprasMaestro(familia) {
     "<td>" + esc(m.descripcion || "") + "</td>" +
     "<td>" + (m.leadTime != null ? m.leadTime : "") + "</td>" +
     "<td>" + (m.stockSeguridad != null ? m.stockSeguridad : "") + "</td>" +
-    "<td>" + (m.unidadesPalet != null ? m.unidadesPalet : "") + "</td>" +
+    (sinPalet ? "" : "<td>" + (m.unidadesPalet != null ? m.unidadesPalet : "") + "</td>") +
     "<td>" + (m.incremento != null ? m.incremento : 0) + "</td>" +
     "<td>" + esc(m.situacion || "ACTIVA") + "</td>" +
     "<td style='white-space:nowrap'>" +
@@ -5752,7 +5773,8 @@ function editarComprasMaestro(familia, ref) {
   document.getElementById("compras-m-desc-" + familia).value = m.descripcion || "";
   document.getElementById("compras-m-lead-" + familia).value = m.leadTime != null ? m.leadTime : "";
   document.getElementById("compras-m-ss-" + familia).value = m.stockSeguridad != null ? m.stockSeguridad : "";
-  document.getElementById("compras-m-up-" + familia).value = m.unidadesPalet != null ? m.unidadesPalet : "";
+  const upEl = document.getElementById("compras-m-up-" + familia);
+  if (upEl) upEl.value = m.unidadesPalet != null ? m.unidadesPalet : "";
   document.getElementById("compras-m-inc-" + familia).value = m.incremento != null ? m.incremento : 0;
   document.getElementById("compras-m-situacion-" + familia).value = m.situacion || "ACTIVA";
 }
@@ -5760,7 +5782,10 @@ function editarComprasMaestro(familia, ref) {
 function limpiarFormComprasMaestro(familia) {
   _comprasEditando[familia] = null;
   document.getElementById("compras-m-ref-" + familia).disabled = false;
-  ["compras-m-ref-", "compras-m-desc-", "compras-m-lead-", "compras-m-ss-", "compras-m-up-"].forEach(id => document.getElementById(id + familia).value = "");
+  ["compras-m-ref-", "compras-m-desc-", "compras-m-lead-", "compras-m-ss-", "compras-m-up-"].forEach(id => {
+    const el = document.getElementById(id + familia);
+    if (el) el.value = "";
+  });
   document.getElementById("compras-m-inc-" + familia).value = 0;
   document.getElementById("compras-m-situacion-" + familia).value = "ACTIVA";
 }
@@ -5768,23 +5793,26 @@ function limpiarFormComprasMaestro(familia) {
 async function guardarComprasMaestro(familia) {
   const errEl = document.getElementById("compras-m-error-" + familia);
   errEl.style.display = "none";
+  const sinPalet = COMPRAS_FAMILIAS_SIN_PALET.includes(familia);
   const ref = (_comprasEditando[familia] || document.getElementById("compras-m-ref-" + familia).value || "").trim();
   const descripcion = document.getElementById("compras-m-desc-" + familia).value.trim();
   const leadTime = Number(document.getElementById("compras-m-lead-" + familia).value);
   const stockSeguridad = Number(document.getElementById("compras-m-ss-" + familia).value);
-  const unidadesPalet = Number(document.getElementById("compras-m-up-" + familia).value);
+  const upEl = document.getElementById("compras-m-up-" + familia);
+  const unidadesPalet = upEl ? Number(upEl.value) : null;
   const incremento = Number(document.getElementById("compras-m-inc-" + familia).value) || 0;
   const situacion = document.getElementById("compras-m-situacion-" + familia).value;
 
   if (!ref) { errEl.textContent = "Falta la referencia."; errEl.style.display = "block"; return; }
   if (!(leadTime >= 0)) { errEl.textContent = "Lead time no valido."; errEl.style.display = "block"; return; }
   if (!(stockSeguridad >= 0)) { errEl.textContent = "Stock de seguridad no valido."; errEl.style.display = "block"; return; }
-  if (!(unidadesPalet > 0)) { errEl.textContent = "Unidades por palet no valido (mayor que 0)."; errEl.style.display = "block"; return; }
+  if (!sinPalet && !(unidadesPalet > 0)) { errEl.textContent = "Unidades por palet no valido (mayor que 0)."; errEl.style.display = "block"; return; }
+
+  const datos = { descripcion, leadTime, stockSeguridad, incremento, situacion };
+  if (!sinPalet) datos.unidadesPalet = unidadesPalet;
 
   try {
-    await db.collection("compras_" + familia + "_maestro").doc(ref).set({
-      descripcion, leadTime, stockSeguridad, unidadesPalet, incremento, situacion
-    });
+    await db.collection("compras_" + familia + "_maestro").doc(ref).set(datos);
     limpiarFormComprasMaestro(familia);
   } catch (e) {
     errEl.textContent = "Error al guardar: " + e.message;
@@ -5849,6 +5877,7 @@ function importarComprasMaestroExcel(familia, input) {
         return out;
       });
 
+      const sinPalet = COMPRAS_FAMILIAS_SIN_PALET.includes(familia);
       const validas = [];
       const descartadas = [];
       filas.forEach(f => {
@@ -5862,7 +5891,7 @@ function importarComprasMaestroExcel(familia, input) {
         const incremento = Number(f.Incremento) || 0;
         let situacion = String(f.Situacion || "ACTIVA").trim().toUpperCase();
         if (!["ACTIVA", "BAJA", "MERCA"].includes(situacion)) situacion = "ACTIVA";
-        if (!ref || !(leadTime >= 0) || !(unidadesPalet > 0)) {
+        if (!ref || !(leadTime >= 0) || (!sinPalet && !(unidadesPalet > 0))) {
           descartadas.push(ref || "(sin referencia)");
           return;
         }
@@ -5886,11 +5915,13 @@ function importarComprasMaestroExcel(familia, input) {
       for (let i = 0; i < validas.length; i += 400) {
         const batch = db.batch();
         validas.slice(i, i + 400).forEach(v => {
-          batch.set(db.collection("compras_" + familia + "_maestro").doc(v.ref), {
+          const datos = {
             descripcion: v.descripcion, leadTime: v.leadTime, stockSeguridad: v.stockSeguridad,
-            unidadesPalet: v.unidadesPalet, incremento: v.incremento, situacion: v.situacion,
+            incremento: v.incremento, situacion: v.situacion,
             proveedor: v.proveedor, almacen: v.almacen, medida: v.medida, obs: v.obs
-          });
+          };
+          if (!sinPalet) datos.unidadesPalet = v.unidadesPalet;
+          batch.set(db.collection("compras_" + familia + "_maestro").doc(v.ref), datos);
         });
         await batch.commit();
       }

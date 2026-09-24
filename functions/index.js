@@ -5422,7 +5422,12 @@ async function reemplazarColeccionCompras(coleccion, filas, idFn, dataFn) {
   return filas.length;
 }
 
-async function procesarComprasStock(buffer) {
+// prefix: "compras_bandejas" (bandejas y carton comparten estas
+// colecciones, ver nota mas arriba) o "compras_etiquetas" (etiquetas tiene
+// su propio stock/transito/pedido_base/planificacion/consumos, porque
+// llegan en un correo y unos SSCC totalmente distintos).
+async function procesarComprasStock(buffer, prefix) {
+  prefix = prefix || "compras_bandejas";
   const filas = leerExcelConHeaderAuto(buffer).map(f => normalizarFilaCompras(f, COMPRAS_ALIAS_STOCK));
   const porReferencia = {};
   filas.forEach(f => {
@@ -5438,12 +5443,13 @@ async function procesarComprasStock(buffer) {
     // almacenes fuera de estos 4 grupos se descartan, igual que el app.py original
   });
   const lista = Object.entries(porReferencia).map(([ref, v]) => ({ ref, ...v }));
-  return reemplazarColeccionCompras("compras_bandejas_stock", lista,
+  return reemplazarColeccionCompras(prefix + "_stock", lista,
     f => f.ref,
     f => ({ stockInterno: f.interno, stockMerca: f.merca, stockTxt: f.txt, stockAvitrans: f.avitrans, actualizado: admin.firestore.Timestamp.now() }));
 }
 
-async function procesarComprasTransito(buffer, tipo) {
+async function procesarComprasTransito(buffer, tipo, prefix) {
+  prefix = prefix || "compras_bandejas";
   const filas = leerExcelConHeaderAuto(buffer).map(f => normalizarFilaCompras(f, COMPRAS_ALIAS_TRANSITO));
   const porReferencia = {};
   filas.forEach(f => {
@@ -5456,7 +5462,8 @@ async function procesarComprasTransito(buffer, tipo) {
   // Solo se toca el campo de ESTE tipo de transito (porTipo.<tipo>): a las
   // referencias que ya no aparecen en el fichero nuevo se les pone a 0 (no
   // se borra el documento entero, puede tener otros tipos de transito).
-  const existentes = await db.collection("compras_bandejas_transito").get();
+  const coleccionTransito = prefix + "_transito";
+  const existentes = await db.collection(coleccionTransito).get();
   const idsConDatos = new Set(Object.keys(porReferencia));
   const ops = [];
   existentes.forEach(doc => {
@@ -5468,7 +5475,7 @@ async function procesarComprasTransito(buffer, tipo) {
   Object.entries(porReferencia).forEach(([ref, cantidad]) => {
     ops.push({
       type: "set",
-      ref: db.collection("compras_bandejas_transito").doc(ref),
+      ref: db.collection(coleccionTransito).doc(ref),
       data: { ["porTipo." + tipo]: cantidad, actualizado: admin.firestore.Timestamp.now() }
     });
   });
@@ -5483,17 +5490,19 @@ async function procesarComprasTransito(buffer, tipo) {
   return Object.keys(porReferencia).length;
 }
 
-async function procesarComprasPedidoBase(buffer) {
+async function procesarComprasPedidoBase(buffer, prefix) {
+  prefix = prefix || "compras_bandejas";
   const filas = leerExcelConHeaderAuto(buffer).map(f => normalizarFilaCompras(f, COMPRAS_ALIAS_PEDIDO_BASE));
   const lista = filas
     .map(f => ({ ref: String(f.Referencia || "").trim().toUpperCase(), boxBase: Number(f.Box_base) || 0, descripcion: f.Descripcion || "" }))
     .filter(f => f.ref);
-  return reemplazarColeccionCompras("compras_bandejas_pedido_base", lista,
+  return reemplazarColeccionCompras(prefix + "_pedido_base", lista,
     f => f.ref,
     f => ({ boxBase: f.boxBase, descripcion: f.descripcion, actualizado: admin.firestore.Timestamp.now() }));
 }
 
-async function procesarComprasPlanificacion(buffer) {
+async function procesarComprasPlanificacion(buffer, prefix) {
+  prefix = prefix || "compras_bandejas";
   const filas = leerExcelConHeaderAuto(buffer).map(normalizarFilaPlanificacion);
   const porReferencia = {};
   filas.forEach(f => {
@@ -5503,12 +5512,13 @@ async function procesarComprasPlanificacion(buffer) {
     porReferencia[ref] = (porReferencia[ref] || 0) + apro;
   });
   const lista = Object.entries(porReferencia).map(([ref, apro]) => ({ ref, apro }));
-  return reemplazarColeccionCompras("compras_bandejas_planificacion", lista,
+  return reemplazarColeccionCompras(prefix + "_planificacion", lista,
     f => f.ref,
     f => ({ apro: f.apro, actualizado: admin.firestore.Timestamp.now() }));
 }
 
-async function procesarComprasConsumos(buffer) {
+async function procesarComprasConsumos(buffer, prefix) {
+  prefix = prefix || "compras_bandejas";
   const filas = leerExcelConHeaderAuto(buffer).map(f => normalizarFilaCompras(f, COMPRAS_ALIAS_CONSUMOS));
   const porClave = {};
   filas.forEach(f => {
@@ -5534,7 +5544,7 @@ async function procesarComprasConsumos(buffer) {
   });
   const ops = Object.values(porClave).map(f => ({
     type: "set",
-    ref: db.collection("compras_bandejas_consumos").doc(f.ref + "_" + f.fecha),
+    ref: db.collection(prefix + "_consumos").doc(f.ref + "_" + f.fecha),
     data: { referencia: f.ref, fecha: f.fecha, cantidad: f.cantidad, actualizado: admin.firestore.Timestamp.now() }
   }));
   await commitEnLotesCompras(ops);
@@ -5549,35 +5559,84 @@ const COMPRAS_TIPOS_CORREO = [
   // Sin anclar al principio del asunto: en pruebas ha llegado con un
   // prefijo delante ("[PRUEBA] Informe Stock ManoloAPP ..."), y es mas
   // fiable buscarlo en cualquier parte que asumir que siempre empieza asi.
-  { regex: /^stock bandejas$|informe stock manoloapp/i, tipo: "stock", procesar: procesarComprasStock },
+  {
+    regex: /^stock bandejas$|informe stock manoloapp/i, tipo: "stock",
+    filtro: "(subject eq 'Stock bandejas' or contains(subject,'Informe Stock ManoloAPP'))",
+    procesar: buffer => procesarComprasStock(buffer, "compras_bandejas")
+  },
   // El ERP lo manda como "Informe Movimientos Bandejas <fecha>" (la fecha
   // cambia cada dia), no con un asunto fijo como el resto.
-  { regex: /^informe movimientos bandejas\b/i, tipo: "consumos", procesar: procesarComprasConsumos },
-  { regex: /^transito bandejas (\d+)$/i, tipo: "transito", procesar: null }, // usa el grupo capturado como numero
-  { regex: /^pedido base bandejas$/i, tipo: "pedido_base", procesar: procesarComprasPedidoBase },
-  { regex: /^planificacion bandejas$/i, tipo: "planificacion", procesar: procesarComprasPlanificacion }
+  {
+    regex: /^informe movimientos bandejas\b/i, tipo: "consumos",
+    filtro: "startswith(subject,'Informe Movimientos Bandejas')",
+    procesar: buffer => procesarComprasConsumos(buffer, "compras_bandejas")
+  },
+  {
+    regex: /^transito bandejas (\d+)$/i, tipo: "transito",
+    filtro: "startswith(subject,'Transito bandejas')",
+    prefix: "compras_bandejas",
+    procesar: null // usa el grupo capturado como numero, ver mas abajo
+  },
+  {
+    regex: /^pedido base bandejas$/i, tipo: "pedido_base",
+    filtro: "subject eq 'Pedido base bandejas'",
+    procesar: buffer => procesarComprasPedidoBase(buffer, "compras_bandejas")
+  },
+  {
+    regex: /^planificacion bandejas$/i, tipo: "planificacion",
+    filtro: "subject eq 'Planificacion bandejas'",
+    procesar: buffer => procesarComprasPlanificacion(buffer, "compras_bandejas")
+  }
+];
+
+// Etiquetas: mismo esquema que bandejas/carton, pero con SUS PROPIAS
+// colecciones de stock/transito/pedido_base/planificacion/consumos (no
+// comparte almacenes ni fichero con bandejas/carton) y en unidades, no en
+// palets (el maestro de etiquetas no tiene "unidadesPalet").
+const COMPRAS_TIPOS_CORREO_ETIQUETAS = [
+  {
+    regex: /^stock etiquetas$|informe stock etiquetas/i, tipo: "stock",
+    filtro: "(subject eq 'Stock etiquetas' or contains(subject,'Informe Stock Etiquetas'))",
+    procesar: buffer => procesarComprasStock(buffer, "compras_etiquetas")
+  },
+  {
+    regex: /^informe movimientos etiquetas\b/i, tipo: "consumos",
+    filtro: "startswith(subject,'Informe Movimientos Etiquetas')",
+    procesar: buffer => procesarComprasConsumos(buffer, "compras_etiquetas")
+  },
+  {
+    regex: /^transito etiquetas (\d+)$/i, tipo: "transito",
+    filtro: "startswith(subject,'Transito etiquetas')",
+    prefix: "compras_etiquetas",
+    procesar: null
+  },
+  {
+    regex: /^pedido base etiquetas$/i, tipo: "pedido_base",
+    filtro: "subject eq 'Pedido base etiquetas'",
+    procesar: buffer => procesarComprasPedidoBase(buffer, "compras_etiquetas")
+  },
+  {
+    regex: /^planificacion etiquetas$/i, tipo: "planificacion",
+    filtro: "subject eq 'Planificacion etiquetas'",
+    procesar: buffer => procesarComprasPlanificacion(buffer, "compras_etiquetas")
+  }
 ];
 
 // Usado por revisarCorreoPedidos para no "robarle" a Compras sus propios
 // correos (mismo buzon, asunto variable con fecha/hora en varios de ellos).
 function esAsuntoDeCompras(subject) {
   const asunto = (subject || "").trim();
-  return COMPRAS_TIPOS_CORREO.some(c => c.regex.test(asunto));
+  return COMPRAS_TIPOS_CORREO.some(c => c.regex.test(asunto)) ||
+    COMPRAS_TIPOS_CORREO_ETIQUETAS.some(c => c.regex.test(asunto));
 }
 
-// Logica compartida por las dos revisiones (consumos aparte del resto, ver
-// mas abajo): cada una solo mira los tipos de fichero de "tiposPermitidos".
-// Filtro OData de asunto para cada tipo de fichero (subject exacto para los
-// fijos, startswith para los que llevan fecha/numero variable detras).
-function comprasFiltroAsunto(tipo) {
-  if (tipo === "transito") return "startswith(subject,'Transito bandejas')";
-  if (tipo === "consumos") return "startswith(subject,'Informe Movimientos Bandejas')";
-  if (tipo === "stock") return "(subject eq 'Stock bandejas' or contains(subject,'Informe Stock ManoloAPP'))";
-  const asuntoExacto = { pedido_base: "Pedido base bandejas", planificacion: "Planificacion bandejas" }[tipo];
-  return "subject eq '" + asuntoExacto + "'";
-}
-
-async function revisarCorreoComprasBandejasTipos(nombreFuncion, tiposPermitidos) {
+// Logica compartida por las revisiones de bandejas/carton y de etiquetas
+// (consumos aparte del resto, ver mas abajo): cada una solo mira los tipos
+// de fichero de "tiposPermitidos", dentro de la lista de tipos que le
+// corresponda (tiposConf).
+async function revisarCorreoComprasBandejasTipos(nombreFuncion, tiposPermitidos, tiposConf, coleccionProcesados) {
+  tiposConf = tiposConf || COMPRAS_TIPOS_CORREO;
+  coleccionProcesados = coleccionProcesados || "compras_bandejas_correos_procesados";
   let token;
   try { token = await obtenerTokenMS(); }
   catch (e) { console.error(nombreFuncion + ": token:", e.message); return { error: "token: " + e.message }; }
@@ -5590,9 +5649,9 @@ async function revisarCorreoComprasBandejasTipos(nombreFuncion, tiposPermitidos)
   const candidatos = []; // { msg, conf, tipoTransito }
   const tiposUnicos = [...new Set(tiposPermitidos)];
   for (const tipo of tiposUnicos) {
-    const conf = COMPRAS_TIPOS_CORREO.find(c => c.tipo === tipo);
+    const conf = tiposConf.find(c => c.tipo === tipo);
     if (!conf) continue;
-    const filtro = "isRead eq false and " + comprasFiltroAsunto(tipo);
+    const filtro = "isRead eq false and " + conf.filtro;
     let data;
     try {
       data = await graphGet(token,
@@ -5625,7 +5684,7 @@ async function revisarCorreoComprasBandejasTipos(nombreFuncion, tiposPermitidos)
     // Idempotencia por mensaje: el "leido" de Graph no es del todo fiable
     // (visto en produccion con la extraccion de albaran), asi que se usa
     // el mismo mecanismo de guarda con create().
-    const procesadoRef = db.collection("compras_bandejas_correos_procesados").doc(msg.id);
+    const procesadoRef = db.collection(coleccionProcesados).doc(msg.id);
     try {
       await procesadoRef.create({ ts: admin.firestore.Timestamp.now() });
     } catch (e) {
@@ -5647,7 +5706,7 @@ async function revisarCorreoComprasBandejasTipos(nombreFuncion, tiposPermitidos)
       }
       const buffer = Buffer.from(excel.contentBytes, "base64");
       const n = conf.tipo === "transito"
-        ? await procesarComprasTransito(buffer, tipoTransito)
+        ? await procesarComprasTransito(buffer, tipoTransito, conf.prefix)
         : await conf.procesar(buffer);
       console.log(nombreFuncion + ":", asunto, "->", n, "referencia(s) actualizada(s).");
       await graphMarcarLeido(token, msg.id);
@@ -5694,6 +5753,39 @@ exports.probarRevisarCorreoComprasBandejas = functions.https.onCall(async (reque
   }
 });
 
+// Etiquetas: mismo esquema de revision que bandejas, pero contra su propia
+// lista de tipos/colecciones (ver COMPRAS_TIPOS_CORREO_ETIQUETAS).
+exports.revisarCorreoComprasEtiquetasConsumos = onSchedule(
+  { schedule: "5 11 * * *", timeZone: "Europe/Madrid" },
+  () => revisarCorreoComprasBandejasTipos("revisarCorreoComprasEtiquetasConsumos", ["consumos"],
+    COMPRAS_TIPOS_CORREO_ETIQUETAS, "compras_etiquetas_correos_procesados")
+);
+
+exports.revisarCorreoComprasEtiquetas = onSchedule(
+  { schedule: "0 * * * *", timeZone: "Europe/Madrid" },
+  () => revisarCorreoComprasBandejasTipos("revisarCorreoComprasEtiquetas", ["stock", "transito", "pedido_base", "planificacion"],
+    COMPRAS_TIPOS_CORREO_ETIQUETAS, "compras_etiquetas_correos_procesados")
+);
+
+exports.probarRevisarCorreoComprasEtiquetas = functions.https.onCall(async (request, context) => {
+  const esV2 = !!(request && typeof request === "object" && request.data !== undefined);
+  const ctx = esV2 ? request : (context || {});
+  if (!ctx.app) return { ok: false, error: "No autorizado" };
+  const email = (ctx.auth && ctx.auth.token && ctx.auth.token.email || "").toLowerCase();
+  if (!email || !(await puedeSeccionEstricto(email, "compras"))) return { ok: false, error: "Sin permiso" };
+
+  try {
+    const resultado = await revisarCorreoComprasBandejasTipos("probarRevisarCorreoComprasEtiquetas",
+      ["stock", "consumos", "transito", "pedido_base", "planificacion"],
+      COMPRAS_TIPOS_CORREO_ETIQUETAS, "compras_etiquetas_correos_procesados");
+    if (resultado && resultado.error) return { ok: false, error: resultado.error };
+    return { ok: true, asuntosNoLeidos: resultado.asuntosNoLeidos, procesados: resultado.procesados };
+  } catch (e) {
+    console.error("probarRevisarCorreoComprasEtiquetas:", e.message);
+    return { ok: false, error: e.message };
+  }
+});
+
 // Calculo del pedido (callable, se ejecuta al abrir el dashboard del panel,
 // no en cada sincronizacion): misma formula que el app.py original.
 //   - CDM: media de palets/dia sobre los ultimos 30 dias laborables CON
@@ -5706,23 +5798,25 @@ exports.probarRevisarCorreoComprasBandejas = functions.https.onCall(async (reque
 //     si CDM<=0 o Situacion=='BAJA'.
 //   - Ajuste = Pedido - Box_base (pedido estandar de esa referencia).
 //   - Variante "por prevision" si hay planificacion cargada para la ref.
-// familia: 'bandejas' o 'carton' - solo cambia de que maestro se lee (lead
-// time, stock de seguridad...); el stock/transito/pedido base/consumos son
-// los MISMOS documentos compartidos para las dos familias (mismos almacenes,
-// mismo fichero del ERP), asi que esas colecciones no se parametrizan.
+// familia: 'bandejas', 'carton' o 'etiquetas' - cambia de que maestro se
+// lee (lead time, stock de seguridad...) y, para etiquetas, tambien de
+// donde salen stock/transito/pedido base/planificacion/consumos: bandejas
+// y carton COMPARTEN esas colecciones (mismos almacenes, mismo fichero del
+// ERP), pero etiquetas tiene las suyas propias (correo y SSCC distintos).
 async function calcularTodoPedidoBandejas(familia) {
-  const fam = familia === "carton" ? "carton" : "bandejas";
+  const fam = ["carton", "etiquetas"].includes(familia) ? familia : "bandejas";
+  const dataPrefix = fam === "etiquetas" ? "compras_etiquetas" : "compras_bandejas";
   const hoy = new Date();
   const hace30dias = new Date(hoy.getTime() - 30 * 24 * 60 * 60 * 1000);
   const fechaCorte = hace30dias.toISOString().slice(0, 10);
 
   const [maestroSnap, stockSnap, transitoSnap, pedidoBaseSnap, planifSnap, consumosSnap] = await Promise.all([
     db.collection("compras_" + fam + "_maestro").get(),
-    db.collection("compras_bandejas_stock").get(),
-    db.collection("compras_bandejas_transito").get(),
-    db.collection("compras_bandejas_pedido_base").get(),
-    db.collection("compras_bandejas_planificacion").get(),
-    db.collection("compras_bandejas_consumos").where("fecha", ">=", fechaCorte).get()
+    db.collection(dataPrefix + "_stock").get(),
+    db.collection(dataPrefix + "_transito").get(),
+    db.collection(dataPrefix + "_pedido_base").get(),
+    db.collection(dataPrefix + "_planificacion").get(),
+    db.collection(dataPrefix + "_consumos").where("fecha", ">=", fechaCorte).get()
   ]);
 
   const stockPorRef = {}; stockSnap.forEach(d => stockPorRef[d.id] = d.data());
@@ -5839,7 +5933,7 @@ exports.calcularPedidoBandejas = functions.https.onCall(async (request, context)
   const email = (ctx.auth && ctx.auth.token && ctx.auth.token.email || "").toLowerCase();
   if (!email || !(await puedeSeccionEstricto(email, "compras"))) return { ok: false, error: "Sin permiso" };
 
-  const familia = (data && data.familia === "carton") ? "carton" : "bandejas";
+  const familia = ["carton", "etiquetas"].includes(data && data.familia) ? data.familia : "bandejas";
   try {
     const resultados = await calcularTodoPedidoBandejas(familia);
     return { ok: true, resultados };
@@ -5858,7 +5952,7 @@ exports.calcularPedidoBandejas = functions.https.onCall(async (request, context)
 async function calcularCoberturaReferenciaCompras(referencia) {
   const ref = String(referencia || "").trim().toUpperCase();
   if (!ref) return { error: "Falta la referencia" };
-  for (const familia of ["bandejas", "carton"]) {
+  for (const familia of ["bandejas", "carton", "etiquetas"]) {
     const resultados = await calcularTodoPedidoBandejas(familia);
     const fila = resultados.find(r => r.ref.toUpperCase() === ref);
     if (fila) {
