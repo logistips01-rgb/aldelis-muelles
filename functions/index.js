@@ -5834,13 +5834,16 @@ exports.revisarCorreoComprasBandejasConsumos = onSchedule(
 );
 
 // Stock, transito, pedido base y planificacion: cada hora en punto.
-// El chequeo automatico del informe de stock (ManoloAPP) se ha desactivado
-// a peticion expresa (mientras se investiga un pedido de transferencia
-// que aparecio sin explicacion clara): de momento el stock de bandejas/
-// carton/etiquetas solo se actualiza pulsando "Probar ahora" a mano en el
-// panel de Compras (probarRevisarCorreoComprasBandejas). El tipo "stock"
-// sigue definido en COMPRAS_TIPOS_CORREO para que ese boton manual
-// funcione igual que siempre.
+// El informe de stock (ManoloAPP) es un fichero denso que solo se manda
+// unas pocas veces al dia: revisarlo cada hora como el resto no aporta
+// nada, asi que va aparte con su propio horario. Se añade 12:45 como
+// comprobacion extra puntual (mientras se investiga un pedido de
+// transferencia que aparecio sin explicacion clara), ademas de los 6:15/
+// 9:15/12:15 habituales.
+exports.revisarCorreoComprasBandejasStock = onSchedule(
+  { schedule: "15,45 6,9,12 * * *", timeZone: "Europe/Madrid" },
+  () => revisarCorreoComprasBandejasTipos("revisarCorreoComprasBandejasStock", ["stock"])
+);
 
 exports.revisarCorreoComprasBandejas = onSchedule(
   { schedule: "6 * * * *", timeZone: "Europe/Madrid" },
