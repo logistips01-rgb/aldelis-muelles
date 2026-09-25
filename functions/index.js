@@ -2622,7 +2622,9 @@ async function ejecutarPedidoAutomaticoStockMinimoEnvases(origen, soloVista) {
 }
 
 exports.pedidoAutomaticoStockMinimoEnvases = onSchedule(
-  { schedule: "30 11 * * *", timeZone: "Europe/Madrid" },
+  // Solo dias laborables: en fin de semana no hay consumo, no tiene
+  // sentido pedir de mas.
+  { schedule: "30 11 * * 1-5", timeZone: "Europe/Madrid" },
   () => ejecutarPedidoAutomaticoStockMinimoEnvases("pedidoAutomaticoStockMinimoEnvases", false)
 );
 
