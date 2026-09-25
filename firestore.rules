@@ -428,9 +428,9 @@ service cloud.firestore {
     match /compras_bandejas_planificacion/{referencia} { allow read: if permitidoEstricto('compras'); allow write: if false; }
 
     // Etiquetas: maestro propio (sin unidadesPalet, se maneja en unidades,
-    // no en palets) y sus PROPIAS colecciones de stock/transito/pedido
-    // base/planificacion/consumos (no comparte almacenes/fichero con
-    // bandejas/carton, ver revisarCorreoComprasEtiquetas en index.js).
+    // no en palets). El stock/transito/pedido base/planificacion/consumos
+    // son los MISMOS documentos que bandejas/carton (mismo correo, mismo
+    // fichero del ERP), asi que no hace falta duplicar esas reglas.
     match /compras_etiquetas_maestro/{referencia} {
       allow read: if permitidoEstricto('compras');
       allow create, update, delete: if permitidoEstricto('compras') && validComprasEtiquetasMaestro();
@@ -443,11 +443,6 @@ service cloud.firestore {
         && d.incremento is number && d.incremento >= 0
         && d.situacion in ['ACTIVA', 'BAJA', 'MERCA'];
     }
-    match /compras_etiquetas_stock/{referencia}        { allow read: if permitidoEstricto('compras'); allow write: if false; }
-    match /compras_etiquetas_transito/{referencia}      { allow read: if permitidoEstricto('compras'); allow write: if false; }
-    match /compras_etiquetas_consumos/{id}              { allow read: if permitidoEstricto('compras'); allow write: if false; }
-    match /compras_etiquetas_pedido_base/{referencia}   { allow read: if permitidoEstricto('compras'); allow write: if false; }
-    match /compras_etiquetas_planificacion/{referencia} { allow read: if permitidoEstricto('compras'); allow write: if false; }
 
     // Contador diario de preguntas a Robin en el chat de lanzaderas (limite
     // configurable en config/robin). Solo lo escribe el servidor; el panel

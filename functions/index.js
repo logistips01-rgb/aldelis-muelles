@@ -5687,46 +5687,17 @@ const COMPRAS_TIPOS_CORREO = [
   }
 ];
 
-// Etiquetas: mismo esquema que bandejas/carton, pero con SUS PROPIAS
-// colecciones de stock/transito/pedido_base/planificacion/consumos (no
-// comparte almacenes ni fichero con bandejas/carton) y en unidades, no en
-// palets (el maestro de etiquetas no tiene "unidadesPalet").
-const COMPRAS_TIPOS_CORREO_ETIQUETAS = [
-  {
-    regex: /^stock etiquetas$|informe stock etiquetas/i, tipo: "stock",
-    filtro: "(subject eq 'Stock etiquetas' or contains(subject,'Informe Stock Etiquetas'))",
-    procesar: buffer => procesarComprasStock(buffer, "compras_etiquetas"),
-    procesarHtml: html => procesarComprasStockDesdeHtml(html, "compras_etiquetas")
-  },
-  {
-    regex: /^informe movimientos etiquetas\b/i, tipo: "consumos",
-    filtro: "startswith(subject,'Informe Movimientos Etiquetas')",
-    procesar: buffer => procesarComprasConsumos(buffer, "compras_etiquetas")
-  },
-  {
-    regex: /^transito etiquetas (\d+)$/i, tipo: "transito",
-    filtro: "startswith(subject,'Transito etiquetas')",
-    prefix: "compras_etiquetas",
-    procesar: null
-  },
-  {
-    regex: /^pedido base etiquetas$/i, tipo: "pedido_base",
-    filtro: "subject eq 'Pedido base etiquetas'",
-    procesar: buffer => procesarComprasPedidoBase(buffer, "compras_etiquetas")
-  },
-  {
-    regex: /^planificacion etiquetas$/i, tipo: "planificacion",
-    filtro: "subject eq 'Planificacion etiquetas'",
-    procesar: buffer => procesarComprasPlanificacion(buffer, "compras_etiquetas")
-  }
-];
+// Etiquetas comparte TODO el origen de datos con bandejas/carton (mismo
+// correo, mismo fichero del ERP, mismos almacenes): no tiene tipos de
+// correo propios. Lo unico distinto es su maestro (compras_etiquetas_maestro,
+// sin "unidadesPalet" porque se calcula en unidades, no en palets) - ver
+// calcularTodoPedidoBandejas.
 
 // Usado por revisarCorreoPedidos para no "robarle" a Compras sus propios
 // correos (mismo buzon, asunto variable con fecha/hora en varios de ellos).
 function esAsuntoDeCompras(subject) {
   const asunto = (subject || "").trim();
-  return COMPRAS_TIPOS_CORREO.some(c => c.regex.test(asunto)) ||
-    COMPRAS_TIPOS_CORREO_ETIQUETAS.some(c => c.regex.test(asunto));
+  return COMPRAS_TIPOS_CORREO.some(c => c.regex.test(asunto));
 }
 
 // Mismo motivo que esAsuntoDeCompras, pero para los correos de stock
@@ -5889,38 +5860,10 @@ exports.probarRevisarCorreoComprasBandejas = functions.https.onCall(async (reque
   }
 });
 
-// Etiquetas: mismo esquema de revision que bandejas, pero contra su propia
-// lista de tipos/colecciones (ver COMPRAS_TIPOS_CORREO_ETIQUETAS).
-exports.revisarCorreoComprasEtiquetasConsumos = onSchedule(
-  { schedule: "45 11 * * *", timeZone: "Europe/Madrid" },
-  () => revisarCorreoComprasBandejasTipos("revisarCorreoComprasEtiquetasConsumos", ["consumos"],
-    COMPRAS_TIPOS_CORREO_ETIQUETAS, "compras_etiquetas_correos_procesados")
-);
-
-exports.revisarCorreoComprasEtiquetas = onSchedule(
-  { schedule: "9 * * * *", timeZone: "Europe/Madrid" },
-  () => revisarCorreoComprasBandejasTipos("revisarCorreoComprasEtiquetas", ["stock", "transito", "pedido_base", "planificacion"],
-    COMPRAS_TIPOS_CORREO_ETIQUETAS, "compras_etiquetas_correos_procesados")
-);
-
-exports.probarRevisarCorreoComprasEtiquetas = functions.https.onCall(async (request, context) => {
-  const esV2 = !!(request && typeof request === "object" && request.data !== undefined);
-  const ctx = esV2 ? request : (context || {});
-  if (!ctx.app) return { ok: false, error: "No autorizado" };
-  const email = (ctx.auth && ctx.auth.token && ctx.auth.token.email || "").toLowerCase();
-  if (!email || !(await puedeSeccionEstricto(email, "compras"))) return { ok: false, error: "Sin permiso" };
-
-  try {
-    const resultado = await revisarCorreoComprasBandejasTipos("probarRevisarCorreoComprasEtiquetas",
-      ["stock", "consumos", "transito", "pedido_base", "planificacion"],
-      COMPRAS_TIPOS_CORREO_ETIQUETAS, "compras_etiquetas_correos_procesados");
-    if (resultado && resultado.error) return { ok: false, error: resultado.error };
-    return { ok: true, asuntosNoLeidos: resultado.asuntosNoLeidos, procesados: resultado.procesados };
-  } catch (e) {
-    console.error("probarRevisarCorreoComprasEtiquetas:", e.message);
-    return { ok: false, error: e.message };
-  }
-});
+// Etiquetas ya no tiene funciones de correo propias: comparte el mismo
+// correo/fichero que bandejas (revisarCorreoComprasBandejas*,
+// probarRevisarCorreoComprasBandejas), solo cambia el maestro que se usa
+// al calcular (ver calcularTodoPedidoBandejas).
 
 // Calculo del pedido (callable, se ejecuta al abrir el dashboard del panel,
 // no en cada sincronizacion): misma formula que el app.py original.
@@ -5934,25 +5877,24 @@ exports.probarRevisarCorreoComprasEtiquetas = functions.https.onCall(async (requ
 //     si CDM<=0 o Situacion=='BAJA'.
 //   - Ajuste = Pedido - Box_base (pedido estandar de esa referencia).
 //   - Variante "por prevision" si hay planificacion cargada para la ref.
-// familia: 'bandejas', 'carton' o 'etiquetas' - cambia de que maestro se
-// lee (lead time, stock de seguridad...) y, para etiquetas, tambien de
-// donde salen stock/transito/pedido base/planificacion/consumos: bandejas
-// y carton COMPARTEN esas colecciones (mismos almacenes, mismo fichero del
-// ERP), pero etiquetas tiene las suyas propias (correo y SSCC distintos).
+// familia: 'bandejas', 'carton' o 'etiquetas' - solo cambia de que maestro
+// se lee (lead time, stock de seguridad...); el stock/transito/pedido
+// base/planificacion/consumos son los MISMOS documentos compartidos por
+// las tres familias (mismos almacenes, mismo fichero del ERP), asi que
+// esas colecciones no se parametrizan.
 async function calcularTodoPedidoBandejas(familia) {
   const fam = ["carton", "etiquetas"].includes(familia) ? familia : "bandejas";
-  const dataPrefix = fam === "etiquetas" ? "compras_etiquetas" : "compras_bandejas";
   const hoy = new Date();
   const hace30dias = new Date(hoy.getTime() - 30 * 24 * 60 * 60 * 1000);
   const fechaCorte = hace30dias.toISOString().slice(0, 10);
 
   const [maestroSnap, stockSnap, transitoSnap, pedidoBaseSnap, planifSnap, consumosSnap] = await Promise.all([
     db.collection("compras_" + fam + "_maestro").get(),
-    db.collection(dataPrefix + "_stock").get(),
-    db.collection(dataPrefix + "_transito").get(),
-    db.collection(dataPrefix + "_pedido_base").get(),
-    db.collection(dataPrefix + "_planificacion").get(),
-    db.collection(dataPrefix + "_consumos").where("fecha", ">=", fechaCorte).get()
+    db.collection("compras_bandejas_stock").get(),
+    db.collection("compras_bandejas_transito").get(),
+    db.collection("compras_bandejas_pedido_base").get(),
+    db.collection("compras_bandejas_planificacion").get(),
+    db.collection("compras_bandejas_consumos").where("fecha", ">=", fechaCorte).get()
   ]);
 
   const stockPorRef = {}; stockSnap.forEach(d => stockPorRef[d.id] = d.data());

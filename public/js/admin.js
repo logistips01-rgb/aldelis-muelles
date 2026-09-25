@@ -5741,9 +5741,12 @@ function probarComprasCorreo(divId, nombreCallable, asuntosEsperados) {
     });
 }
 
+// Etiquetas comparte el mismo correo/fichero que bandejas (no tiene
+// funcion de revision propia), asi que "Probar ahora" aqui llama al mismo
+// callable que bandejas, solo cambia donde se pinta el resultado.
 function probarComprasEtiquetasCorreo() {
-  probarComprasCorreo("compras-correo-resultado-etiquetas", "probarRevisarCorreoComprasEtiquetas",
-    "Stock etiquetas, Informe Movimientos Etiquetas, Transito etiquetas N, Pedido base etiquetas, Planificacion etiquetas");
+  probarComprasCorreo("compras-correo-resultado-etiquetas", "probarRevisarCorreoComprasBandejas",
+    "Stock bandejas / Informe Stock ManoloAPP, Informe Movimientos Bandejas, Transito bandejas N, Pedido base bandejas, Planificacion bandejas");
 }
 
 function renderComprasMaestro(familia) {
