@@ -2218,6 +2218,14 @@ function cerrarAcumuladorPorAlmacen(acc) {
   return out;
 }
 
+// En Txt (no en Avitrans), Logifruit tambien se maneja a medios palets,
+// igual que Europool: se pide el doble y luego se divide entre 2 para los
+// huecos de camion. En Avitrans, Logifruit va como cualquier referencia
+// normal (sin doblar).
+function esTratadoComoEuropool(cat, almacen) {
+  return cat.tipo === "europool" || (cat.desc.includes("LOGIFRUIT") && almacen === "txt");
+}
+
 async function calcularPedidoEnvasesStockMinimoFiltrado(buffer, incluirRef) {
   const filas = leerExcelConHeaderAuto(buffer).map(normalizarFilaEnvasesStockMinimo);
   const configSnap = await db.collection("envases_stock_minimo_config").get();
@@ -2271,11 +2279,13 @@ async function calcularPedidoEnvasesStockMinimoFiltrado(buffer, incluirRef) {
       });
       return;
     }
-    // Europool: se pide el doble de la necesidad (remontado), y el total de
-    // huecos de camion se calcula dividiendo esa cantidad ya doblada entre 2.
-    const cantidad = cat.tipo === "europool" ? necesidad * 2 : necesidad;
+    // Europool (y Logifruit en Txt): se pide el doble de la necesidad
+    // (remontado), y el total de huecos de camion se calcula dividiendo esa
+    // cantidad ya doblada entre 2.
+    const comoEuropool = esTratadoComoEuropool(cat, almacen);
+    const cantidad = comoEuropool ? necesidad * 2 : necesidad;
     porAlmacen[almacen].lineas.push({ ref, desc: cat.desc, cantidad });
-    if (cat.tipo === "europool") porAlmacen[almacen].europool += cantidad; else porAlmacen[almacen].normal += cantidad;
+    if (comoEuropool) porAlmacen[almacen].europool += cantidad; else porAlmacen[almacen].normal += cantidad;
     diagnostico.push({
       ref, desc: cat.desc, motivo: "incluido", incluido: true, almacen,
       stockMinimo, incremento, stockActual, yaPendiente, necesidad, cantidad
@@ -2557,12 +2567,14 @@ function calcularPedidoAutomaticoStockMinimo(config) {
     // igualmente, al doblarse despues.
     const necesidad = Math.round(stockMinimo * (porcentajeAuto / 100));
     if (necesidad <= 0) continue;
-    // Europool: se pide el doble de la necesidad (remontado), y el total de
-    // huecos de camion se calcula dividiendo esa cantidad ya doblada entre 2.
-    const cantidad = cat.tipo === "europool" ? necesidad * 2 : necesidad;
     const almacen = config[ref].almacen === "txt" ? "txt" : "avitrans";
+    // Europool (y Logifruit en Txt): se pide el doble de la necesidad
+    // (remontado), y el total de huecos de camion se calcula dividiendo esa
+    // cantidad ya doblada entre 2.
+    const comoEuropool = esTratadoComoEuropool(cat, almacen);
+    const cantidad = comoEuropool ? necesidad * 2 : necesidad;
     porAlmacen[almacen].lineas.push({ ref, desc: cat.desc, cantidad });
-    if (cat.tipo === "europool") porAlmacen[almacen].europool += cantidad; else porAlmacen[almacen].normal += cantidad;
+    if (comoEuropool) porAlmacen[almacen].europool += cantidad; else porAlmacen[almacen].normal += cantidad;
   }
   return cerrarAcumuladorPorAlmacen(porAlmacen);
 }
