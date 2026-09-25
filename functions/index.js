@@ -1716,6 +1716,14 @@ exports.procesarPedidoTransferencia = functions.https.onCall(async (request, con
   const esPdf   = /\.pdf$/i.test(nombreArchivo);
   if (!esExcel && !esPdf) return { ok: false, error: "Solo se admite Excel o PDF" };
 
+  // Mismo despiste que ya vimos con el correo automatico: el informe de
+  // stock de ManoloAPP tiene pinta de "muchos palets en un excel" y podria
+  // interpretarse por error como un pedido si alguien lo sube aqui (viene
+  // de Compras, se procesa solo, no hace falta subirlo a mano).
+  if (/manoloapp/i.test(nombreArchivo)) {
+    return { ok: false, error: "Este archivo parece ser el informe de stock de ManoloAPP, no un pedido de transferencia. Ese fichero se procesa solo en Compras, no hace falta subirlo aqui." };
+  }
+
   let resultado;
   try {
     resultado = esExcel ? contarPaletsExcel(buffer) : await contarPaletsPdf(buffer);
