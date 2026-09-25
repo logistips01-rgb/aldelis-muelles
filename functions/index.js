@@ -5908,6 +5908,15 @@ async function calcularTodoPedidoBandejas(familia) {
     db.collection("compras_bandejas_consumos").where("fecha", ">=", fechaCorte).get()
   ]);
 
+  // Fecha/hora en que se proceso de verdad el ultimo fichero de stock que
+  // llego (no cuando se pulsa "Recalcular", que solo relee lo que ya hay
+  // guardado): el mas reciente de los "actualizado" que deja cada referencia.
+  let ultimoStock = null;
+  stockSnap.forEach(d => {
+    const t = d.data().actualizado;
+    if (t && (!ultimoStock || t.toMillis() > ultimoStock.toMillis())) ultimoStock = t;
+  });
+
   const stockPorRef = {}; stockSnap.forEach(d => stockPorRef[d.id] = d.data());
   const transitoPorRef = {}; transitoSnap.forEach(d => transitoPorRef[d.id] = d.data());
   const pedidoBasePorRef = {}; pedidoBaseSnap.forEach(d => pedidoBasePorRef[d.id] = d.data());
@@ -6011,6 +6020,9 @@ async function calcularTodoPedidoBandejas(familia) {
     const nb = Number((b.ref.match(/\d+/) || [])[0]) || 999999;
     return na - nb;
   });
+  // Se cuelga como propiedad extra del array (no altera map/filter/find, ni
+  // el resto de codigo que ya lee "resultados" como una lista normal).
+  resultados.ultimoStock = ultimoStock ? ultimoStock.toDate().toISOString() : null;
   return resultados;
 }
 
@@ -6025,7 +6037,7 @@ exports.calcularPedidoBandejas = functions.https.onCall(async (request, context)
   const familia = ["carton", "etiquetas"].includes(data && data.familia) ? data.familia : "bandejas";
   try {
     const resultados = await calcularTodoPedidoBandejas(familia);
-    return { ok: true, resultados };
+    return { ok: true, resultados, ultimoStock: resultados.ultimoStock || null };
   } catch (e) {
     console.error("calcularPedidoBandejas:", e.message);
     return { ok: false, error: "No se pudo calcular: " + e.message };

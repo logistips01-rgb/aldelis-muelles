@@ -5617,7 +5617,10 @@ function cargarCompras(familia) {
       if (res.data && res.data.ok) {
         _comprasResultados[fam] = res.data.resultados || [];
         renderComprasDashboard(fam);
-        if (estado) estado.textContent = _comprasResultados[fam].length + " referencia(s). Actualizado " + new Date().toLocaleTimeString("es-ES");
+        const fichero = res.data.ultimoStock
+          ? " · Fichero de stock recibido: " + new Date(res.data.ultimoStock).toLocaleString("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
+          : " · Fichero de stock: sin datos todavía";
+        if (estado) estado.textContent = _comprasResultados[fam].length + " referencia(s). Calculado " + new Date().toLocaleTimeString("es-ES") + fichero;
       } else {
         if (estado) estado.textContent = "";
         alert((res.data && res.data.error) || "No se pudo calcular el pedido.");
