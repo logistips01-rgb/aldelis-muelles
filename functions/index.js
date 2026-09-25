@@ -5560,8 +5560,12 @@ const COMPRAS_TIPOS_CORREO = [
   // prefijo delante ("[PRUEBA] Informe Stock ManoloAPP ..."), y es mas
   // fiable buscarlo en cualquier parte que asumir que siempre empieza asi.
   {
-    regex: /^stock bandejas$|informe stock manoloapp/i, tipo: "stock",
-    filtro: "(subject eq 'Stock bandejas' or contains(subject,'Informe Stock ManoloAPP'))",
+    // Solo "manoloapp" (sin depender de las palabras/espacios de alrededor,
+    // que en produccion podrian no ser exactamente los del correo de
+    // prueba): es una palabra suficientemente unica como para no toparse
+    // con nada de pedidos ni de otro tipo de fichero.
+    regex: /^stock bandejas$|manoloapp/i, tipo: "stock",
+    filtro: "(subject eq 'Stock bandejas' or contains(subject,'ManoloAPP'))",
     procesar: buffer => procesarComprasStock(buffer, "compras_bandejas")
   },
   // El ERP lo manda como "Informe Movimientos Bandejas <fecha>" (la fecha
