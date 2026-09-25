@@ -2291,7 +2291,7 @@ function calcularPedidoEnvasesLogifruitPorStockMinimo(buffer) {
 }
 
 exports.revisarCorreoStockMinimoEnvases = onSchedule(
-  { schedule: "0 * * * *", timeZone: "Europe/Madrid" },
+  { schedule: "2 * * * *", timeZone: "Europe/Madrid" },
   () => revisarCorreoStockMinimoEnvasesInterno("revisarCorreoStockMinimoEnvases",
     "Stock envases", "envases_stock_minimo_procesados", calcularPedidoEnvasesPorStockMinimo, false)
 );
@@ -2301,20 +2301,20 @@ exports.revisarCorreoStockMinimoEnvases = onSchedule(
 // correo real llegue a tiempo. La idempotencia por mensaje evita cualquier
 // problema si coincide con la pasada horaria de arriba.
 exports.revisarCorreoStockMinimoEnvasesAgil = onSchedule(
-  { schedule: "*/15 10-11 * * *", timeZone: "Europe/Madrid" },
+  { schedule: "5,20,35,50 10-11 * * *", timeZone: "Europe/Madrid" },
   () => revisarCorreoStockMinimoEnvasesInterno("revisarCorreoStockMinimoEnvasesAgil",
     "Stock envases", "envases_stock_minimo_procesados", calcularPedidoEnvasesPorStockMinimo, false)
 );
 
 // Correo separado con el stock de Logifruit (lo manda otra persona distinta).
 exports.revisarCorreoStockMinimoLogifruitEnvases = onSchedule(
-  { schedule: "0 * * * *", timeZone: "Europe/Madrid" },
+  { schedule: "3 * * * *", timeZone: "Europe/Madrid" },
   () => revisarCorreoStockMinimoEnvasesInterno("revisarCorreoStockMinimoLogifruitEnvases",
     "Stock envases logifruit", "envases_stock_minimo_logifruit_procesados", calcularPedidoEnvasesLogifruitPorStockMinimo, true)
 );
 
 exports.revisarCorreoStockMinimoLogifruitEnvasesAgil = onSchedule(
-  { schedule: "*/15 10-11 * * *", timeZone: "Europe/Madrid" },
+  { schedule: "10,25,40,55 10-11 * * *", timeZone: "Europe/Madrid" },
   () => revisarCorreoStockMinimoEnvasesInterno("revisarCorreoStockMinimoLogifruitEnvasesAgil",
     "Stock envases logifruit", "envases_stock_minimo_logifruit_procesados", calcularPedidoEnvasesLogifruitPorStockMinimo, true)
 );
@@ -2853,7 +2853,9 @@ function fechaPedidoParaCorreo(receivedDateTime) {
 }
 
 exports.revisarCorreoPedidos = onSchedule(
-  { schedule: "every 10 minutes", timeZone: "Europe/Madrid" },
+  // Desfasado respecto a los otros pollers del mismo buzon (Asistente,
+  // extraccion de albaran) para que nunca se disputen el mismo correo.
+  { schedule: "1,11,21,31,41,51 * * * *", timeZone: "Europe/Madrid" },
   async () => {
     if (!MS_SECRET) { console.warn("revisarCorreoPedidos: falta MS_SECRET"); return; }
 
@@ -3012,7 +3014,7 @@ function parseIncidenciaUsieto(texto) {
 }
 
 exports.revisarCorreoIncidencias = onSchedule(
-  { schedule: "every 4 hours", timeZone: "Europe/Madrid" },
+  { schedule: "20 0,4,8,12,16,20 * * *", timeZone: "Europe/Madrid" },
   async () => {
     if (!MS_SECRET) { console.warn("revisarCorreoIncidencias: falta MS_SECRET"); return; }
 
@@ -3707,7 +3709,7 @@ function sumarDiasFecha(fechaStr, dias) {
 }
 
 exports.revisarCorreoAlbaranesAcopal = onSchedule(
-  { schedule: "0 10 * * *", timeZone: "Europe/Madrid" },
+  { schedule: "12 10 * * *", timeZone: "Europe/Madrid" },
   async () => {
     if (!MS_SECRET) { console.warn("revisarCorreoAlbaranesAcopal: falta MS_SECRET"); return; }
 
@@ -5068,7 +5070,7 @@ async function graphResponderCorreo(token, msgId, textoRespuesta) {
 }
 
 exports.revisarCorreoAsistenteIA = onSchedule(
-  { schedule: "every 10 minutes", timeZone: "Europe/Madrid" },
+  { schedule: "4,14,24,34,44,54 * * * *", timeZone: "Europe/Madrid" },
   async () => {
     if (!MS_SECRET) { console.warn("revisarCorreoAsistenteIA: falta MS_SECRET"); return; }
     if (!ANTHROPIC_API_KEY) { console.warn("revisarCorreoAsistenteIA: falta ANTHROPIC_API_KEY"); return; }
@@ -5172,7 +5174,7 @@ async function graphReenviarCorreo(token, msgId, destinatario, comentario) {
 }
 
 exports.revisarCorreoExtraerAlbaran = onSchedule(
-  { schedule: "every 10 minutes", timeZone: "Europe/Madrid" },
+  { schedule: "7,17,27,37,47,57 * * * *", timeZone: "Europe/Madrid" },
   async () => {
     let token;
     try { token = await obtenerTokenMS(); }
@@ -5862,7 +5864,7 @@ exports.revisarCorreoComprasBandejasStock = onSchedule(
 );
 
 exports.revisarCorreoComprasBandejas = onSchedule(
-  { schedule: "0 * * * *", timeZone: "Europe/Madrid" },
+  { schedule: "6 * * * *", timeZone: "Europe/Madrid" },
   () => revisarCorreoComprasBandejasTipos("revisarCorreoComprasBandejas", ["transito", "pedido_base", "planificacion"])
 );
 
@@ -5890,13 +5892,13 @@ exports.probarRevisarCorreoComprasBandejas = functions.https.onCall(async (reque
 // Etiquetas: mismo esquema de revision que bandejas, pero contra su propia
 // lista de tipos/colecciones (ver COMPRAS_TIPOS_CORREO_ETIQUETAS).
 exports.revisarCorreoComprasEtiquetasConsumos = onSchedule(
-  { schedule: "5 11 * * *", timeZone: "Europe/Madrid" },
+  { schedule: "45 11 * * *", timeZone: "Europe/Madrid" },
   () => revisarCorreoComprasBandejasTipos("revisarCorreoComprasEtiquetasConsumos", ["consumos"],
     COMPRAS_TIPOS_CORREO_ETIQUETAS, "compras_etiquetas_correos_procesados")
 );
 
 exports.revisarCorreoComprasEtiquetas = onSchedule(
-  { schedule: "0 * * * *", timeZone: "Europe/Madrid" },
+  { schedule: "9 * * * *", timeZone: "Europe/Madrid" },
   () => revisarCorreoComprasBandejasTipos("revisarCorreoComprasEtiquetas", ["stock", "transito", "pedido_base", "planificacion"],
     COMPRAS_TIPOS_CORREO_ETIQUETAS, "compras_etiquetas_correos_procesados")
 );
