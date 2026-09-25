@@ -2890,6 +2890,15 @@ exports.revisarCorreoPedidos = onSchedule(
           console.log("revisarCorreoPedidos: es un fichero de Compras, se deja para ese flujo:", msg.subject);
           continue;
         }
+        // Mismo problema que con Compras: "Stock envases" / "Stock envases
+        // logifruit" tambien llegan a este buzon con adjunto Excel, y este
+        // flujo generico corre cada 10 min (mas a menudo que el de envases,
+        // que solo revisa cada hora o cada 15 min entre 10:00-11:45), asi
+        // que sin esta exclusion se los queda el primero.
+        if (esAsuntoDeEnvasesStockMinimo(msg.subject)) {
+          console.log("revisarCorreoPedidos: es un correo de stock minimo de envases, se deja para ese flujo:", msg.subject);
+          continue;
+        }
         if (!msg.hasAttachments) {
           console.log("revisarCorreoPedidos: sin adjuntos, descartado:", msg.subject);
           await graphMarcarLeido(token, msg.id);
@@ -5716,6 +5725,14 @@ function esAsuntoDeCompras(subject) {
   const asunto = (subject || "").trim();
   return COMPRAS_TIPOS_CORREO.some(c => c.regex.test(asunto)) ||
     COMPRAS_TIPOS_CORREO_ETIQUETAS.some(c => c.regex.test(asunto));
+}
+
+// Mismo motivo que esAsuntoDeCompras, pero para los correos de stock
+// minimo de envases ("Stock envases" / "Stock envases logifruit").
+const ENVASES_STOCK_MINIMO_ASUNTOS = ["stock envases", "stock envases logifruit"];
+function esAsuntoDeEnvasesStockMinimo(subject) {
+  const asunto = (subject || "").trim().toLowerCase();
+  return ENVASES_STOCK_MINIMO_ASUNTOS.includes(asunto);
 }
 
 // Logica compartida por las revisiones de bandejas/carton y de etiquetas
