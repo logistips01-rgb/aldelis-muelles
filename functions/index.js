@@ -5426,9 +5426,8 @@ async function reemplazarColeccionCompras(coleccion, filas, idFn, dataFn) {
 // colecciones, ver nota mas arriba) o "compras_etiquetas" (etiquetas tiene
 // su propio stock/transito/pedido_base/planificacion/consumos, porque
 // llegan en un correo y unos SSCC totalmente distintos).
-async function procesarComprasStock(buffer, prefix) {
+async function procesarComprasStockDesdeFilasNormalizadas(filas, prefix) {
   prefix = prefix || "compras_bandejas";
-  const filas = leerExcelConHeaderAuto(buffer).map(f => normalizarFilaCompras(f, COMPRAS_ALIAS_STOCK));
   const porReferencia = {};
   filas.forEach(f => {
     const ref = String(f.Referencia || "").trim().toUpperCase();
@@ -5446,6 +5445,72 @@ async function procesarComprasStock(buffer, prefix) {
   return reemplazarColeccionCompras(prefix + "_stock", lista,
     f => f.ref,
     f => ({ stockInterno: f.interno, stockMerca: f.merca, stockTxt: f.txt, stockAvitrans: f.avitrans, actualizado: admin.firestore.Timestamp.now() }));
+}
+
+async function procesarComprasStock(buffer, prefix) {
+  const filas = leerExcelConHeaderAuto(buffer).map(f => normalizarFilaCompras(f, COMPRAS_ALIAS_STOCK));
+  return procesarComprasStockDesdeFilasNormalizadas(filas, prefix);
+}
+
+// El informe ManoloAPP a veces no trae el Excel como adjunto descargable:
+// la tabla (Camara/SSCC/Referencia/Descripcion/Cantidad/Ud) viene pegada
+// directamente en el cuerpo HTML del correo. Se extrae con el mismo
+// criterio que el Excel (buscar la fila de cabecera con "Referencia") y se
+// reutiliza la misma agregacion por almacen/referencia.
+function limpiarCeldaHtml(celdaHtml) {
+  return String(celdaHtml || "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extraerFilasTablaHtml(tablaHtml) {
+  const filasHtml = tablaHtml.match(/<tr[\s\S]*?<\/tr>/gi) || [];
+  return filasHtml.map(filaHtml => {
+    const celdas = filaHtml.match(/<t[dh][\s\S]*?<\/t[dh]>/gi) || [];
+    return celdas.map(limpiarCeldaHtml);
+  });
+}
+
+// Mismo formato de salida que leerExcelConHeaderAuto: un array de
+// {NombreColumna: valor} por fila, para poder pasarlo por
+// normalizarFilaCompras exactamente igual que si viniera de un Excel.
+function leerTablaHtml(html) {
+  const tablas = String(html || "").match(/<table[\s\S]*?<\/table>/gi) || [];
+  for (const tablaHtml of tablas) {
+    const filas = extraerFilasTablaHtml(tablaHtml);
+    const idxHeader = filas.findIndex(f => f.some(c => /referencia/i.test(c)));
+    if (idxHeader === -1) continue;
+    const headers = filas[idxHeader];
+    const datos = [];
+    for (let i = idxHeader + 1; i < filas.length; i++) {
+      const fila = filas[i];
+      if (!fila.some(c => c !== "")) continue;
+      const obj = {};
+      headers.forEach((h, j) => { if (h) obj[h] = fila[j]; });
+      datos.push(obj);
+    }
+    if (datos.length) return datos;
+  }
+  return [];
+}
+
+// Formato español ("28.800,00"): punto de miles, coma decimal. Number()
+// directo sobre ese texto no lo interpreta bien.
+function parseNumeroEs(v) {
+  if (typeof v === "number") return v;
+  const s = String(v == null ? "" : v).trim();
+  if (!s) return 0;
+  const n = Number(s.replace(/\./g, "").replace(",", "."));
+  return isNaN(n) ? 0 : n;
+}
+
+async function procesarComprasStockDesdeHtml(html, prefix) {
+  const filas = leerTablaHtml(html)
+    .map(f => normalizarFilaCompras(f, COMPRAS_ALIAS_STOCK))
+    .map(f => ({ ...f, Cantidad: parseNumeroEs(f.Cantidad) }));
+  return procesarComprasStockDesdeFilasNormalizadas(filas, prefix);
 }
 
 async function procesarComprasTransito(buffer, tipo, prefix) {
@@ -5566,7 +5631,10 @@ const COMPRAS_TIPOS_CORREO = [
     // con nada de pedidos ni de otro tipo de fichero.
     regex: /^stock bandejas$|manoloapp/i, tipo: "stock",
     filtro: "(subject eq 'Stock bandejas' or contains(subject,'ManoloAPP'))",
-    procesar: buffer => procesarComprasStock(buffer, "compras_bandejas")
+    procesar: buffer => procesarComprasStock(buffer, "compras_bandejas"),
+    // El informe ManoloAPP normalmente no trae Excel adjunto: la tabla
+    // viene pegada en el cuerpo del correo.
+    procesarHtml: html => procesarComprasStockDesdeHtml(html, "compras_bandejas")
   },
   // El ERP lo manda como "Informe Movimientos Bandejas <fecha>" (la fecha
   // cambia cada dia), no con un asunto fijo como el resto.
@@ -5601,7 +5669,8 @@ const COMPRAS_TIPOS_CORREO_ETIQUETAS = [
   {
     regex: /^stock etiquetas$|informe stock etiquetas/i, tipo: "stock",
     filtro: "(subject eq 'Stock etiquetas' or contains(subject,'Informe Stock Etiquetas'))",
-    procesar: buffer => procesarComprasStock(buffer, "compras_etiquetas")
+    procesar: buffer => procesarComprasStock(buffer, "compras_etiquetas"),
+    procesarHtml: html => procesarComprasStockDesdeHtml(html, "compras_etiquetas")
   },
   {
     regex: /^informe movimientos etiquetas\b/i, tipo: "consumos",
@@ -5679,7 +5748,11 @@ async function revisarCorreoComprasBandejasTipos(nombreFuncion, tiposPermitidos,
   const procesados = [];
   for (const { msg, conf, tipoTransito } of candidatos) {
     const asunto = (msg.subject || "").trim();
-    if (!msg.hasAttachments) {
+    // El informe de stock (ManoloAPP) puede venir SIN adjunto, con la tabla
+    // pegada en el cuerpo del correo: para ese tipo no se descarta solo por
+    // "hasAttachments=false", se intenta leer el cuerpo mas abajo.
+    const admiteCuerpoHtml = !!conf.procesarHtml;
+    if (!msg.hasAttachments && !admiteCuerpoHtml) {
       await graphMarcarLeido(token, msg.id);
       procesados.push({ asunto, resultado: "sin adjunto, descartado" });
       continue;
@@ -5699,19 +5772,36 @@ async function revisarCorreoComprasBandejasTipos(nombreFuncion, tiposPermitidos,
     }
 
     try {
-      const adjuntos = await graphGet(token,
-        "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS + "/messages/" + msg.id + "/attachments");
-      const excel = (adjuntos.value || []).find(a => a.contentBytes && /\.xlsx?$/i.test(a.name || ""));
-      if (!excel) {
+      let buffer = null;
+      if (msg.hasAttachments) {
+        const adjuntos = await graphGet(token,
+          "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS + "/messages/" + msg.id + "/attachments");
+        const excel = (adjuntos.value || []).find(a => a.contentBytes && /\.xlsx?$/i.test(a.name || ""));
+        if (excel) buffer = Buffer.from(excel.contentBytes, "base64");
+      }
+
+      let n;
+      if (buffer) {
+        n = conf.tipo === "transito"
+          ? await procesarComprasTransito(buffer, tipoTransito, conf.prefix)
+          : await conf.procesar(buffer);
+      } else if (admiteCuerpoHtml) {
+        const detalle = await graphGet(token,
+          "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS + "/messages/" + msg.id + "?$select=body");
+        const html = detalle.body && detalle.body.content;
+        if (!html) {
+          console.log(nombreFuncion + ": sin adjunto ni cuerpo legible en", asunto);
+          await graphMarcarLeido(token, msg.id);
+          procesados.push({ asunto, resultado: "sin adjunto ni cuerpo legible" });
+          continue;
+        }
+        n = await conf.procesarHtml(html);
+      } else {
         console.log(nombreFuncion + ": sin excel adjunto en", asunto);
         await graphMarcarLeido(token, msg.id);
         procesados.push({ asunto, resultado: "adjuntos sin excel valido" });
         continue;
       }
-      const buffer = Buffer.from(excel.contentBytes, "base64");
-      const n = conf.tipo === "transito"
-        ? await procesarComprasTransito(buffer, tipoTransito, conf.prefix)
-        : await conf.procesar(buffer);
       console.log(nombreFuncion + ":", asunto, "->", n, "referencia(s) actualizada(s).");
       await graphMarcarLeido(token, msg.id);
       procesados.push({ asunto, resultado: n + " referencia(s) actualizada(s)" });
