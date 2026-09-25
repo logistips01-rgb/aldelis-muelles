@@ -616,6 +616,7 @@ function pintarPaletsPT() {
       : "<p class='card-desc'>No hay pedidos pendientes registrados aqui.</p>") +
     "<div id='pt-error' style='color:#D41F3A;font-size:13px;margin-bottom:10px;display:none'></div>" +
     "<button class='btn-primary' id='pt-continuar' style='width:100%' onclick='confirmarPaletsPT()'>Continuar</button>" +
+    "<button class='btn-ghost' style='width:100%;margin-top:8px' onclick='salirSinRecoger()'>Nada para recoger</button>" +
     "<button class='btn-back' style='width:100%;margin-top:8px' onclick='render()'>&#8592; Atras</button>" +
     "</div>";
 }
@@ -627,6 +628,13 @@ function togglePtNum(chk) {
   if (!numInp) return;
   numInp.disabled = !chk.checked;
   if (chk.checked) numInp.focus();
+}
+
+// Si el almacen no tenia listo ninguno de los pedidos pendientes, el
+// chofer no debe verse obligado a marcar uno igualmente para poder salir:
+// sigue directo a destino sin registrar ninguna recogida.
+async function salirSinRecoger() {
+  await continuarTrasSalir();
 }
 
 // Evita que un doble toque (tipico con poca cobertura en el almacen, donde el
