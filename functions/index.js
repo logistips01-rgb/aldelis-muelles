@@ -5341,7 +5341,7 @@ exports.enviarInformeExtraccionesAlbaran = onSchedule(
 // añadir un tercero el dia que haga falta sin tocar codigo.
 
 const COMPRAS_ALMACENES_INT      = ["AL6", "AL6SGA", "AL6 SGA"];
-const COMPRAS_ALMACENES_MERCA    = ["ARENTO", "ARENTO CAM1", "ARENTO CAM2", "CAMARA BANDEJAS F19", "CAMARA ESPECIAS Y BANDEJAS MZ F20"];
+const COMPRAS_ALMACENES_MERCA    = ["ARENTO", "ARENTO CAM1", "ARENTO CAM2", "CAMARA BANDEJAS F19", "CAMARA ESPECIAS Y BANDEJAS MZ F20", "ENVASES"];
 const COMPRAS_ALMACENES_TXT      = ["TXT"];
 const COMPRAS_ALMACENES_AVITRANS = ["AVITRANS"];
 
