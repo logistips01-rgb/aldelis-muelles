@@ -2405,8 +2405,19 @@ async function revisarCorreoStockMinimoEnvasesInterno(origen, asunto, coleccionP
     "&$orderby=receivedDateTime desc&$top=100&$select=id,subject,hasAttachments,receivedDateTime");
 
   const asuntoNorm = asunto.trim().toLowerCase();
-  const todos = (data.value || []).filter(m => m.hasAttachments);
+  const noLeidos = data.value || [];
+  const todos = noLeidos.filter(m => m.hasAttachments);
   const mensajes = todos.filter(m => (m.subject || "").trim().toLowerCase() === asuntoNorm);
+
+  // Diagnostico extra si no hay ningun candidato: busca el asunto exacto
+  // entre TODOS los no leidos (con o sin adjunto), para distinguir "Graph
+  // no ve el correo como no leido/en esta carpeta" de "lo ve pero sin
+  // adjunto detectable" (p.ej. un adjunto de nube/enlace, no un fichero real).
+  let coincidenciaSinAdjunto = null;
+  if (!mensajes.length) {
+    const encontrado = noLeidos.find(m => (m.subject || "").trim().toLowerCase() === asuntoNorm);
+    if (encontrado) coincidenciaSinAdjunto = { subject: encontrado.subject, hasAttachments: !!encontrado.hasAttachments };
+  }
 
   const candidatos = mensajes.length;
   console.log(origen + ": " + candidatos + " correo(s) candidato(s) de " + todos.length +
@@ -2475,7 +2486,11 @@ async function revisarCorreoStockMinimoEnvasesInterno(origen, asunto, coleccionP
       console.error(origen + ": mensaje", msg.id, e.message);
     }
   }
-  return { candidatos, procesados, asuntosVistos: todos.slice(0, 20).map(m => m.subject || "(sin asunto)") };
+  return {
+    candidatos, procesados,
+    asuntosVistos: todos.slice(0, 20).map(m => m.subject || "(sin asunto)"),
+    coincidenciaSinAdjunto
+  };
 }
 
 // Boton "Probar ahora" del panel: dispara la revision al momento (no espera

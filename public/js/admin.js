@@ -1855,6 +1855,13 @@ function formatearResultadoProbarCorreoStockMinimo(data) {
     html += "<br><span style='color:#6B7280'>Asuntos vistos entre los no leídos con adjunto: " +
       data.asuntosVistos.map(esc).join(" · ") + "</span>";
   }
+  if (!data.candidatos && data.coincidenciaSinAdjunto) {
+    html += "<br><span style='color:#D41F3A'>Encontrado como no leído, pero Graph no detecta adjunto en él " +
+      "(hasAttachments=" + data.coincidenciaSinAdjunto.hasAttachments + "). Puede ser un adjunto de " +
+      "nube/enlace (OneDrive) en vez de un archivo real: revisa cómo se adjuntó el Excel.</span>";
+  } else if (!data.candidatos && !data.asuntosVistos.length) {
+    html += "<br><span style='color:#6B7280'>No hay ningún correo sin leer en la bandeja de entrada de reservas@aldelis.com ahora mismo.</span>";
+  }
   return html;
 }
 
