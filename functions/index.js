@@ -5202,11 +5202,18 @@ exports.revisarCorreoExtraerAlbaran = onSchedule(
     try { token = await obtenerTokenMS(); }
     catch (e) { console.error("revisarCorreoExtraerAlbaran: token:", e.message); return; }
 
+    // Filtro por asunto en el propio servidor (no "los 25 no leidos mas
+    // recientes en general"): este buzon comparte mucho trafico con
+    // pedidos, incidencias y ACOPAL, asi que con solo isRead=false una
+    // peticion de extraccion podia quedar fuera de la pagina sin que
+    // hubiera fallado nada - simplemente habia mas de 25 OTROS correos sin
+    // leer por delante (mismo problema que ya se soluciono en Compras).
     let data;
     try {
       data = await graphGet(token,
         "https://graph.microsoft.com/v1.0/users/" + BUZON_PEDIDOS +
-        "/mailFolders/inbox/messages?$filter=isRead eq false&$top=25" +
+        "/mailFolders/inbox/messages?$filter=" +
+        encodeURIComponent("isRead eq false and startswith(subject,'extraer')") + "&$top=25" +
         "&$select=id,subject,from,receivedDateTime");
     } catch (e) { console.error("revisarCorreoExtraerAlbaran: listar mensajes:", e.message); return; }
 
